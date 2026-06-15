@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';"
+    />
+    <title>Claude Command Center</title>
+    <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Sidebar -->
+      <aside id="sidebar">
+        <header class="sidebar-head">
+          <span class="logo">◈ Command Center</span>
+        </header>
+
+        <div class="agent-list" id="agentList"></div>
+
+        <footer class="sidebar-foot">
+          <button id="newAgentBtn" class="btn btn-accent">+ New agent</button>
+          <button id="newShellBtn" class="btn btn-ghost">+ Shell</button>
+        </footer>
+      </aside>
+
+      <!-- Main pane -->
+      <main id="main">
+        <header id="topbar">
+          <div class="topbar-info">
+            <span id="activeName" class="active-name">No agent selected</span>
+            <span id="activeDir" class="active-dir"></span>
+          </div>
+          <div class="topbar-actions">
+            <span id="activeStatus" class="status-pill"></span>
+            <button id="restartBtn" class="btn btn-ghost" title="Restart">↻</button>
+            <button id="killBtn" class="btn btn-danger" title="Kill">■</button>
+            <button id="removeBtn" class="btn btn-ghost" title="Remove">✕</button>
+          </div>
+        </header>
+
+        <section id="terminalHost">
+          <div id="terminal"></div>
+          <div id="emptyState" class="empty-state">
+            <p>No agent selected.</p>
+            <p class="dim">Create a new agent to launch a Claude Code session.</p>
+          </div>
+        </section>
+
+        <footer id="controlbar">
+          <div class="quick-keys">
+            <button class="key" data-send="\r" title="Enter">⏎</button>
+            <button class="key" data-send="y\r" title="Yes">y</button>
+            <button class="key" data-send="n\r" title="No">n</button>
+            <button class="key" data-send="\x1b" title="Escape">Esc</button>
+            <button class="key" data-send="\x03" title="Ctrl-C">^C</button>
+            <button class="key" data-send="1\r" title="Option 1">1</button>
+            <button class="key" data-send="2\r" title="Option 2">2</button>
+          </div>
+          <form id="inputForm" class="input-form">
+            <input
+              id="inputBox"
+              type="text"
+              placeholder="Type a message / command, Enter to send…"
+              autocomplete="off"
+            />
+            <button type="submit" class="btn btn-accent">Send</button>
+          </form>
+        </footer>
+      </main>
+    </div>
+
+    <!-- New agent modal -->
+    <div id="modal" class="modal hidden">
+      <div class="modal-card">
+        <h2>New agent</h2>
+        <label>
+          Name
+          <input id="mName" type="text" placeholder="optional — defaults to folder" />
+        </label>
+        <label>
+          Project folder
+          <div class="dir-row">
+            <input id="mDir" type="text" placeholder="C:\\path\\to\\project" />
+            <button id="mPick" class="btn btn-ghost" type="button">Browse…</button>
+          </div>
+        </label>
+        <div class="modal-actions">
+          <button id="mCancel" class="btn btn-ghost">Cancel</button>
+          <button id="mCreate" class="btn btn-accent">Launch</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
+    <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
