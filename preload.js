@@ -2,32 +2,27 @@
 
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('cc', {
-  // queries / actions
-  listAgents: () => ipcRenderer.invoke('agents:list'),
-  spawnAgent: (opts) => ipcRenderer.invoke('agent:spawn', opts),
-  sendInput: (id, data) => ipcRenderer.invoke('agent:input', { id, data }),
-  resize: (id, cols, rows) => ipcRenderer.invoke('agent:resize', { id, cols, rows }),
-  killAgent: (id) => ipcRenderer.invoke('agent:kill', { id }),
-  removeAgent: (id) => ipcRenderer.invoke('agent:remove', { id }),
-  restartAgent: (id) => ipcRenderer.invoke('agent:restart', { id }),
-  pickDir: () => ipcRenderer.invoke('dialog:pickDir'),
-  appInfo: () => ipcRenderer.invoke('app:info'),
+contextBridge.exposeInMainWorld('api', {
+  // projects
+  listProjects: () => ipcRenderer.invoke('projects:list'),
+  addProject: () => ipcRenderer.invoke('projects:add'),
+  removeProject: (dir) => ipcRenderer.invoke('projects:remove', dir),
 
-  // events
-  onData: (cb) => {
-    const h = (_e, payload) => cb(payload);
-    ipcRenderer.on('pty:data', h);
-    return () => ipcRenderer.removeListener('pty:data', h);
-  },
-  onExit: (cb) => {
-    const h = (_e, payload) => cb(payload);
-    ipcRenderer.on('pty:exit', h);
-    return () => ipcRenderer.removeListener('pty:exit', h);
-  },
-  onAgentsChanged: (cb) => {
-    const h = (_e, payload) => cb(payload);
-    ipcRenderer.on('agents:changed', h);
-    return () => ipcRenderer.removeListener('agents:changed', h);
-  },
+  // worktrees
+  listWorktrees: (dir) => ipcRenderer.invoke('projects:worktrees', dir),
+  listBranches: (dir) => ipcRenderer.invoke('branches:list', dir),
+  createWorktree: (dir, branch, newBranch) =>
+    ipcRenderer.invoke('worktree:create', { dir, branch, newBranch }),
+  removeWorktree: (dir, path, force) => ipcRenderer.invoke('worktree:remove', { dir, path, force }),
+
+  // agents
+  spawn: (id, cwd, opts) => ipcRenderer.invoke('agent:spawn', { id, cwd, opts }),
+  sendInput: (id, data) => ipcRenderer.send('agent:input', { id, data }),
+  resize: (id, cols, rows) => ipcRenderer.send('agent:resize', { id, cols, rows }),
+  kill: (id) => ipcRenderer.send('agent:kill', { id }),
+
+  // streams (main -> renderer)
+  onData: (cb) => ipcRenderer.on('agent:data', (_e, p) => cb(p)),
+  onExit: (cb) => ipcRenderer.on('agent:exit', (_e, p) => cb(p)),
+  onEvent: (cb) => ipcRenderer.on('agent:event', (_e, p) => cb(p)),
 });

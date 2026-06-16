@@ -1,49 +1,45 @@
 # Claude Command Center
 
-Desktop app to run and monitor multiple Claude Code agents from one window —
-no more hunting through terminal windows to find which is which.
+Minimal desktop app to launch and monitor multiple Claude Code agents from one
+window. Each project you add can be launched as a live, interactive terminal,
+with a status dot that reflects what the agent is doing right now.
 
-Each agent is a `claude` session the app launches and **owns** (PTY-backed), so
-you get full control (type, approve, kill, restart) and a live view of every
-session in one place.
+## Features (v1)
 
-## Features
+- **Saved project list** — add a folder once, click to launch an agent there.
+- **Live terminal** — full interactive `claude` session per project (xterm.js +
+  PTY). Type as you would in a normal terminal.
+- **Accurate status** — status comes from Claude Code lifecycle hooks, not from
+  scraping terminal output:
+  - `busy` — agent is working
+  - `needs-input` — blocked on a permission / prompt (the one to watch)
+  - `idle` — turn finished, waiting for you
+  - `dead` — session ended
+- **Light / dark theme** — follows OS by default, toggle in the sidebar.
 
-- **Sidebar** — every agent with project folder + live status dot
-  (busy · idle · needs-input · exited) and its last activity line.
-- **Embedded terminal** — full `xterm.js` terminal per agent, live PTY stream.
-- **Control bar** — input box + quick keys (Enter, y, n, Esc, Ctrl-C, 1, 2) for
-  fast permission-prompt answers without leaving the dashboard.
-- **Launch from the app** — pick a project folder, spawn a Claude session (or a
-  plain shell) in it.
-- One-Dark / Fira Code aesthetic.
+## How status works
+
+On first run the app offers to add lifecycle hooks to `~/.claude/settings.json`.
+The hook (`hooks/report.js`) is **env-gated**: it only reports when `CC_PORT` and
+`CC_AGENT_ID` are set, which the app injects when *it* spawns an agent. Sessions
+you open manually in a normal terminal are unaffected.
+
+```
+hook event ──> report.js ──POST──> app HTTP server ──> sidebar dot
+```
 
 ## Stack
 
-Electron · node-pty · @xterm/xterm
+- Electron
+- `@lydell/node-pty` — PTY-backed child processes (full stdin/stdout control)
+- `@xterm/xterm` + `@xterm/addon-fit` — terminal UI
+- Plain CSS with custom-property theme tokens (no framework, no build step)
 
 ## Run
 
 ```bash
-npm install      # also rebuilds node-pty for Electron (postinstall)
+npm install
 npm start
 ```
 
-The app finds `claude` at `~/.local/bin/claude(.exe)` or on your `PATH`.
-
-## Status detection
-
-State is inferred from the PTY stream:
-
-- `busy` — output produced in the last ~1.5s
-- `needs-input` — quiet **and** recent output matches a prompt pattern
-  (`(y/n)`, `Do you want`, `❯`, …)
-- `idle` — quiet, no prompt
-- `exited` — process ended
-
-## Roadmap
-
-- JSONL transcript parsing for richer task/turn info
-- Observe externally-launched agents (hybrid mode)
-- Persist agent layout across restarts
-- Desktop notification when an agent needs input
+`claude` is resolved from `~/.local/bin/claude(.exe)`, falling back to `PATH`.

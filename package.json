@@ -1,7 +1,7 @@
 {
   "name": "claude-command-center",
   "version": "0.1.0",
-  "description": "Desktop command center for running and monitoring multiple Claude Code agents",
+  "description": "Minimal desktop command center for running and monitoring multiple Claude Code agents",
   "main": "main.js",
   "scripts": {
     "start": "electron ."
