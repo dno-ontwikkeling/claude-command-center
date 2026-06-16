@@ -41,6 +41,12 @@
   box-sizing: border-box;
 }
 
+/* hide scrollbars everywhere; content still scrolls via wheel/keys */
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
 html,
 body {
   margin: 0;
@@ -303,6 +309,19 @@ body {
 .dot.dead {
   background: var(--dead);
 }
+.dot.dormant {
+  background: transparent;
+  border: 1px solid var(--muted);
+}
+
+/* dormant agent = a resumable session whose pty has gone */
+.agent.dormant {
+  font-style: italic;
+  opacity: 0.6;
+}
+.agent.dormant:hover {
+  opacity: 1;
+}
 
 /* ---- stage ---- */
 #stage {
@@ -329,12 +348,12 @@ body {
    not account for padding on the element it mounts into, which would make it
    compute too many rows and clip the bottom line. */
 #terminals {
-  padding: var(--space);
   background: #0c0c0c; /* Campbell bg, fills the gutter */
 }
 
 .term {
   display: none;
+  inset: 0 0 15px; /* black gutter below the terminal (FitAddon-safe) */
 }
 
 /* ---- settings modal ---- */

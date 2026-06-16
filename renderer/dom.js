@@ -1,0 +1,41 @@
+'use strict';
+
+// Central DOM reference map. Every module imports the refs it needs from here
+// so there is a single place that lists the elements the UI depends on.
+
+export const els = {
+  list: document.getElementById('project-list'),
+  terminals: document.getElementById('terminals'),
+  empty: document.getElementById('empty'),
+  addBtn: document.getElementById('add-project'),
+  themeBtn: document.getElementById('theme-toggle'),
+  settingsBtn: document.getElementById('settings-btn'),
+  settingsClose: document.getElementById('settings-close'),
+  overlay: document.getElementById('settings'),
+  setTheme: document.getElementById('set-theme'),
+  setFontSize: document.getElementById('set-fontsize'),
+  setFontFamily: document.getElementById('set-fontfamily'),
+  setCursor: document.getElementById('set-cursor'),
+  setBlink: document.getElementById('set-blink'),
+  setScrollback: document.getElementById('set-scrollback'),
+  setBypass: document.getElementById('set-bypass'),
+  wtPicker: document.getElementById('wt-picker'),
+  wtTitle: document.getElementById('wt-title'),
+  wtList: document.getElementById('wt-list'),
+  wtClose: document.getElementById('wt-close'),
+  wtCreate: document.getElementById('wt-create'),
+  wtNewName: document.getElementById('wt-newname'),
+  wtNewErr: document.getElementById('wt-newname-err'),
+  wtBranches: document.getElementById('wt-branches'),
+  promptOverlay: document.getElementById('prompt'),
+  promptTitle: document.getElementById('prompt-title'),
+  promptInput: document.getElementById('prompt-input'),
+  promptOk: document.getElementById('prompt-ok'),
+  promptCancel: document.getElementById('prompt-cancel'),
+  confirmOverlay: document.getElementById('confirm'),
+  confirmTitle: document.getElementById('confirm-title'),
+  confirmMsg: document.getElementById('confirm-msg'),
+  confirmOk: document.getElementById('confirm-ok'),
+  confirmCancel: document.getElementById('confirm-cancel'),
+  confirmX: document.getElementById('confirm-x'),
+};

@@ -18,7 +18,11 @@ let mainWindow = null;
 let serverPort = 0;
 
 const PROJECTS_FILE = path.join(app.getPath('userData'), 'projects.json');
-const REPORT_SCRIPT = path.join(__dirname, 'hooks', 'report.js');
+// In a packaged build the hook script is unpacked from the asar so `node` can
+// actually execute it (you cannot run a file from inside the virtual asar).
+const REPORT_SCRIPT = path
+  .join(__dirname, 'hooks', 'report.js')
+  .replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
 
 // Lifecycle events we hook, mapped to the status the agent should report.
 const HOOK_EVENTS = {
@@ -213,14 +217,27 @@ function startServer() {
 
 function spawnAgent(id, cwd, opts = {}) {
   const shell = resolveClaude();
-  const args = opts.bypass ? ['--dangerously-skip-permissions'] : [];
-  const term = pty.spawn(shell, args, {
-    name: 'xterm-color',
-    cols: 80,
-    rows: 30,
-    cwd,
-    env: { ...process.env, CC_PORT: String(serverPort), CC_AGENT_ID: id },
-  });
+  // `--resume <id>` reopens a prior Claude session; permission flag (if any)
+  // follows so it applies to the resumed run too.
+  const args = [];
+  if (opts.resume) args.push('--resume', opts.resume);
+  if (opts.bypass) args.push('--dangerously-skip-permissions');
+
+  let term;
+  try {
+    term = pty.spawn(shell, args, {
+      name: 'xterm-color',
+      cols: 80,
+      rows: 30,
+      cwd,
+      env: { ...process.env, CC_PORT: String(serverPort), CC_AGENT_ID: id },
+    });
+  } catch (err) {
+    // cwd gone (e.g. a removed worktree) or claude not found — report as an
+    // immediate exit so the renderer can surface it rather than hang.
+    mainWindow?.webContents.send('agent:exit', { id, error: String(err.message || err) });
+    return;
+  }
 
   term.onData((data) => mainWindow?.webContents.send('agent:data', { id, data }));
   term.onExit(() => {

@@ -4,16 +4,43 @@
   "description": "Minimal desktop command center for running and monitoring multiple Claude Code agents",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder"
   },
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^33.2.0"
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
   },
   "dependencies": {
     "@lydell/node-pty": "^1.1.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0"
+  },
+  "build": {
+    "appId": "com.olivier.commandcenter",
+    "productName": "Command Center",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**",
+      "hooks/**",
+      "node_modules/**"
+    ],
+    "asarUnpack": [
+      "hooks/**",
+      "node_modules/@lydell/node-pty/**"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }
