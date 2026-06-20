@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -16,6 +16,15 @@ const pty = require('@lydell/node-pty');
 const agents = new Map();
 let mainWindow = null;
 let serverPort = 0;
+
+// Safe IPC to the renderer. A pty can emit data after the window is closed or
+// reloaded; `mainWindow?` is still truthy then but its webContents is destroyed,
+// so `.send` throws "Object has been destroyed". Guard against that.
+function sendToRenderer(channel, payload) {
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send(channel, payload);
+  }
+}
 
 const PROJECTS_FILE = path.join(app.getPath('userData'), 'projects.json');
 // In a packaged build the hook script is unpacked from the asar so `node` can
@@ -79,30 +88,55 @@ function isGitRepo(dir) {
   return gitBranch(dir) !== null;
 }
 
-// List all worktrees of a repo. Each worktree has its own path (which may live
-// anywhere on disk) and its own branch.
-function listWorktrees(dir) {
+// Per-worktree git state: dirty file count and ahead/behind vs upstream.
+function worktreeStatus(wtPath) {
   return new Promise((resolve) => {
+    execFile('git', ['-C', wtPath, 'status', '--porcelain=v1', '--branch'], (err, stdout) => {
+      if (err) {
+        resolve({ dirty: 0, ahead: 0, behind: 0, upstream: null });
+        return;
+      }
+      const lines = stdout.split(/\r?\n/);
+      const head = lines[0] || ''; // "## main...origin/main [ahead 1, behind 2]"
+      const up = head.match(/\.\.\.(\S+)/);
+      const ahead = head.match(/ahead (\d+)/);
+      const behind = head.match(/behind (\d+)/);
+      const dirty = lines.slice(1).filter(Boolean).length;
+      resolve({
+        dirty,
+        ahead: ahead ? +ahead[1] : 0,
+        behind: behind ? +behind[1] : 0,
+        upstream: up ? up[1] : null,
+      });
+    });
+  });
+}
+
+// List all worktrees of a repo, each enriched with its dirty/ahead/behind state.
+async function listWorktrees(dir) {
+  const worktrees = await new Promise((resolve) => {
     execFile('git', ['-C', dir, 'worktree', 'list', '--porcelain'], (err, stdout) => {
       if (err) {
         resolve([]);
         return;
       }
-      const worktrees = [];
+      const out = [];
       let cur = null;
       for (const line of stdout.split(/\r?\n/)) {
         if (line.startsWith('worktree ')) {
           cur = { path: line.slice(9), branch: null };
-          worktrees.push(cur);
+          out.push(cur);
         } else if (line.startsWith('branch ') && cur) {
           cur.branch = line.slice(7).replace('refs/heads/', '');
         }
       }
       // git lists the main working tree first; it cannot be removed.
-      if (worktrees.length) worktrees[0].isMain = true;
-      resolve(worktrees);
+      if (out.length) out[0].isMain = true;
+      resolve(out);
     });
   });
+  await Promise.all(worktrees.map(async (w) => Object.assign(w, await worktreeStatus(w.path))));
+  return worktrees;
 }
 
 function listBranches(dir) {
@@ -117,6 +151,25 @@ function listBranches(dir) {
           .split(/\r?\n/)
           .map((s) => s.trim())
           .filter(Boolean)
+      );
+    });
+  });
+}
+
+// Remote-tracking branches (origin/*), minus the symbolic origin/HEAD pointer.
+function listRemoteBranches(dir) {
+  return new Promise((resolve) => {
+    execFile('git', ['-C', dir, 'branch', '-r', '--format=%(refname:short)'], (err, stdout) => {
+      if (err) {
+        resolve([]);
+        return;
+      }
+      resolve(
+        stdout
+          .split(/\r?\n/)
+          .map((s) => s.trim())
+          // keep "remote/branch", drop the symbolic "origin" (origin/HEAD short form)
+          .filter((n) => n.includes('/') && !n.endsWith('/HEAD'))
       );
     });
   });
@@ -164,7 +217,7 @@ async function ensureHooksInstalled() {
     title: 'Command Center setup',
     message: 'Install status hooks into ~/.claude/settings.json?',
     detail:
-      'Adds lifecycle hooks so agents launched from Command Center report their ' +
+      'Adds lifecycle hooks so worktrees launched from Command Center report their ' +
       'status (busy / needs-input / idle). Hooks are gated on an environment ' +
       'variable, so sessions you open manually are unaffected.',
   });
@@ -197,7 +250,7 @@ function startServer() {
       req.on('end', () => {
         try {
           const event = JSON.parse(body);
-          mainWindow?.webContents.send('agent:event', event);
+          sendToRenderer('agent:event', event);
         } catch {
           /* ignore malformed */
         }
@@ -235,14 +288,14 @@ function spawnAgent(id, cwd, opts = {}) {
   } catch (err) {
     // cwd gone (e.g. a removed worktree) or claude not found — report as an
     // immediate exit so the renderer can surface it rather than hang.
-    mainWindow?.webContents.send('agent:exit', { id, error: String(err.message || err) });
+    sendToRenderer('agent:exit', { id, error: String(err.message || err) });
     return;
   }
 
-  term.onData((data) => mainWindow?.webContents.send('agent:data', { id, data }));
-  term.onExit(() => {
+  term.onData((data) => sendToRenderer('agent:data', { id, data }));
+  term.onExit(({ exitCode } = {}) => {
     agents.delete(id);
-    mainWindow?.webContents.send('agent:exit', { id });
+    sendToRenderer('agent:exit', { id, exitCode });
   });
 
   agents.set(id, term);
@@ -307,25 +360,52 @@ function registerIpc() {
 
   ipcMain.handle('projects:worktrees', (_e, dir) => listWorktrees(dir));
 
-  // Branches with a flag for whether they already occupy a worktree.
+  // Local + remote branches, each flagged for whether it already has a worktree
+  // (local) or a matching local branch (remote). Plus the repo's current branch.
   ipcMain.handle('branches:list', async (_e, dir) => {
-    const [branches, worktrees] = await Promise.all([listBranches(dir), listWorktrees(dir)]);
+    const [local, remote, worktrees] = await Promise.all([
+      listBranches(dir),
+      listRemoteBranches(dir),
+      listWorktrees(dir),
+    ]);
     const taken = new Set(worktrees.map((w) => w.branch).filter(Boolean));
-    return branches.map((name) => ({ name, hasWorktree: taken.has(name) }));
+    const localSet = new Set(local);
+    return {
+      current: gitBranch(dir),
+      local: local.map((name) => ({ name, hasWorktree: taken.has(name) })),
+      remote: remote.map((name) => ({
+        name,
+        hasLocal: localSet.has(name.split('/').slice(1).join('/')),
+      })),
+    };
   });
 
-  // Create a worktree. `newBranch` controls whether we create the branch (-b)
-  // or check out an existing one. The UI guarantees a valid choice, so no
-  // fallback is needed here.
-  ipcMain.handle('worktree:create', async (_e, { dir, branch, newBranch }) => {
+  // Create a worktree. `mode` selects the source:
+  //   new    -> create branch `branch`, optionally forked from `base`
+  //   local  -> check out an existing local branch
+  //   remote -> create a local tracking branch from a remote ref (origin/x -> x)
+  ipcMain.handle('worktree:create', async (_e, { dir, mode, branch, base }) => {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
       properties: ['openDirectory', 'createDirectory'],
       title: `Choose parent folder for worktree "${branch}"`,
     });
     if (canceled || !filePaths[0]) return { canceled: true };
 
-    const target = path.join(filePaths[0], branch.replace(/[/\\]/g, '-'));
-    const args = newBranch ? [target, '-b', branch] : [target, branch];
+    let display = branch;
+    let args;
+    let target;
+    if (mode === 'remote') {
+      const localName = branch.split('/').slice(1).join('/') || branch;
+      target = path.join(filePaths[0], localName.replace(/[/\\]/g, '-'));
+      args = [target, '-b', localName, branch]; // tracks the remote ref
+      display = localName;
+    } else if (mode === 'new') {
+      target = path.join(filePaths[0], branch.replace(/[/\\]/g, '-'));
+      args = [target, '-b', branch, ...(base ? [base] : [])];
+    } else {
+      target = path.join(filePaths[0], branch.replace(/[/\\]/g, '-'));
+      args = [target, branch];
+    }
     try {
       await new Promise((resolve, reject) => {
         execFile('git', ['-C', dir, 'worktree', 'add', ...args], (err, _o, stderr) =>
@@ -335,7 +415,7 @@ function registerIpc() {
     } catch (err) {
       return { error: String(err.message || err).trim() };
     }
-    return { path: target, branch };
+    return { path: target, branch: display };
   });
 
   ipcMain.handle('worktree:remove', async (_e, { dir, path: wtPath, force }) => {
@@ -375,6 +455,55 @@ function registerIpc() {
   });
 
   ipcMain.on('agent:kill', (_e, { id }) => killAgent(id));
+
+  // Git fetch / pull for the active worktree. pull is --ff-only so a button
+  // press can never spawn a merge commit or drop the user into a conflict.
+  ipcMain.handle('git:fetch', (_e, cwd) => runGit(cwd, ['fetch', '--prune']));
+  ipcMain.handle('git:pull', (_e, cwd) => runGit(cwd, ['pull', '--ff-only']));
+  // Force-delete a local branch (used after its worktree is removed).
+  ipcMain.handle('git:delete-branch', (_e, { dir, branch }) => runGit(dir, ['branch', '-D', branch]));
+
+  // Current branch for a worktree (reads .git/HEAD). Lets the sidebar refresh a
+  // stale label after the user switches branch inside the worktree's terminal.
+  ipcMain.handle('git:branch', (_e, cwd) => gitBranch(cwd));
+
+  // Open a terminal link in the user's default browser. Only http(s) — never
+  // hand arbitrary schemes (file:, javascript:) to the OS shell.
+  ipcMain.handle('open-external', (_e, url) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+  });
+
+  // Added + removed line counts for a worktree vs HEAD (staged + unstaged),
+  // shown as a "+N/-M" badge in the sidebar.
+  ipcMain.handle('git:diffstat', (_e, cwd) => {
+    return new Promise((resolve) => {
+      execFile('git', ['-C', cwd, 'diff', '--numstat', 'HEAD'], (err, stdout) => {
+        if (err) {
+          resolve({ added: 0, removed: 0 });
+          return;
+        }
+        let added = 0;
+        let removed = 0;
+        for (const line of stdout.split(/\r?\n/)) {
+          const m = line.match(/^(\d+|-)\t(\d+|-)\t/);
+          if (m) {
+            if (m[1] !== '-') added += +m[1];
+            if (m[2] !== '-') removed += +m[2];
+          }
+        }
+        resolve({ added, removed });
+      });
+    });
+  });
+}
+
+function runGit(cwd, args) {
+  return new Promise((resolve) => {
+    execFile('git', ['-C', cwd, ...args], (err, stdout, stderr) => {
+      const out = `${stdout || ''}${stderr || ''}`.trim();
+      resolve({ ok: !err, out, error: err ? out || String(err.message) : null });
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -396,6 +525,7 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  Menu.setApplicationMenu(null); // no File/Edit/View/Window/Help bar
   registerIpc();
   await startServer();
   createWindow();

@@ -28,7 +28,9 @@ export const state = {
 };
 
 export function agentsForDir(dir) {
-  return [...agents.entries()].filter(([, a]) => a.dir === dir);
+  return [...agents.entries()]
+    .filter(([, a]) => a.dir === dir)
+    .sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0));
 }
 
 export function dormantForDir(dir) {
@@ -51,6 +53,7 @@ function record(id, a) {
     customLabel: a.customLabel || null,
     sessionId: a.sessionId,
     label: a.label,
+    order: a.order ?? 0,
     lastActive: a.lastActive || Date.now(),
   };
 }

@@ -3,12 +3,19 @@
 import { els } from './dom.js';
 import { state, agentsForDir, dormantForDir } from './state.js';
 import { openMenu } from './modals.js';
-import { activate, removeAgent, renameAgent, deleteWorktree, resume, removeDormant } from './agents.js';
+import { activate, removeAgent, renameAgent, deleteWorktree, resume, removeDormant, reorderAgent } from './agents.js';
 import { newAgent } from './worktree.js';
 
 // ---------------------------------------------------------------------------
 // Projects sidebar
 // ---------------------------------------------------------------------------
+
+// GitHub-style coloured diff: green +added, red -removed. Numbers only, so
+// building the markup directly is safe.
+function fmtDiff(d) {
+  if (!d || (!d.added && !d.removed)) return '';
+  return `<span class="add">+${d.added}</span><span class="del">-${d.removed}</span>`;
+}
 
 export function renderSidebar() {
   els.list.innerHTML = '';
@@ -45,7 +52,7 @@ export function renderSidebar() {
     projectKebab.addEventListener('click', (e) => {
       e.stopPropagation();
       openMenu(projectKebab, [
-        { label: 'New agent', action: () => newAgent(p) },
+        { label: 'Open worktree', action: () => newAgent(p) },
         { label: 'Remove project', danger: true, action: () => removeProject(p.dir) },
       ]);
     });
@@ -68,25 +75,66 @@ export function renderSidebar() {
       label.textContent = a.customLabel || (a.branch ? `⎇ ${a.branch}` : a.label);
       label.title = a.cwd;
 
+      // Branch can change under us (user runs git switch in the terminal), so
+      // re-read it from git. Skip when a custom label overrides the display.
+      window.api.gitBranch(a.cwd).then((b) => {
+        if (!b || b === a.branch) return;
+        a.branch = b;
+        if (!a.customLabel) label.textContent = `⎇ ${b}`;
+      });
+
+      // Uncommitted diff size vs HEAD, e.g. "+23/-4". Show the cached value
+      // immediately, then refresh from git asynchronously.
+      const diff = document.createElement('span');
+      diff.className = 'agent-diff';
+      if (a.diffStat) diff.innerHTML = fmtDiff(a.diffStat);
+      window.api.gitDiffStat(a.cwd).then((d) => {
+        a.diffStat = d;
+        diff.innerHTML = fmtDiff(d);
+      });
+
       const rowKebab = document.createElement('button');
       rowKebab.className = 'kebab';
       rowKebab.textContent = '⋮';
-      rowKebab.title = 'Agent options';
+      rowKebab.title = 'Worktree options';
 
-      row.append(dot, label, rowKebab);
+      row.append(dot, label, diff, rowKebab);
       sub.appendChild(row);
+
+      // Drag to reorder within the project.
+      row.draggable = true;
+      row.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', id);
+        e.dataTransfer.effectAllowed = 'move';
+        row.classList.add('dragging');
+      });
+      row.addEventListener('dragend', () => row.classList.remove('dragging'));
+      row.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      });
+      row.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const dragged = e.dataTransfer.getData('text/plain');
+        if (dragged && dragged !== id) reorderAgent(dragged, id);
+      });
 
       row.addEventListener('click', (e) => {
         if (e.target === rowKebab) return;
         activate(id);
       });
+      // Double-click the label to rename (same flow as the kebab "Rename").
+      label.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        renameAgent(id);
+      });
       rowKebab.addEventListener('click', (e) => {
         e.stopPropagation();
         const items = [{ label: 'Rename', action: () => renameAgent(id) }];
         if (!a.isMain) {
-          items.push({ label: 'Remove worktree', danger: true, action: () => deleteWorktree(id) });
+          items.push({ label: 'Delete worktree', danger: true, action: () => deleteWorktree(id) });
         }
-        items.push({ label: 'Remove agent', danger: true, action: () => removeAgent(id) });
+        items.push({ label: 'Close worktree', danger: true, action: () => removeAgent(id) });
         openMenu(rowKebab, items);
       });
     }

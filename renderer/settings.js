@@ -40,6 +40,8 @@ const DEFAULT_SETTINGS = {
   cursorBlink: true,
   scrollback: 9001,
   bypass: true,
+  notifications: true,
+  sound: true,
 };
 
 function loadSettings() {
@@ -113,6 +115,8 @@ function openSettings() {
   els.setBlink.checked = settings.cursorBlink;
   els.setScrollback.value = settings.scrollback;
   els.setBypass.checked = settings.bypass;
+  els.setNotifications.checked = settings.notifications;
+  els.setSound.checked = settings.sound;
   els.overlay.hidden = false;
 }
 
@@ -154,5 +158,13 @@ els.setScrollback.addEventListener('change', () => {
 });
 els.setBypass.addEventListener('change', () => {
   settings.bypass = els.setBypass.checked;
+  saveSettings();
+});
+els.setNotifications.addEventListener('change', () => {
+  settings.notifications = els.setNotifications.checked;
+  saveSettings();
+});
+els.setSound.addEventListener('change', () => {
+  settings.sound = els.setSound.checked;
   saveSettings();
 });

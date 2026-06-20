@@ -10,7 +10,7 @@
   <body>
     <aside id="sidebar">
       <header class="bar">
-        <span class="title">Agents</span>
+        <span class="title">Worktrees</span>
         <div class="actions">
           <button id="theme-toggle" class="icon-btn" title="Toggle theme">◐</button>
           <button id="add-project" class="icon-btn" title="Add project">＋</button>
@@ -18,12 +18,31 @@
       </header>
       <ul id="project-list"></ul>
       <footer class="sidebar-footer">
+        <button id="prompts-btn" class="settings-btn" title="Insert a smart prompt into the active worktree">✦ Prompts</button>
         <button id="settings-btn" class="settings-btn">⚙ Settings</button>
       </footer>
     </aside>
 
+    <div id="sidebar-resizer" title="Drag to resize"></div>
+
     <main id="stage">
-      <div id="empty" class="empty">Select a project to launch an agent.</div>
+      <div id="empty" class="empty">Select a project to launch a worktree.</div>
+      <div id="stage-bar" hidden>
+        <span id="sb-branch" class="sb-branch"></span>
+        <div class="sb-actions">
+          <button id="sb-fetch" class="sb-btn" title="git fetch --prune">Fetch</button>
+          <button id="sb-pull" class="sb-btn" title="git pull --ff-only">Pull</button>
+          <button id="sb-find" class="sb-btn" title="Find in terminal (Ctrl+F)">Find</button>
+        </div>
+      </div>
+      <div id="term-search" hidden>
+        <input id="search-input" type="text" placeholder="Find in terminal…" />
+        <label class="search-opt" title="Match case"><input id="search-case" type="checkbox" />Aa</label>
+        <label class="search-opt" title="Regex"><input id="search-regex" type="checkbox" />.*</label>
+        <button id="search-prev" class="sb-btn" title="Previous (Shift+Enter)">▲</button>
+        <button id="search-next" class="sb-btn" title="Next (Enter)">▼</button>
+        <button id="search-close" class="sb-btn" title="Close (Esc)">✕</button>
+      </div>
       <div id="terminals"></div>
     </main>
 
@@ -67,34 +86,52 @@
         <label>Bypass permissions
           <input id="set-bypass" type="checkbox" />
         </label>
-        <p class="hint">Bypass applies to newly launched agents.</p>
+        <p class="hint">Bypass applies to newly launched worktrees.</p>
+        <label>Desktop notifications
+          <input id="set-notifications" type="checkbox" />
+        </label>
+        <label>Notification sound
+          <input id="set-sound" type="checkbox" />
+        </label>
+        <p class="hint">Alerts when a worktree needs input or finishes while unfocused.</p>
       </div>
     </div>
 
     <div id="wt-picker" class="overlay" hidden>
-      <div class="modal">
+      <div class="modal wt-modal">
         <header>
-          <span id="wt-title">New agent — choose worktree</span>
+          <span id="wt-title">Open worktree</span>
           <button id="wt-close" class="icon-btn">✕</button>
         </header>
 
-        <div class="wt-section">
-          <div class="wt-section-title">Existing worktrees</div>
-          <ul id="wt-list" class="wt-list"></ul>
+        <!-- View 1: search an existing worktree/branch to open; the search box
+             doubles as the new-branch name, enabling the Create button. -->
+        <div id="wt-view-pick" class="wt-view">
+          <input
+            id="wt-search"
+            type="text"
+            class="wt-search"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Search a branch to open, or type a new name…"
+          />
+          <ul id="wt-results" class="wt-results"></ul>
+          <button id="wt-newbtn" class="btn-primary wt-newbtn" disabled>＋ Create new branch</button>
         </div>
 
-        <div class="wt-section">
-          <div class="wt-section-title">New branch</div>
-          <div class="wt-newbranch">
-            <input id="wt-newname" type="text" placeholder="feature/my-branch" />
-            <button id="wt-create" class="btn-primary">Create</button>
-          </div>
-          <div id="wt-newname-err" class="wt-err"></div>
-        </div>
-
-        <div class="wt-section">
-          <div class="wt-section-title">From existing branch</div>
-          <ul id="wt-branches" class="wt-list"></ul>
+        <!-- View 2: choose the base ref for the new branch (reuses the list UI) -->
+        <div id="wt-view-base" class="wt-view" hidden>
+          <button id="wt-base-back" class="wt-back">← Back</button>
+          <div class="wt-substep">Base for <span id="wt-base-name" class="wt-branch"></span></div>
+          <input
+            id="wt-base-search"
+            type="text"
+            class="wt-search"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Search base branch…"
+          />
+          <ul id="wt-base-results" class="wt-results"></ul>
         </div>
       </div>
     </div>
@@ -106,6 +143,10 @@
           <button id="confirm-x" class="icon-btn">✕</button>
         </header>
         <p id="confirm-msg" class="confirm-msg"></p>
+        <label id="confirm-check-row" class="confirm-check" hidden>
+          <input id="confirm-check" type="checkbox" />
+          <span id="confirm-check-label"></span>
+        </label>
         <div class="modal-actions">
           <button id="confirm-cancel" class="btn-ghost">Cancel</button>
           <button id="confirm-ok" class="btn-primary">OK</button>
@@ -124,8 +165,29 @@
       </div>
     </div>
 
+    <div id="prompts-mgr" class="overlay" hidden>
+      <div class="modal">
+        <header>
+          <span>Manage prompts</span>
+          <button id="pm-close" class="icon-btn">✕</button>
+        </header>
+        <ul id="pm-list" class="pm-list"></ul>
+        <div id="pm-editor" class="pm-editor" hidden>
+          <input id="pm-label" type="text" placeholder="Label" />
+          <textarea id="pm-text" rows="4" placeholder="Prompt text — use {branch} / {cwd}"></textarea>
+          <div class="modal-actions">
+            <button id="pm-cancel" class="btn-ghost">Cancel</button>
+            <button id="pm-save" class="btn-primary">Save</button>
+          </div>
+        </div>
+        <button id="pm-add" class="btn-primary">✚ Add prompt</button>
+      </div>
+    </div>
+
     <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
     <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+    <script src="../node_modules/@xterm/addon-search/lib/addon-search.js"></script>
+    <script src="../node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>
     <script type="module" src="app.js"></script>
   </body>
 </html>

@@ -1,6 +1,6 @@
 'use strict';
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, clipboard } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   // projects
@@ -11,9 +11,18 @@ contextBridge.exposeInMainWorld('api', {
   // worktrees
   listWorktrees: (dir) => ipcRenderer.invoke('projects:worktrees', dir),
   listBranches: (dir) => ipcRenderer.invoke('branches:list', dir),
-  createWorktree: (dir, branch, newBranch) =>
-    ipcRenderer.invoke('worktree:create', { dir, branch, newBranch }),
+  createWorktree: (opts) => ipcRenderer.invoke('worktree:create', opts),
   removeWorktree: (dir, path, force) => ipcRenderer.invoke('worktree:remove', { dir, path, force }),
+  gitFetch: (cwd) => ipcRenderer.invoke('git:fetch', cwd),
+  gitPull: (cwd) => ipcRenderer.invoke('git:pull', cwd),
+  gitDiffStat: (cwd) => ipcRenderer.invoke('git:diffstat', cwd),
+  gitBranch: (cwd) => ipcRenderer.invoke('git:branch', cwd),
+  gitDeleteBranch: (dir, branch) => ipcRenderer.invoke('git:delete-branch', { dir, branch }),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+
+  // clipboard
+  readClipboard: () => clipboard.readText(),
+  writeClipboard: (text) => clipboard.writeText(text),
 
   // agents
   spawn: (id, cwd, opts) => ipcRenderer.invoke('agent:spawn', { id, cwd, opts }),

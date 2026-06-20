@@ -10,6 +10,9 @@
   --busy: #e0a458;
   --idle: #5a5a62;
   --needs-input: #e06a5e;
+  --rate-limited: #a78bfa;
+  --unseen: #5aa3e0;
+  --error: #e0574e;
   --dead: #3a3a40;
   --ok: #5cc98c;
 }
@@ -24,6 +27,9 @@
   --busy: #c2790a;
   --idle: #a1a1aa;
   --needs-input: #dc4438;
+  --rate-limited: #7c3aed;
+  --unseen: #2b7fd0;
+  --error: #d63b30;
   --dead: #d4d4d8;
   --ok: #16a34a;
 }
@@ -56,7 +62,7 @@ body {
 
 body {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: var(--sidebar-w, 240px) 1fr;
   height: 100vh;
   font-family: var(--ui);
   color: var(--fg);
@@ -71,6 +77,46 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* draggable splitter sitting on the sidebar's right edge */
+#sidebar-resizer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: var(--sidebar-w, 240px);
+  width: 6px;
+  margin-left: -3px;
+  cursor: col-resize;
+  z-index: 20;
+}
+
+#sidebar-resizer:hover,
+body.resizing #sidebar-resizer {
+  background: var(--accent);
+  opacity: 0.6;
+}
+
+body.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.resizing #terminals {
+  pointer-events: none;
+}
+
+.confirm-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: var(--space);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.confirm-check[hidden] {
+  display: none;
 }
 
 .bar {
@@ -306,6 +352,21 @@ body {
   background: var(--needs-input);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--needs-input) 25%, transparent);
 }
+.dot.rate-limited {
+  background: var(--rate-limited);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rate-limited) 25%, transparent);
+}
+.dot.done {
+  background: var(--ok);
+}
+.dot.unseen {
+  background: var(--unseen);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--unseen) 30%, transparent);
+}
+.dot.error {
+  background: var(--error);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--error) 25%, transparent);
+}
 .dot.dead {
   background: var(--dead);
 }
@@ -348,12 +409,164 @@ body {
    not account for padding on the element it mounts into, which would make it
    compute too many rows and clip the bottom line. */
 #terminals {
+  top: 32px; /* leave room for the stage toolbar */
   background: #0c0c0c; /* Campbell bg, fills the gutter */
 }
 
 .term {
   display: none;
   inset: 0 0 15px; /* black gutter below the terminal (FitAddon-safe) */
+}
+
+/* ---- stage toolbar (active agent: branch + git + find) ---- */
+#stage-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space);
+  padding: 0 var(--space);
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  z-index: 4;
+}
+
+#stage-bar[hidden] {
+  display: none;
+}
+
+.sb-branch {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-actions {
+  display: flex;
+  gap: calc(var(--space) / 2);
+  flex: none;
+}
+
+.sb-btn {
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--elevated);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sb-btn:hover:not(:disabled) {
+  background: var(--border);
+}
+
+.sb-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---- find in terminal ---- */
+#term-search {
+  position: absolute;
+  top: 40px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space) / 2);
+  padding: 6px;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  z-index: 6;
+}
+
+#term-search[hidden] {
+  display: none;
+}
+
+#search-input {
+  width: 200px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+
+.search-opt {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+/* dragging an agent row to reorder */
+.agent.dragging {
+  opacity: 0.4;
+}
+
+/* ---- manage prompts ---- */
+.menu button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pm-list {
+  list-style: none;
+  margin: 0 0 var(--space);
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.pm-row {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space) / 2);
+  padding: 4px 0;
+}
+
+.pm-rowlabel {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-empty {
+  color: var(--muted);
+  padding: var(--space) 0;
+}
+
+.pm-editor {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) / 2);
+  margin-bottom: var(--space);
+}
+
+.pm-editor input,
+.pm-editor textarea {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+  resize: vertical;
 }
 
 /* ---- settings modal ---- */
@@ -565,6 +778,186 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.wt-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wt-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 0 5px;
+  border-radius: 8px;
+  line-height: 16px;
+}
+.wt-badge.dirty {
+  background: color-mix(in srgb, var(--busy) 22%, transparent);
+  color: var(--busy);
+}
+.wt-badge.ahead {
+  background: color-mix(in srgb, var(--ok) 22%, transparent);
+  color: var(--ok);
+}
+.wt-badge.behind {
+  background: color-mix(in srgb, var(--needs-input) 22%, transparent);
+  color: var(--needs-input);
+}
+
+.wt-base-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.wt-base-label select {
+  max-width: 160px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+}
+
+/* uncommitted diff size next to an agent in the sidebar (GitHub-style colours) */
+.agent-diff {
+  flex: none;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  display: inline-flex;
+  gap: 3px;
+}
+.agent-diff .add {
+  color: var(--ok);
+}
+.agent-diff .del {
+  color: var(--needs-input);
+}
+
+/* New Agent quick-pick dialog */
+.wt-modal {
+  width: 560px;
+  max-width: 92vw;
+  height: 70vh;
+  max-height: 640px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.wt-search {
+  flex: none;
+  width: 100%;
+  margin: var(--space) 0;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+}
+
+.wt-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.wt-results {
+  flex: 1;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wt-group {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 4px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--elevated);
+}
+
+/* views inside the dialog (only one visible at a time) */
+.wt-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.wt-view[hidden] {
+  display: none;
+}
+
+.wt-newbtn {
+  flex: none;
+  width: 100%;
+  margin-top: var(--space);
+}
+
+.wt-back {
+  align-self: flex-start;
+  margin-top: var(--space);
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.wt-back:hover {
+  color: var(--fg);
+}
+
+.wt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: var(--space);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.wt-field input {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+}
+
+.wt-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.wt-substep {
+  margin: var(--space) 0 6px;
+  color: var(--muted);
+}
+
+.wt-view .modal-actions {
+  margin-top: auto;
 }
 
 .term.active {

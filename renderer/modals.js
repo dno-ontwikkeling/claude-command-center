@@ -15,15 +15,22 @@ export function openMenu(anchor, items) {
     const b = document.createElement('button');
     b.textContent = it.label;
     if (it.danger) b.classList.add('danger');
-    b.addEventListener('click', () => {
-      closeMenu();
-      it.action();
-    });
+    if (it.disabled) {
+      b.disabled = true;
+    } else {
+      b.addEventListener('click', () => {
+        closeMenu();
+        it.action();
+      });
+    }
     menu.appendChild(b);
   }
   document.body.appendChild(menu);
   const r = anchor.getBoundingClientRect();
-  menu.style.top = `${r.bottom + 4}px`;
+  // Flip above the anchor when there isn't room below (e.g. footer buttons).
+  const below = r.bottom + 4;
+  const top = below + menu.offsetHeight > window.innerHeight - 8 ? r.top - menu.offsetHeight - 4 : below;
+  menu.style.top = `${Math.max(8, top)}px`;
   menu.style.left = `${Math.min(r.left, window.innerWidth - menu.offsetWidth - 8)}px`;
 }
 
@@ -63,7 +70,8 @@ export function promptText(title, placeholder = '') {
   });
 }
 
-// title, message, { okLabel, danger, alert } -> Promise<boolean>
+// title, message, { okLabel, danger, alert, checkbox } -> Promise<boolean>
+// When `checkbox` (a label string) is given, resolves { ok, checked } instead.
 export function confirmDialog(title, message, opts = {}) {
   return new Promise((resolve) => {
     els.confirmTitle.textContent = title;
@@ -71,6 +79,14 @@ export function confirmDialog(title, message, opts = {}) {
     els.confirmOk.textContent = opts.okLabel || 'OK';
     els.confirmOk.classList.toggle('danger', !!opts.danger);
     els.confirmCancel.style.display = opts.alert ? 'none' : '';
+
+    const hasCheck = !!opts.checkbox;
+    els.confirmCheckRow.hidden = !hasCheck;
+    if (hasCheck) {
+      els.confirmCheckLabel.textContent = opts.checkbox;
+      els.confirmCheck.checked = false;
+    }
+
     els.confirmOverlay.hidden = false;
     els.confirmOk.focus();
 
@@ -80,7 +96,7 @@ export function confirmDialog(title, message, opts = {}) {
       els.confirmCancel.onclick = null;
       els.confirmX.onclick = null;
       document.onkeydown = null;
-      resolve(val);
+      resolve(hasCheck ? { ok: val, checked: els.confirmCheck.checked } : val);
     };
     els.confirmOk.onclick = () => done(true);
     els.confirmCancel.onclick = () => done(false);
