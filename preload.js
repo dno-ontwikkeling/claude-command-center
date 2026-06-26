@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('api', {
   listProjects: () => ipcRenderer.invoke('projects:list'),
   addProject: () => ipcRenderer.invoke('projects:add'),
   removeProject: (dir) => ipcRenderer.invoke('projects:remove', dir),
+  reorderProjects: (dirs) => ipcRenderer.invoke('projects:reorder', dirs),
 
   // worktrees
   listWorktrees: (dir) => ipcRenderer.invoke('projects:worktrees', dir),
@@ -19,6 +20,8 @@ contextBridge.exposeInMainWorld('api', {
   gitBranch: (cwd) => ipcRenderer.invoke('git:branch', cwd),
   gitDeleteBranch: (dir, branch) => ipcRenderer.invoke('git:delete-branch', { dir, branch }),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  openInVS: (cwd) => ipcRenderer.invoke('vs:open', cwd),
+  openInExplorer: (cwd) => ipcRenderer.invoke('explorer:open', cwd),
 
   // clipboard
   readClipboard: () => clipboard.readText(),

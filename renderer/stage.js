@@ -28,12 +28,13 @@ async function runGit(action, label) {
   const a = state.activeId && agents.get(state.activeId);
   if (!a) return;
   const btn = action === 'fetch' ? els.sbFetch : els.sbPull;
+  const lbl = btn.querySelector('.sb-label');
   btn.disabled = true;
-  btn.textContent = `${label}…`;
+  lbl.textContent = `${label}…`;
   const res = action === 'fetch'
     ? await window.api.gitFetch(a.cwd)
     : await window.api.gitPull(a.cwd);
-  btn.textContent = label;
+  lbl.textContent = label;
   btn.disabled = false;
   if (!res.ok) {
     await confirmDialog(`${label} failed`, res.error || 'git reported an error.', { alert: true });
@@ -42,6 +43,18 @@ async function runGit(action, label) {
   }
 }
 
+// Open the active agent's worktree in an external tool; surface failures.
+async function openActive(invoke, label) {
+  const a = state.activeId && agents.get(state.activeId);
+  if (!a) return;
+  const res = await invoke(a.cwd);
+  if (res && res.error) await confirmDialog(`${label} failed`, res.error, { alert: true });
+}
+
+els.sbVs.addEventListener('click', () => openActive(window.api.openInVS, 'Open in Visual Studio'));
+els.sbExplorer.addEventListener('click', () =>
+  openActive(window.api.openInExplorer, 'Open in Explorer')
+);
 els.sbFetch.addEventListener('click', () => runGit('fetch', 'Fetch'));
 els.sbPull.addEventListener('click', () => runGit('pull', 'Pull'));
 els.sbFind.addEventListener('click', () => openSearch());

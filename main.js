@@ -88,6 +88,68 @@ function isGitRepo(dir) {
   return gitBranch(dir) !== null;
 }
 
+// ---------------------------------------------------------------------------
+// Project type detection (for the sidebar icon) — cheap, one readdir per call
+// ---------------------------------------------------------------------------
+
+// Directories never worth scanning for project markers — heavy and/or noise.
+const PTYPE_SKIP_DIRS = new Set([
+  'node_modules',
+  '.git',
+  '.vs',
+  '.idea',
+  '.vscode',
+  'bin',
+  'obj',
+  'dist',
+  'build',
+  'out',
+  'target',
+  'vendor',
+  '.next',
+  '.nuxt',
+]);
+
+// Walk up to `maxDepth` levels collecting which language markers exist, then
+// pick a type by priority. Recursive so a .sln (or any marker) in a subfolder
+// is still found, but depth-limited and skips heavy dirs to stay cheap.
+function detectProjectType(dir, maxDepth = 3) {
+  const found = { dotnet: false, node: false, go: false, rust: false, python: false };
+
+  const scan = (d, depth) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(d, { withFileTypes: true });
+    } catch {
+      return; // unreadable dir
+    }
+    for (const e of entries) {
+      if (e.isFile()) {
+        const n = e.name.toLowerCase();
+        if (n.endsWith('.sln') || n.endsWith('.csproj') || n.endsWith('.fsproj')) found.dotnet = true;
+        else if (n === 'package.json') found.node = true;
+        else if (n === 'go.mod') found.go = true;
+        else if (n === 'cargo.toml') found.rust = true;
+        else if (n === 'pyproject.toml' || n === 'requirements.txt' || n === 'setup.py' || n === 'pipfile')
+          found.python = true;
+      } else if (e.isDirectory() && depth < maxDepth && !PTYPE_SKIP_DIRS.has(e.name)) {
+        scan(path.join(d, e.name), depth + 1);
+      }
+    }
+  };
+
+  scan(dir, 0);
+  // Priority: a .NET solution outranks an incidental package.json (tooling).
+  return (
+    (found.dotnet && 'dotnet') ||
+    (found.node && 'node') ||
+    (found.go && 'go') ||
+    (found.rust && 'rust') ||
+    (found.python && 'python') ||
+    null
+  );
+}
+
 // Per-worktree git state: dirty file count and ahead/behind vs upstream.
 function worktreeStatus(wtPath) {
   return new Promise((resolve) => {
@@ -334,9 +396,21 @@ async function rmDirRetry(target) {
 // ---------------------------------------------------------------------------
 
 function registerIpc() {
-  ipcMain.handle('projects:list', () =>
-    loadProjects().map((p) => ({ ...p, isGit: isGitRepo(p.dir) }))
-  );
+  const enrich = (p) => ({ ...p, isGit: isGitRepo(p.dir), type: detectProjectType(p.dir) });
+
+  ipcMain.handle('projects:list', () => loadProjects().map(enrich));
+
+  // Persist a new project order (array of dirs from the sidebar drag-reorder).
+  // Any project missing from the list is appended, so a stale list never drops
+  // a project.
+  ipcMain.handle('projects:reorder', (_e, dirs) => {
+    const projects = loadProjects();
+    const byDir = new Map(projects.map((p) => [p.dir, p]));
+    const ordered = dirs.map((d) => byDir.get(d)).filter(Boolean);
+    for (const p of projects) if (!dirs.includes(p.dir)) ordered.push(p);
+    saveProjects(ordered);
+    return ordered.map(enrich);
+  });
 
   ipcMain.handle('projects:add', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
@@ -473,6 +547,16 @@ function registerIpc() {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
   });
 
+  // Open a worktree in Visual Studio. Prefers a top-level .sln; otherwise opens
+  // the folder ("Open Folder" mode). Returns an error string the UI can surface.
+  ipcMain.handle('vs:open', (_e, cwd) => openInVisualStudio(cwd));
+
+  // Reveal a worktree in the OS file manager (Explorer / Finder / Files).
+  ipcMain.handle('explorer:open', async (_e, cwd) => {
+    const err = await shell.openPath(cwd); // returns '' on success
+    return err ? { error: err } : { ok: true };
+  });
+
   // Added + removed line counts for a worktree vs HEAD (staged + unstaged),
   // shown as a "+N/-M" badge in the sidebar.
   ipcMain.handle('git:diffstat', (_e, cwd) => {
@@ -494,6 +578,55 @@ function registerIpc() {
         resolve({ added, removed });
       });
     });
+  });
+}
+
+// Locate devenv.exe via vswhere (ships with every VS 2017+ installer). Returns
+// null when neither vswhere nor a VS install is present.
+function resolveDevenv() {
+  return new Promise((resolve) => {
+    const pf = process.env['ProgramFiles(x86)'] || process.env.ProgramFiles || 'C:\\Program Files (x86)';
+    const vswhere = path.join(pf, 'Microsoft Visual Studio', 'Installer', 'vswhere.exe');
+    if (!fs.existsSync(vswhere)) {
+      resolve(null);
+      return;
+    }
+    execFile(
+      vswhere,
+      ['-latest', '-prerelease', '-property', 'productPath'],
+      (err, stdout) => {
+        const p = (stdout || '').trim();
+        resolve(!err && p && fs.existsSync(p) ? p : null);
+      }
+    );
+  });
+}
+
+// Open a worktree in Visual Studio. Prefer a top-level .sln (single match opens
+// directly; multiple -> open the folder so the user picks). Windows only.
+async function openInVisualStudio(cwd) {
+  if (process.platform !== 'win32') {
+    return { error: 'Visual Studio is only available on Windows.' };
+  }
+  const devenv = await resolveDevenv();
+  if (!devenv) {
+    return { error: 'Visual Studio not found (vswhere reported no install).' };
+  }
+  let target = cwd;
+  try {
+    const slns = fs.readdirSync(cwd).filter((f) => f.toLowerCase().endsWith('.sln'));
+    if (slns.length === 1) target = path.join(cwd, slns[0]);
+  } catch {
+    /* unreadable dir — fall back to opening cwd */
+  }
+  return new Promise((resolve) => {
+    // detached so VS outlives this app; unref so we don't hold the child.
+    const child = execFile(devenv, [target], (err) => {
+      if (err) resolve({ error: String(err.message || err).trim() });
+    });
+    child.on('spawn', () => resolve({ ok: true }));
+    child.on('error', (err) => resolve({ error: String(err.message || err).trim() }));
+    child.unref();
   });
 }
 

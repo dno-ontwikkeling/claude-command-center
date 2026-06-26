@@ -17,6 +17,38 @@ function fmtDiff(d) {
   return `<span class="add">+${d.added}</span><span class="del">-${d.removed}</span>`;
 }
 
+// Short badge per detected project type (see detectProjectType in main.js).
+const PTYPE_LABEL = { node: 'JS', dotnet: '.NET', go: 'GO', rust: 'RS', python: 'PY' };
+
+// Collapsed projects (by dir) — persisted so the tree state survives a restart.
+const COLLAPSED_KEY = 'collapsedProjects';
+const collapsed = new Set(
+  (() => {
+    try {
+      return JSON.parse(localStorage.getItem(COLLAPSED_KEY)) || [];
+    } catch {
+      return [];
+    }
+  })()
+);
+
+function toggleCollapse(dir) {
+  if (collapsed.has(dir)) collapsed.delete(dir);
+  else collapsed.add(dir);
+  localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed]));
+  renderSidebar();
+}
+
+// Move a project before `targetDir` and persist the new order.
+async function reorderProject(draggedDir, targetDir) {
+  const dirs = state.projectsData.map((p) => p.dir).filter((d) => d !== draggedDir);
+  const at = dirs.indexOf(targetDir);
+  if (at < 0) return;
+  dirs.splice(at, 0, draggedDir);
+  state.projectsData = await window.api.reorderProjects(dirs);
+  renderSidebar();
+}
+
 export function renderSidebar() {
   els.list.innerHTML = '';
 
@@ -24,10 +56,19 @@ export function renderSidebar() {
     const item = document.createElement('li');
     item.className = 'project-item';
 
+    const isCollapsed = collapsed.has(p.dir);
+    if (isCollapsed) item.classList.add('collapsed');
+
     // ---- project header ----
     const header = document.createElement('div');
     header.className = 'project';
     header.dataset.dir = p.dir;
+
+    // Disclosure triangle: toggles the agent rows under this project.
+    const chevron = document.createElement('span');
+    chevron.className = 'chevron';
+    chevron.textContent = isCollapsed ? '▸' : '▾';
+    chevron.title = isCollapsed ? 'Expand' : 'Collapse';
 
     const name = document.createElement('span');
     name.className = 'name';
@@ -39,8 +80,54 @@ export function renderSidebar() {
     projectKebab.textContent = '⋮';
     projectKebab.title = 'Project options';
 
-    header.append(name, projectKebab);
+    const before = [chevron];
+    if (p.type) {
+      const icon = document.createElement('span');
+      icon.className = `ptype ptype-${p.type}`;
+      icon.textContent = PTYPE_LABEL[p.type] || '';
+      icon.title = p.type;
+      before.push(icon);
+    }
+    header.append(...before, name);
+
+    // When collapsed, show how many rows are hidden so the project isn't blank.
+    const hiddenCount = agentsForDir(p.dir).length + dormantForDir(p.dir).length;
+    if (isCollapsed && hiddenCount) {
+      const count = document.createElement('span');
+      count.className = 'collapse-count';
+      count.textContent = String(hiddenCount);
+      count.title = `${hiddenCount} hidden`;
+      header.append(count);
+    }
+    header.append(projectKebab);
     item.appendChild(header);
+
+    chevron.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleCollapse(p.dir);
+    });
+
+    // Drag the header to reorder projects. A distinct dataTransfer type keeps
+    // this separate from agent-row reordering (which uses text/plain).
+    header.draggable = true;
+    header.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('application/x-cc-project', p.dir);
+      e.dataTransfer.effectAllowed = 'move';
+      item.classList.add('dragging');
+      e.stopPropagation();
+    });
+    header.addEventListener('dragend', () => item.classList.remove('dragging'));
+    item.addEventListener('dragover', (e) => {
+      if (![...e.dataTransfer.types].includes('application/x-cc-project')) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    });
+    item.addEventListener('drop', (e) => {
+      const dragged = e.dataTransfer.getData('application/x-cc-project');
+      if (!dragged || dragged === p.dir) return;
+      e.preventDefault();
+      reorderProject(dragged, p.dir);
+    });
 
     header.addEventListener('click', (e) => {
       if (e.target === projectKebab) return;

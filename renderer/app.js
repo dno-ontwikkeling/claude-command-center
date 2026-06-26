@@ -37,6 +37,23 @@ const SIDEBAR_KEY = 'sidebarWidth';
 const savedWidth = Number(localStorage.getItem(SIDEBAR_KEY));
 if (savedWidth) root.style.setProperty('--sidebar-w', `${savedWidth}px`);
 
+// ---------------------------------------------------------------------------
+// Compact mode — renderer-only density class, persisted
+// ---------------------------------------------------------------------------
+
+const COMPACT_KEY = 'compact';
+function applyCompact(on) {
+  document.body.classList.toggle('compact', on);
+  els.compactBtn.classList.toggle('active', on);
+  localStorage.setItem(COMPACT_KEY, on ? '1' : '');
+  // Row heights/padding changed — refit terminals to the new metrics.
+  for (const a of agents.values()) a.refit();
+}
+applyCompact(localStorage.getItem(COMPACT_KEY) === '1');
+els.compactBtn.addEventListener('click', () =>
+  applyCompact(!document.body.classList.contains('compact'))
+);
+
 let resizing = false;
 els.sidebarResizer.addEventListener('mousedown', (e) => {
   resizing = true;
