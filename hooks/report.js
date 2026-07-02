@@ -26,6 +26,10 @@ process.stdin.on('end', () => {
     agentId,
     status,
     event: parsed.hook_event_name || null,
+    // Notification payloads carry a message distinguishing a permission block
+    // ("...needs your permission...") from a benign idle "waiting for your
+    // input" nudge — the renderer uses it to avoid pinning a red state.
+    message: parsed.message || null,
     cwd: parsed.cwd || null,
     sessionId: parsed.session_id || null,
   });

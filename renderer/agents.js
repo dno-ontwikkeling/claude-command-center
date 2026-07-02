@@ -338,6 +338,19 @@ function setStatus(id, status) {
   if (a.dotEl) a.dotEl.className = `dot ${status}`;
 }
 
+// Manual override from the sidebar menu. A one-shot reset: clears the flags
+// that pin auto-states (awaitingInput/rateResetAt) and the idle timer, then
+// sets the dot. Not a permanent lock — real terminal activity or the next hook
+// resumes automatic control, which is what you want after nudging a stuck dot.
+export function forceStatus(id, status) {
+  const a = agents.get(id);
+  if (!a) return;
+  a.awaitingInput = status === 'needs-input';
+  a.rateResetAt = null;
+  clearTimeout(a.idleTimer);
+  setStatus(id, status);
+}
+
 const IDLE_AFTER_MS = 1200;
 // Window after a scroll/mouse event during which repaint output is ignored.
 const MOUSE_QUIET_MS = 400;
@@ -466,7 +479,7 @@ window.api.onExit(({ id, exitCode, error }) => {
 // busy/idle are driven by terminal activity above. The session id also arrives
 // here (from the hook payload) — capture it, and mark the agent "used" once a
 // prompt has been submitted (only then does Claude persist the transcript).
-window.api.onEvent(({ agentId, status, sessionId, event }) => {
+window.api.onEvent(({ agentId, status, sessionId, event, message }) => {
   const a = agents.get(agentId);
   if (!a) return;
   if (sessionId && a.sessionId !== sessionId) a.sessionId = sessionId;
@@ -484,10 +497,25 @@ window.api.onEvent(({ agentId, status, sessionId, event }) => {
     setStatus(agentId, 'busy');
     markActivity(agentId);
   } else if (status === 'needs-input') {
-    a.awaitingInput = true;
-    clearTimeout(a.idleTimer);
-    setStatus(agentId, 'needs-input');
-    notify(a, 'needs-input');
+    // Claude fires Notification for two very different situations: a genuine
+    // block (a permission prompt — "…needs your permission to use…") and a
+    // benign "waiting for your input" nudge that arrives after a turn already
+    // ended via Stop. Only the former is a sticky red blocked state; the latter
+    // must not pin the dot red forever, so treat it as idle. Missing message =
+    // assume blocking (safe default for older Claude builds).
+    const blocking = !message || /permission/i.test(message);
+    if (blocking) {
+      a.awaitingInput = true;
+      clearTimeout(a.idleTimer);
+      setStatus(agentId, 'needs-input');
+      notify(a, 'needs-input');
+    } else {
+      // Idle nudge: the turn is over, nothing is blocked. Don't override a
+      // settled done/unseen; only demote a lingering busy/needs-input.
+      a.awaitingInput = false;
+      clearTimeout(a.idleTimer);
+      if (a.status === 'busy' || a.status === 'needs-input') setStatus(agentId, 'idle');
+    }
   } else if (status === 'idle') {
     // Stop hook: Claude finished a turn. "done" if you're watching it, "unseen"
     // (attention-grabbing) if it wrapped up on a tab you weren't looking at.

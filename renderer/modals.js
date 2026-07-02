@@ -7,6 +7,9 @@ import { els } from './dom.js';
 // ---------------------------------------------------------------------------
 
 export function openMenu(anchor, items) {
+  // Read the anchor rect before closeMenu — a submenu re-anchors to the same
+  // (persistent) kebab button, but capturing first is cheap insurance.
+  const r0 = anchor.getBoundingClientRect();
   closeMenu();
   const menu = document.createElement('div');
   menu.className = 'menu';
@@ -17,6 +20,12 @@ export function openMenu(anchor, items) {
     if (it.danger) b.classList.add('danger');
     if (it.disabled) {
       b.disabled = true;
+    } else if (it.submenu) {
+      // Nested menu: reopen anchored to the original kebab (still in the DOM).
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openMenu(anchor, it.submenu);
+      });
     } else {
       b.addEventListener('click', () => {
         closeMenu();
@@ -26,7 +35,7 @@ export function openMenu(anchor, items) {
     menu.appendChild(b);
   }
   document.body.appendChild(menu);
-  const r = anchor.getBoundingClientRect();
+  const r = r0;
   // Flip above the anchor when there isn't room below (e.g. footer buttons).
   const below = r.bottom + 4;
   const top = below + menu.offsetHeight > window.innerHeight - 8 ? r.top - menu.offsetHeight - 4 : below;

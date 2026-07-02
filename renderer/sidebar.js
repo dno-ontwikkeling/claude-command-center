@@ -3,7 +3,7 @@
 import { els } from './dom.js';
 import { state, agentsForDir, dormantForDir } from './state.js';
 import { openMenu } from './modals.js';
-import { activate, removeAgent, renameAgent, deleteWorktree, resume, removeDormant, reorderAgent } from './agents.js';
+import { activate, removeAgent, renameAgent, deleteWorktree, resume, removeDormant, reorderAgent, forceStatus } from './agents.js';
 import { newAgent } from './worktree.js';
 
 // ---------------------------------------------------------------------------
@@ -217,7 +217,18 @@ export function renderSidebar() {
       });
       rowKebab.addEventListener('click', (e) => {
         e.stopPropagation();
-        const items = [{ label: 'Rename', action: () => renameAgent(id) }];
+        const items = [
+          { label: 'Rename', action: () => renameAgent(id) },
+          {
+            label: 'Set status ▸',
+            submenu: [
+              { label: 'Idle', action: () => forceStatus(id, 'idle') },
+              { label: 'Busy', action: () => forceStatus(id, 'busy') },
+              { label: 'Needs input', action: () => forceStatus(id, 'needs-input') },
+              { label: 'Done', action: () => forceStatus(id, 'done') },
+            ],
+          },
+        ];
         if (!a.isMain) {
           items.push({ label: 'Delete worktree', danger: true, action: () => deleteWorktree(id) });
         }
