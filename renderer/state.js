@@ -24,6 +24,8 @@ export const dormant = new Map();
 export const state = {
   /** cached project list [{ dir, name, isGit }] */
   projectsData: [],
+  /** cached workspace list [{ dir, name, isGit, type }] — scratch folders */
+  workspacesData: [],
   activeId: null,
 };
 

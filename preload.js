@@ -9,6 +9,12 @@ contextBridge.exposeInMainWorld('api', {
   removeProject: (dir) => ipcRenderer.invoke('projects:remove', dir),
   reorderProjects: (dirs) => ipcRenderer.invoke('projects:reorder', dirs),
 
+  // workspaces (scratch folders, no git)
+  listWorkspaces: () => ipcRenderer.invoke('workspaces:list'),
+  createWorkspace: (name) => ipcRenderer.invoke('workspaces:create', name),
+  removeWorkspace: (dir) => ipcRenderer.invoke('workspaces:remove', dir),
+  reorderWorkspaces: (dirs) => ipcRenderer.invoke('workspaces:reorder', dirs),
+
   // worktrees
   listWorktrees: (dir) => ipcRenderer.invoke('projects:worktrees', dir),
   listBranches: (dir) => ipcRenderer.invoke('branches:list', dir),

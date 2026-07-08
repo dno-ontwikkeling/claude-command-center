@@ -27,6 +27,9 @@ function sendToRenderer(channel, payload) {
 }
 
 const PROJECTS_FILE = path.join(app.getPath('userData'), 'projects.json');
+// Workspaces: plain scratch folders (no git / worktree machinery). Launch an
+// agent straight in the folder. Kept in their own store + sidebar section.
+const WORKSPACES_FILE = path.join(app.getPath('userData'), 'workspaces.json');
 // In a packaged build the hook script is unpacked from the asar so `node` can
 // actually execute it (you cannot run a file from inside the virtual asar).
 const REPORT_SCRIPT = path
@@ -58,6 +61,19 @@ function loadProjects() {
 function saveProjects(projects) {
   fs.mkdirSync(path.dirname(PROJECTS_FILE), { recursive: true });
   fs.writeFileSync(PROJECTS_FILE, JSON.stringify(projects, null, 2));
+}
+
+function loadWorkspaces() {
+  try {
+    return JSON.parse(fs.readFileSync(WORKSPACES_FILE, 'utf8'));
+  } catch {
+    return [];
+  }
+}
+
+function saveWorkspaces(workspaces) {
+  fs.mkdirSync(path.dirname(WORKSPACES_FILE), { recursive: true });
+  fs.writeFileSync(WORKSPACES_FILE, JSON.stringify(workspaces, null, 2));
 }
 
 // ---------------------------------------------------------------------------
@@ -430,6 +446,47 @@ function registerIpc() {
     const projects = loadProjects().filter((p) => p.dir !== dir);
     saveProjects(projects);
     return projects;
+  });
+
+  // -- Workspaces: scratch folders, no git required --------------------------
+
+  ipcMain.handle('workspaces:list', () => loadWorkspaces().map(enrich));
+
+  // Create a workspace: ask where (parent folder picker), make `parent/name`,
+  // register it. Returns the enriched record, or { canceled }/{ error }.
+  ipcMain.handle('workspaces:create', async (_e, name) => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory', 'createDirectory'],
+      title: `Choose parent folder for workspace "${name}"`,
+    });
+    if (canceled || !filePaths[0]) return { canceled: true };
+    const dir = path.join(filePaths[0], name.replace(/[/\\]/g, '-'));
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch (err) {
+      return { error: String(err.message || err).trim() };
+    }
+    const list = loadWorkspaces();
+    if (!list.some((w) => w.dir === dir)) {
+      list.push({ dir, name });
+      saveWorkspaces(list);
+    }
+    return enrich({ dir, name });
+  });
+
+  ipcMain.handle('workspaces:remove', (_e, dir) => {
+    const list = loadWorkspaces().filter((w) => w.dir !== dir);
+    saveWorkspaces(list);
+    return list.map(enrich);
+  });
+
+  ipcMain.handle('workspaces:reorder', (_e, dirs) => {
+    const list = loadWorkspaces();
+    const byDir = new Map(list.map((w) => [w.dir, w]));
+    const ordered = dirs.map((d) => byDir.get(d)).filter(Boolean);
+    for (const w of list) if (!dirs.includes(w.dir)) ordered.push(w);
+    saveWorkspaces(ordered);
+    return ordered.map(enrich);
   });
 
   ipcMain.handle('projects:worktrees', (_e, dir) => listWorktrees(dir));

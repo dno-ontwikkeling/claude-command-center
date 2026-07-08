@@ -154,12 +154,36 @@ body.resizing #terminals {
   color: var(--fg);
 }
 
-#project-list {
+/* scroll container holding the Projects + Workspaces sections */
+#lists {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+#project-list,
+#workspace-list {
   list-style: none;
   margin: 0;
   padding: calc(var(--space) / 2);
-  overflow-y: auto;
-  flex: 1;
+}
+
+/* sub-header above each section (Projects / Workspaces) */
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(var(--space)) calc(var(--space) * 1.5) calc(var(--space) / 2);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+body.compact .section-head {
+  padding: calc(var(--space) / 2) var(--space);
 }
 
 .sidebar-footer {

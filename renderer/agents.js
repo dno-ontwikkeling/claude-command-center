@@ -24,7 +24,7 @@ export function spawn(dir, cwd, branch, isMain, restore = null) {
     id = `a${Date.now()}${Math.floor(Math.random() * 1000)}`;
     const seq = (agentSeq.get(dir) || 0) + 1;
     agentSeq.set(dir, seq);
-    label = `Worktree ${seq}`;
+    label = `Session ${seq}`;
   }
 
   const el = document.createElement('div');

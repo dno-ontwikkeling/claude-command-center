@@ -5,9 +5,11 @@
 
 export const els = {
   list: document.getElementById('project-list'),
+  wsList: document.getElementById('workspace-list'),
   terminals: document.getElementById('terminals'),
   empty: document.getElementById('empty'),
   addBtn: document.getElementById('add-project'),
+  addWsBtn: document.getElementById('add-workspace'),
   themeBtn: document.getElementById('theme-toggle'),
   compactBtn: document.getElementById('compact-toggle'),
   settingsBtn: document.getElementById('settings-btn'),

@@ -10,14 +10,24 @@
   <body>
     <aside id="sidebar">
       <header class="bar">
-        <span class="title">Worktrees</span>
+        <span class="title">Command Center</span>
         <div class="actions">
           <button id="compact-toggle" class="icon-btn" title="Compact mode">⊟</button>
           <button id="theme-toggle" class="icon-btn" title="Toggle theme">◐</button>
-          <button id="add-project" class="icon-btn" title="Add project">＋</button>
         </div>
       </header>
-      <ul id="project-list"></ul>
+      <div id="lists">
+        <div class="section-head">
+          <span class="section-title">Projects</span>
+          <button id="add-project" class="icon-btn" title="Add project">＋</button>
+        </div>
+        <ul id="project-list"></ul>
+        <div class="section-head">
+          <span class="section-title">Workspaces</span>
+          <button id="add-workspace" class="icon-btn" title="New workspace">＋</button>
+        </div>
+        <ul id="workspace-list"></ul>
+      </div>
       <footer class="sidebar-footer">
         <button id="prompts-btn" class="settings-btn" title="Insert a smart prompt into the active worktree">✦ Prompts</button>
         <button id="settings-btn" class="settings-btn">⚙ Settings</button>
