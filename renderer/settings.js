@@ -2,6 +2,7 @@
 
 import { els } from './dom.js';
 import { agents } from './state.js';
+import { beep, SOUNDS } from './sound.js';
 
 // ---------------------------------------------------------------------------
 // Terminal look — mirrors the user's Windows Terminal "Claude code" profile:
@@ -42,6 +43,8 @@ const DEFAULT_SETTINGS = {
   bypass: true,
   notifications: true,
   sound: true,
+  soundType: 'beep',
+  volume: 0.5,
 };
 
 function loadSettings() {
@@ -107,6 +110,11 @@ function applyTermSettings() {
   }
 }
 
+// Populate the sound picker from the shared preset map (single source of truth).
+els.setSoundType.innerHTML = Object.entries(SOUNDS)
+  .map(([id, def]) => `<option value="${id}">${def.label}</option>`)
+  .join('');
+
 function openSettings() {
   els.setTheme.value = settings.theme;
   els.setFontSize.value = settings.fontSize;
@@ -117,6 +125,8 @@ function openSettings() {
   els.setBypass.checked = settings.bypass;
   els.setNotifications.checked = settings.notifications;
   els.setSound.checked = settings.sound;
+  els.setSoundType.value = settings.soundType;
+  els.setVolume.value = Math.round(settings.volume * 100);
   els.overlay.hidden = false;
 }
 
@@ -167,4 +177,19 @@ els.setNotifications.addEventListener('change', () => {
 els.setSound.addEventListener('change', () => {
   settings.sound = els.setSound.checked;
   saveSettings();
+});
+els.setSoundType.addEventListener('change', () => {
+  settings.soundType = els.setSoundType.value;
+  saveSettings();
+  beep('done', settings.soundType, settings.volume); // preview on change
+});
+els.setVolume.addEventListener('input', () => {
+  settings.volume = Number(els.setVolume.value) / 100;
+  saveSettings();
+});
+els.setVolume.addEventListener('change', () => {
+  beep('done', settings.soundType, settings.volume); // preview once the drag ends
+});
+els.setSoundTest.addEventListener('click', () => {
+  beep('needs-input', settings.soundType, settings.volume);
 });

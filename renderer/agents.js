@@ -8,6 +8,7 @@ import { settings, termOpts } from './settings.js';
 import { confirmDialog, promptText } from './modals.js';
 import { renderSidebar } from './sidebar.js';
 import { updateStageBar, openSearch } from './stage.js';
+import { beep } from './sound.js';
 
 // ---------------------------------------------------------------------------
 // Agents / terminals
@@ -535,26 +536,9 @@ window.api.onEvent(({ agentId, status, sessionId, event, message }) => {
 // while you're not looking. Both are opt-out via settings.
 // ---------------------------------------------------------------------------
 
-let audioCtx;
-function beep(kind) {
-  try {
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.frequency.value = kind === 'needs-input' ? 880 : 620;
-    gain.gain.value = 0.04;
-    osc.start();
-    setTimeout(() => osc.stop(), 130);
-  } catch {
-    /* audio unavailable */
-  }
-}
-
 function notify(a, kind) {
   const label = a.customLabel || (a.branch ? `⎇ ${a.branch}` : a.label);
-  if (settings.sound) beep(kind);
+  if (settings.sound) beep(kind, settings.soundType, settings.volume);
   // Don't pop an OS toast while the app is focused — the dot already shows it.
   if (settings.notifications && !document.hasFocus()) {
     const body = kind === 'needs-input' ? 'needs your input' : 'finished';
