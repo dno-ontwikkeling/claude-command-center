@@ -524,7 +524,7 @@ window.api.onEvent(({ agentId, status, sessionId, event, message }) => {
     clearTimeout(a.idleTimer);
     const watching = agentId === state.activeId && document.hasFocus();
     setStatus(agentId, watching ? 'done' : 'unseen');
-    if (!watching) notify(a, 'done');
+    if (!watching || settings.alwaysSound) notify(a, 'done');
   } else if (status === 'dead') {
     clearTimeout(a.idleTimer);
     setStatus(agentId, 'dead');

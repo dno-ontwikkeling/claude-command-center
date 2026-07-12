@@ -24,7 +24,7 @@ export function beep(kind, soundType, volume) {
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
     const def = SOUNDS[soundType] || SOUNDS.beep;
     const base = kind === 'needs-input' ? 880 : 620;
-    const vol = Math.max(0, Math.min(1, volume ?? 0.5)) * 0.3;
+    const vol = Math.max(0, Math.min(1, volume ?? 0.5)) * 1.2;
     if (vol === 0) return;
     const step = def.dur / 1000;
     def.notes.forEach((mult, i) => {

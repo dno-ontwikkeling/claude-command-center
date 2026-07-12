@@ -24,6 +24,7 @@ export const els = {
   setBypass: document.getElementById('set-bypass'),
   setNotifications: document.getElementById('set-notifications'),
   setSound: document.getElementById('set-sound'),
+  setAlwaysSound: document.getElementById('set-always-sound'),
   setSoundType: document.getElementById('set-soundtype'),
   setVolume: document.getElementById('set-volume'),
   setSoundTest: document.getElementById('set-sound-test'),

@@ -43,6 +43,7 @@ const DEFAULT_SETTINGS = {
   bypass: true,
   notifications: true,
   sound: true,
+  alwaysSound: false,
   soundType: 'beep',
   volume: 0.5,
 };
@@ -125,6 +126,7 @@ function openSettings() {
   els.setBypass.checked = settings.bypass;
   els.setNotifications.checked = settings.notifications;
   els.setSound.checked = settings.sound;
+  els.setAlwaysSound.checked = settings.alwaysSound;
   els.setSoundType.value = settings.soundType;
   els.setVolume.value = Math.round(settings.volume * 100);
   els.overlay.hidden = false;
@@ -176,6 +178,10 @@ els.setNotifications.addEventListener('change', () => {
 });
 els.setSound.addEventListener('change', () => {
   settings.sound = els.setSound.checked;
+  saveSettings();
+});
+els.setAlwaysSound.addEventListener('change', () => {
+  settings.alwaysSound = els.setAlwaysSound.checked;
   saveSettings();
 });
 els.setSoundType.addEventListener('change', () => {
