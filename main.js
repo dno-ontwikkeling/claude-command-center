@@ -253,6 +253,34 @@ function listRemoteBranches(dir) {
   });
 }
 
+// Resolve the branch a feature worktree should be diffed against. Prefers the
+// remote's default branch (origin/HEAD -> e.g. origin/main), falling back to a
+// local main / master. Returns null when none of those exist.
+function resolveDiffBase(dir) {
+  const verify = (ref) =>
+    new Promise((resolve) => {
+      execFile('git', ['-C', dir, 'rev-parse', '--verify', '--quiet', ref], (err) =>
+        resolve(!err)
+      );
+    });
+  return new Promise((resolve) => {
+    execFile('git', ['-C', dir, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], async (err, stdout) => {
+      const ref = (stdout || '').trim();
+      if (!err && ref) {
+        resolve(ref);
+        return;
+      }
+      for (const cand of ['origin/main', 'origin/master', 'main', 'master']) {
+        if (await verify(cand)) {
+          resolve(cand);
+          return;
+        }
+      }
+      resolve(null);
+    });
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Claude executable resolution
 // ---------------------------------------------------------------------------
@@ -635,6 +663,32 @@ function registerIpc() {
         resolve({ added, removed });
       });
     });
+  });
+
+  // Full unified diff for the diff viewer. `mode`:
+  //   wip    -> uncommitted working tree vs HEAD (staged + unstaged)
+  //   branch -> this branch vs its base (origin/main …), i.e. the PR-style diff
+  // Returns { ok, diff, base? } or { ok:false, error }. maxBuffer is bumped so a
+  // large diff isn't truncated into a spawn error.
+  ipcMain.handle('git:diff', async (_e, { cwd, mode }) => {
+    const run = (args) =>
+      new Promise((resolve) => {
+        execFile('git', ['-C', cwd, ...args], { maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) =>
+          resolve({ err, stdout: stdout || '', stderr: (stderr || '').trim() })
+        );
+      });
+
+    if (mode === 'branch') {
+      const base = await resolveDiffBase(cwd);
+      if (!base) return { ok: false, error: 'No base branch (origin/main, main, master…) found.' };
+      const r = await run(['diff', `${base}...HEAD`]);
+      if (r.err) return { ok: false, error: r.stderr || String(r.err.message) };
+      return { ok: true, diff: r.stdout, base };
+    }
+
+    const r = await run(['diff', 'HEAD']);
+    if (r.err) return { ok: false, error: r.stderr || String(r.err.message) };
+    return { ok: true, diff: r.stdout };
   });
 }
 

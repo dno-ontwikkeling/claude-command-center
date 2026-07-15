@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('api', {
   gitFetch: (cwd) => ipcRenderer.invoke('git:fetch', cwd),
   gitPull: (cwd) => ipcRenderer.invoke('git:pull', cwd),
   gitDiffStat: (cwd) => ipcRenderer.invoke('git:diffstat', cwd),
+  gitDiff: (cwd, mode) => ipcRenderer.invoke('git:diff', { cwd, mode }),
   gitBranch: (cwd) => ipcRenderer.invoke('git:branch', cwd),
   gitDeleteBranch: (dir, branch) => ipcRenderer.invoke('git:delete-branch', { dir, branch }),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),

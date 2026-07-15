@@ -702,7 +702,9 @@ body.compact .ptype {
   display: grid;
   place-items: center;
   background: rgba(0, 0, 0, 0.5);
-  z-index: 10;
+  /* above the sidebar resizer (z-index 20) so drags don't pass through the
+     backdrop to resize the panels behind an open dialog */
+  z-index: 30;
 }
 
 .overlay[hidden] {
@@ -1088,4 +1090,378 @@ body.compact .ptype {
 
 .term.active {
   display: block;
+}
+
+/* ---- diff viewer (GitKraken-style) ---- */
+.diff-overlay {
+  place-items: stretch;
+  padding: 3vh 3vw;
+}
+
+.diff-modal {
+  width: 100%;
+  height: 100%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.diff-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space);
+  padding: var(--space) calc(var(--space) * 1.5);
+  border-bottom: 1px solid var(--border);
+}
+
+.diff-title-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space);
+  min-width: 0;
+  flex: 1;
+}
+
+.diff-title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-sub {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* segmented toggle: working changes | branch vs base */
+.diff-toggle {
+  flex: none;
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.diff-tab {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.diff-tab:hover {
+  background: var(--elevated);
+  color: var(--fg);
+}
+
+.diff-tab.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.diff-head-actions {
+  flex: none;
+  display: flex;
+  gap: calc(var(--space) / 2);
+}
+
+.diff-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--diff-left-w, 240px) 6px 1fr;
+}
+
+/* draggable splitter between the file panel and the diff content */
+.diff-splitter {
+  cursor: col-resize;
+  background: transparent;
+}
+
+.diff-splitter:hover,
+.diff-splitter.dragging {
+  background: var(--accent);
+  opacity: 0.6;
+}
+
+/* left column: view-tab header + scrollable changed-file list */
+.diff-left {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.diff-left-head {
+  flex: none;
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+
+/* tab-header buttons for the flat / tree switch */
+.diff-vtab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 6px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.diff-vtab svg {
+  display: block;
+}
+
+.diff-vtab:hover {
+  background: var(--elevated);
+  color: var(--fg);
+}
+
+.diff-vtab.active {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+
+.diff-files {
+  list-style: none;
+  margin: 0;
+  padding: calc(var(--space) / 2);
+  overflow-y: auto;
+}
+
+.diff-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--fg);
+}
+
+.diff-nav:hover {
+  background: var(--elevated);
+}
+
+.diff-nav.active {
+  background: var(--elevated);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.diff-nav-path {
+  flex: 1;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* flat view: clip the leading path so the filename stays visible */
+.diff-nav-path.rtl {
+  direction: rtl;
+  text-align: left;
+}
+
+.diff-mark {
+  flex: none;
+  width: 15px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 3px;
+}
+.diff-mark.added {
+  color: var(--ok);
+}
+.diff-mark.deleted {
+  color: var(--needs-input);
+}
+.diff-mark.renamed {
+  color: var(--unseen);
+}
+.diff-mark.modified {
+  color: var(--busy);
+}
+
+.diff-stat {
+  flex: none;
+  display: inline-flex;
+  gap: 4px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.diff-stat .add {
+  color: var(--ok);
+}
+.diff-stat .del {
+  color: var(--needs-input);
+}
+
+/* tree view */
+.diff-files.tree {
+  padding-left: calc(var(--space) / 2);
+}
+
+.diff-tree-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.diff-tree-dir.collapsed > .diff-tree-children {
+  display: none;
+}
+
+.diff-tree-dirhead {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--muted);
+  user-select: none;
+}
+
+.diff-tree-dirhead:hover {
+  background: var(--elevated);
+  color: var(--fg);
+}
+
+.diff-chev {
+  flex: none;
+  width: 12px;
+  font-size: 10px;
+  text-align: center;
+}
+
+.diff-dirname {
+  flex: 1;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* right: stacked unified diffs */
+.diff-content {
+  overflow-y: auto;
+  padding: var(--space);
+  background: var(--bg);
+}
+
+.diff-empty,
+.diff-note {
+  color: var(--muted);
+  padding: var(--space);
+  font-size: 12px;
+}
+
+.diff-file {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: var(--space);
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.diff-file-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space);
+  padding: 6px 10px;
+  background: var(--elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.diff-file-path {
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-lines {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.diff-hunk-head {
+  padding: 2px 0;
+  color: var(--unseen);
+  background: color-mix(in srgb, var(--unseen) 10%, transparent);
+}
+
+.diff-hunk-head .code {
+  padding-left: calc(96px + 16px);
+  white-space: pre-wrap;
+}
+
+.diff-line {
+  display: grid;
+  grid-template-columns: 48px 48px 16px 1fr;
+  align-items: start;
+}
+
+.diff-line .ln {
+  text-align: right;
+  padding-right: 8px;
+  color: var(--muted);
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.diff-line .sign {
+  text-align: center;
+  user-select: none;
+}
+
+.diff-line .code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding-right: 8px;
+}
+
+.diff-line.add {
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+.diff-line.add .sign,
+.diff-line.add .code {
+  color: var(--ok);
+}
+
+.diff-line.del {
+  background: color-mix(in srgb, var(--needs-input) 12%, transparent);
+}
+.diff-line.del .sign,
+.diff-line.del .code {
+  color: var(--needs-input);
+}
+
+.diff-line.ctx .code {
+  color: var(--fg);
 }

@@ -58,6 +58,10 @@
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
             <span class="sb-label">Pull</span>
           </button>
+          <button id="sb-diff" class="sb-btn" title="View diff (working changes / branch)">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M11 18H8a2 2 0 0 1-2-2V9"/></svg>
+            <span class="sb-label">Diff</span>
+          </button>
           <button id="sb-find" class="sb-btn" title="Find in terminal (Ctrl+F)">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
             <span class="sb-label">Find</span>
@@ -135,6 +139,42 @@
           <button id="set-sound-test" class="btn-ghost">Test</button>
         </label>
         <p class="hint">Alerts when a worktree needs input or finishes while unfocused.</p>
+      </div>
+    </div>
+
+    <div id="diff-viewer" class="overlay diff-overlay" hidden>
+      <div class="diff-modal">
+        <header class="diff-head">
+          <div class="diff-title-wrap">
+            <span id="diff-title" class="diff-title">Diff</span>
+            <span id="diff-sub" class="diff-sub"></span>
+          </div>
+          <div class="diff-toggle">
+            <button id="diff-mode-wip" class="diff-tab active">Working changes</button>
+            <button id="diff-mode-branch" class="diff-tab">Branch vs base</button>
+          </div>
+          <div class="diff-head-actions">
+            <button id="diff-refresh" class="icon-btn" title="Refresh">⟳</button>
+            <button id="diff-close" class="icon-btn" title="Close (Esc)">✕</button>
+          </div>
+        </header>
+        <div id="diff-body" class="diff-body">
+          <div class="diff-left">
+            <div class="diff-left-head">
+              <button id="diff-view-flat" class="diff-vtab active" title="Flat list">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                <span>Flat</span>
+              </button>
+              <button id="diff-view-tree" class="diff-vtab" title="Folder tree">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v14a1 1 0 0 0 1 1h4"/><path d="M4 11h5"/><rect x="9" y="3" width="11" height="5" rx="1"/><rect x="9" y="9" width="11" height="5" rx="1"/><rect x="9" y="16" width="11" height="5" rx="1"/></svg>
+                <span>Tree</span>
+              </button>
+            </div>
+            <ul id="diff-files" class="diff-files"></ul>
+          </div>
+          <div id="diff-splitter" class="diff-splitter" title="Drag to resize"></div>
+          <div id="diff-content" class="diff-content"></div>
+        </div>
       </div>
     </div>
 

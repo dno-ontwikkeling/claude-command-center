@@ -8,6 +8,7 @@ import { els } from './dom.js';
 import { initTheme } from './settings.js';
 import { refreshProjects } from './sidebar.js';
 import './stage.js'; // stage toolbar + find-in-terminal wiring
+import './diff.js'; // GitKraken-style diff viewer wiring
 import './prompts.js'; // smart prompts button wiring
 
 // ---------------------------------------------------------------------------

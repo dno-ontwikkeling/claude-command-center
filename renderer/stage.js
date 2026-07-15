@@ -22,6 +22,7 @@ export function updateStageBar() {
   const noGit = !a.branch;
   els.sbFetch.disabled = noGit;
   els.sbPull.disabled = noGit;
+  els.sbDiff.disabled = noGit;
 }
 
 async function runGit(action, label) {
