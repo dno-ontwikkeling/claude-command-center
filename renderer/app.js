@@ -6,7 +6,8 @@
 import { agents, state, loadDormant, onAgentsChanged } from './state.js';
 import { els } from './dom.js';
 import { initTheme } from './settings.js';
-import { refreshProjects, renderSidebar, refreshAllAgentsGit } from './sidebar.js';
+import { refreshProjects, renderSidebar } from './sidebar.js';
+import { refreshAllAgentsGit } from './agent-git.mjs';
 import { installGlobalHandlers, log } from './logger.js';
 import './stage.js'; // stage toolbar + find-in-terminal wiring
 import './diff.js'; // GitKraken-style diff viewer wiring

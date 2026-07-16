@@ -3,6 +3,7 @@
 import { els } from './dom.js';
 import { state, agents, agentsForDir, dormantForDir, displayLabel, readLocalJson } from './state.js';
 import { openMenu, promptText, confirmDialog } from './modals.js';
+import { fmtDiff, refreshAgentGit } from './agent-git.mjs';
 import { activate, removeAgent, renameAgent, deleteWorktree, resume, removeDormant, reorderAgent, forceStatus, spawn } from './agents.js';
 import { newAgent } from './worktree.js';
 
@@ -14,13 +15,6 @@ import { newAgent } from './worktree.js';
 // the folder, no git. Both host the same agent/dormant rows, built by the
 // shared helpers below.
 // ---------------------------------------------------------------------------
-
-// GitHub-style coloured diff: green +added, red -removed. Numbers only, so
-// building the markup directly is safe.
-function fmtDiff(d) {
-  if (!d || (!d.added && !d.removed)) return '';
-  return `<span class="add">+${d.added}</span><span class="del">-${d.removed}</span>`;
-}
 
 // Short badge per detected project type (see detectProjectType in main.js).
 const PTYPE_LABEL = { node: 'JS', dotnet: '.NET', go: 'GO', rust: 'RS', python: 'PY' };
@@ -72,50 +66,6 @@ function typeIcon(type) {
   icon.title = type;
   return icon;
 }
-
-// ---------------------------------------------------------------------------
-// Per-agent git cache (branch + diffstat)
-//
-// Fetching an agent's branch + diffstat spawns two git child processes in the
-// single-threaded main process, stalling every PTY. So we cache both on the
-// agent (a.branch / a.diffStat), render only from that cache, and refresh
-// out-of-band: once lazily when a row first appears, then on a slow independent
-// timer. `_gitBusy` dedupes concurrent fetches for the same agent.
-// ---------------------------------------------------------------------------
-
-function refreshAgentGit(id, a) {
-  if (a._gitBusy) return; // in-flight fetch for this agent already; skip
-  a._gitBusy = true;
-  a._gitFetched = true;
-  Promise.all([window.api.gitBranch(a.cwd), window.api.gitDiffStat(a.cwd)])
-    .then(([b, d]) => {
-      // Branch can change under us (user runs git switch in the terminal).
-      if (b && b !== a.branch) {
-        a.branch = b;
-        if (a.labelEl && !a.customLabel) a.labelEl.textContent = `⎇ ${b}`;
-      }
-      if (d) {
-        a.diffStat = d;
-        if (a.diffEl) a.diffEl.innerHTML = fmtDiff(d);
-      }
-    })
-    .finally(() => {
-      a._gitBusy = false;
-    });
-}
-
-// Independent slow timer: repopulate every live agent's git cache without
-// coupling to renderSidebar(). Keeps branch labels + diff badges reasonably
-// fresh while a render itself stays git-free.
-export function refreshAllAgentsGit() {
-  for (const [id, a] of agents) refreshAgentGit(id, a);
-}
-// Only poll while the window is in the foreground — a hidden/backgrounded window
-// does no periodic git work. Returning to the window refreshes immediately.
-setInterval(() => {
-  if (document.visibilityState === 'visible') refreshAllAgentsGit();
-}, 15000);
-window.addEventListener('focus', refreshAllAgentsGit);
 
 function buildAgentRow(id, a) {
   const row = document.createElement('li');

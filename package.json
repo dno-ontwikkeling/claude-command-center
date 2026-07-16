@@ -32,6 +32,7 @@
       "jsonstore.js",
       "gitinfo.js",
       "hookauth.js",
+      "editors.js",
       "renderer/**",
       "hooks/**",
       "node_modules/**"
