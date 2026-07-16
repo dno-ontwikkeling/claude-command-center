@@ -205,7 +205,7 @@ function detectProjectType(dir, maxDepth = 3) {
         else if (n === 'cargo.toml') found.rust = true;
         else if (n === 'pyproject.toml' || n === 'requirements.txt' || n === 'setup.py' || n === 'pipfile')
           found.python = true;
-      } else if (e.isDirectory() && depth < maxDepth && !PTYPE_SKIP_DIRS.has(e.name)) {
+      } else if (e.isDirectory() && depth < maxDepth && !PTYPE_SKIP_DIRS.has(e.name.toLowerCase())) {
         scan(path.join(d, e.name), depth + 1);
       }
     }
@@ -221,6 +221,25 @@ function detectProjectType(dir, maxDepth = 3) {
     (found.python && 'python') ||
     null
   );
+}
+
+// A project's type never changes for a given dir while the app runs, yet the
+// scan above is a synchronous depth-3 recursion that blocks the event loop
+// (which also pumps PTY onData/onExit). Cache the result per dir so the
+// projects:list / workspaces:list handlers — including the 15s auto-refresh —
+// don't re-walk the tree every call. The add/remove handlers invalidate the
+// entry so a re-added dir is re-scanned.
+const projectTypeCache = new Map();
+
+function detectProjectTypeCached(dir) {
+  if (projectTypeCache.has(dir)) return projectTypeCache.get(dir);
+  const type = detectProjectType(dir);
+  projectTypeCache.set(dir, type);
+  return type;
+}
+
+function invalidateProjectType(dir) {
+  projectTypeCache.delete(dir);
 }
 
 // Per-worktree git state: dirty file count and ahead/behind vs upstream.
@@ -524,7 +543,7 @@ async function rmDirRetry(target) {
 // ---------------------------------------------------------------------------
 
 function registerIpc() {
-  const enrich = (p) => ({ ...p, isGit: isGitRepo(p.dir), type: detectProjectType(p.dir) });
+  const enrich = (p) => ({ ...p, isGit: isGitRepo(p.dir), type: detectProjectTypeCached(p.dir) });
 
   ipcMain.handle('projects:list', () => loadProjects().map(enrich));
 
@@ -544,20 +563,25 @@ function registerIpc() {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
       properties: ['openDirectory'],
     });
-    if (canceled || !filePaths[0]) return loadProjects();
+    if (canceled || !filePaths[0]) return loadProjects().map(enrich);
     const projects = loadProjects();
     const dir = filePaths[0];
     if (!projects.some((p) => p.dir === dir)) {
+      invalidateProjectType(dir); // re-scan a (possibly re-added) dir fresh
       projects.push({ dir, name: path.basename(dir) });
       saveProjects(projects);
     }
-    return projects;
+    // Return enriched (isGit/type) so the sidebar keeps its icons immediately,
+    // rather than dropping them until the next 15s poll — parity with
+    // projects:list / :reorder / the workspace handlers.
+    return projects.map(enrich);
   });
 
   ipcMain.handle('projects:remove', (_e, dir) => {
     const projects = loadProjects().filter((p) => p.dir !== dir);
+    invalidateProjectType(dir);
     saveProjects(projects);
-    return projects;
+    return projects.map(enrich);
   });
 
   // -- Workspaces: scratch folders, no git required --------------------------
@@ -583,6 +607,7 @@ function registerIpc() {
     }
     const list = loadWorkspaces();
     if (!list.some((w) => w.dir === dir)) {
+      invalidateProjectType(dir); // fresh dir — drop any stale cached type
       list.push({ dir, name });
       saveWorkspaces(list);
     }
@@ -591,6 +616,7 @@ function registerIpc() {
 
   ipcMain.handle('workspaces:remove', (_e, dir) => {
     const list = loadWorkspaces().filter((w) => w.dir !== dir);
+    invalidateProjectType(dir);
     saveWorkspaces(list);
     return list.map(enrich);
   });
@@ -693,7 +719,13 @@ function registerIpc() {
     spawnAgent(id, cwd, opts);
   });
 
-  ipcMain.on('agent:input', (_e, { id, data }) => agents.get(id)?.write(data));
+  ipcMain.on('agent:input', (_e, { id, data }) => {
+    try {
+      agents.get(id)?.write(data);
+    } catch {
+      /* ignore input to a dead pty (write can throw in the keystroke/onExit race) */
+    }
+  });
 
   ipcMain.on('agent:resize', (_e, { id, cols, rows }) => {
     try {

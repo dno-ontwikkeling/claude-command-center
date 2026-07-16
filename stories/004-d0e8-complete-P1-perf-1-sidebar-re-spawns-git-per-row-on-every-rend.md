@@ -1,13 +1,14 @@
 ---
 id: 004-d0e8
 title: [PERF-1] Sidebar re-spawns git per row on every render
-status: ready
+status: complete
 priority: P1
 type: refactor
 created: "2026-07-16T20:25:27.200Z"
-updated: "2026-07-16T20:26:41.025Z"
+updated: "2026-07-16T20:48:14.647Z"
 dependencies: []
 tags: ["review", "PERF-1"]
+completed_at: "2026-07-16T20:48:14.646Z"
 ---
 
 # [PERF-1] Sidebar re-spawns git per row on every render
@@ -18,10 +19,10 @@ buildAgentRow spawns git branch + git diff --numstat per agent row on every rend
 
 ## Acceptance Criteria
 
-- [ ] Cache branch/diffstat per agent
-- [ ] Refresh git data on a longer independent timer or explicit action, not per render
-- [ ] Dedupe in-flight git calls per agent
-- [ ] Do not trigger git lookups from filter/collapse/reorder
+- [x] Cache branch/diffstat per agent
+- [x] Refresh git data on a longer independent timer or explicit action, not per render
+- [x] Dedupe in-flight git calls per agent
+- [x] Do not trigger git lookups from filter/collapse/reorder
 
 ## Files
 
@@ -31,4 +32,6 @@ buildAgentRow spawns git branch + git diff --numstat per agent row on every rend
 ## Work Log
 
 ### 2026-07-16T20:26:41.247Z - Source: reviews/review-2026-07-16-full-app.md finding [PERF-1]
+
+### 2026-07-16T20:48:14.414Z - Wave 3: implemented + node --check passed
 
