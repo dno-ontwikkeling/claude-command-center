@@ -8,6 +8,7 @@ import { settings, termOpts } from './settings.js';
 import { confirmDialog, promptText, closeMenu } from './modals.js';
 import { updateStageBar, openSearch } from './stage.js';
 import { beep } from './sound.js';
+import { classifyOutput } from './tui-signals.mjs';
 
 // ---------------------------------------------------------------------------
 // Agents / terminals
@@ -442,31 +443,21 @@ function markActivity(id) {
 }
 
 // PTY-output fallback for states the hooks can't see. Claude's inline
-// permission prompts and rate-limit notices don't fire a Notification hook,
-// so we sniff them straight out of the terminal stream. Hooks stay
-// authoritative; this only fills the gaps (tuicommander-style regex watchers,
-// scoped to Claude's TUI). Idempotent — fine to re-match on every TUI redraw.
-const QUESTION_RE =
-  /❯\s*1\.\s|\bDo you want to (?:proceed|continue|create|run|make)\b|\b(?:y\/n|yes\/no)\b/i;
-const RATELIMIT_RE = /(?:usage|rate)\s*limit\s*reached|limit reached[\s\S]{0,40}reset/i;
-const RESET_AT_RE = /reset(?:s|ting)?\b[\s\S]{0,12}?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i;
-// Claude's working line ("✶ Working… (esc to interrupt)") only shows while the
-// agent is actively processing — never on a question or idle prompt. Hook-free
-// busy signal (tuicommander-style), so the dot resumes even when hooks aren't
-// installed and markActivity's status gate would otherwise pin needs-input.
-const WORKING_RE = /\besc to interrupt\b/i;
-
+// permission prompts and rate-limit notices don't fire a Notification hook, so
+// we sniff them straight out of the terminal stream (classifyOutput in
+// tui-signals.mjs). Hooks stay authoritative; this only fills the gaps.
+// Idempotent — fine to re-match on every TUI redraw.
 function detectPrompts(id, data) {
   const a = agents.get(id);
   if (!a || a.status === 'dead') return;
 
+  const { kind, resetAt } = classifyOutput(data);
+
   // Agent is working: lift any settled state (needs-input after a question was
   // answered, rate-limited after resume, done/unseen after a finished turn) back
   // to busy. markActivity arms the idle timer; awaitingInput must clear or it'd
-  // re-pin on the next redraw. Runs before the question check — working always
-  // wins. markActivity alone can't do this: it deliberately won't promote the
-  // settled states, but the spinner is proof the agent is actually working.
-  if (WORKING_RE.test(data)) {
+  // re-pin on the next redraw. Working always wins (checked first in classify).
+  if (kind === 'working') {
     a.awaitingInput = false;
     a.rateResetAt = null;
     if (a.status !== 'busy') setStatus(id, 'busy');
@@ -476,9 +467,8 @@ function detectPrompts(id, data) {
 
   // Rate limit: no hook exists for this. Pin the status (markActivity skips it)
   // until a UserPromptSubmit shows the user has resumed.
-  if (RATELIMIT_RE.test(data)) {
-    const m = data.match(RESET_AT_RE);
-    a.rateResetAt = m ? m[1] : null;
+  if (kind === 'rate-limited') {
+    a.rateResetAt = resetAt;
     a.awaitingInput = false;
     clearTimeout(a.idleTimer);
     setStatus(id, 'rate-limited');
@@ -488,7 +478,7 @@ function detectPrompts(id, data) {
   // A selectable prompt = blocked on the user. Reuse awaitingInput so the
   // activity tracker won't flip back to busy on the TUI's constant redraws;
   // the existing UserPromptSubmit handler clears it.
-  if (QUESTION_RE.test(data)) {
+  if (kind === 'needs-input') {
     a.awaitingInput = true;
     clearTimeout(a.idleTimer);
     setStatus(id, 'needs-input');
