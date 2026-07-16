@@ -39,6 +39,25 @@ export function dormantForDir(dir) {
   return [...dormant.entries()].filter(([, d]) => d.dir === dir);
 }
 
+// Display label for an agent OR a dormant record (same fields): a user-set
+// custom label wins, else the branch, else the generated session label. Single
+// source of truth so the four render/persist sites can't drift.
+export function displayLabel(x) {
+  return x.customLabel || (x.branch ? `⎇ ${x.branch}` : x.label);
+}
+
+// Parse a JSON value from localStorage, returning `fallback` on missing/corrupt
+// data. Renderer-side equivalent of main's readJsonSafe (best-effort: a corrupt
+// UI-preference blob is not worth surfacing, just reset).
+export function readLocalJson(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw == null ? fallback : (JSON.parse(raw) ?? fallback);
+  } catch {
+    return fallback;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Lifecycle pub/sub. agents.js emits a change after every state-mutating action
 // instead of importing the sidebar directly (which formed an agents<->sidebar
@@ -66,7 +85,9 @@ export function notifyAgentsChanged() {
 
 const STORE_KEY = 'savedAgents';
 
-function record(id, a) {
+// The dormant-record shape. Exported so agents.js's convertToDormant builds it
+// from the same single definition (avoids two schemas drifting apart).
+export function record(id, a) {
   return {
     id,
     dir: a.dir,
@@ -93,12 +114,7 @@ export function persistAgents() {
 }
 
 export function loadDormant() {
-  let saved = [];
-  try {
-    saved = JSON.parse(localStorage.getItem(STORE_KEY)) || [];
-  } catch {
-    saved = [];
-  }
+  const saved = readLocalJson(STORE_KEY, []);
   for (const r of saved) {
     if (r && r.id && r.sessionId) dormant.set(r.id, r);
   }

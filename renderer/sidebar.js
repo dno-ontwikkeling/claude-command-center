@@ -1,7 +1,7 @@
 'use strict';
 
 import { els } from './dom.js';
-import { state, agents, agentsForDir, dormantForDir } from './state.js';
+import { state, agents, agentsForDir, dormantForDir, displayLabel, readLocalJson } from './state.js';
 import { openMenu, promptText, confirmDialog } from './modals.js';
 import { activate, removeAgent, renameAgent, deleteWorktree, resume, removeDormant, reorderAgent, forceStatus, spawn } from './agents.js';
 import { newAgent } from './worktree.js';
@@ -28,15 +28,7 @@ const PTYPE_LABEL = { node: 'JS', dotnet: '.NET', go: 'GO', rust: 'RS', python: 
 // Collapsed items (by dir) — persisted so the tree state survives a restart.
 // Shared across projects and workspaces (dirs are unique).
 const COLLAPSED_KEY = 'collapsedProjects';
-const collapsed = new Set(
-  (() => {
-    try {
-      return JSON.parse(localStorage.getItem(COLLAPSED_KEY)) || [];
-    } catch {
-      return [];
-    }
-  })()
-);
+const collapsed = new Set(readLocalJson(COLLAPSED_KEY, []));
 
 function toggleCollapse(dir) {
   if (collapsed.has(dir)) collapsed.delete(dir);
@@ -132,7 +124,7 @@ function buildAgentRow(id, a) {
 
   const label = document.createElement('span');
   label.className = 'agent-label';
-  label.textContent = a.customLabel || (a.branch ? `⎇ ${a.branch}` : a.label);
+  label.textContent = displayLabel(a);
   label.title = a.cwd;
   a.labelEl = label; // refreshAgentGit updates the branch label in place
 
@@ -221,7 +213,7 @@ function buildDormantRow(id, d) {
 
   const label = document.createElement('span');
   label.className = 'agent-label';
-  label.textContent = d.customLabel || (d.branch ? `⎇ ${d.branch}` : d.label);
+  label.textContent = displayLabel(d);
   label.title = d.cwd;
 
   const rowKebab = document.createElement('button');

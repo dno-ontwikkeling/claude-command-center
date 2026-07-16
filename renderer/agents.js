@@ -3,7 +3,7 @@
 /* global Terminal, FitAddon, SearchAddon, WebLinksAddon */
 
 import { els } from './dom.js';
-import { agents, agentSeq, pendingExit, dormant, state, persistAgents, agentsForDir, notifyAgentsChanged } from './state.js';
+import { agents, agentSeq, pendingExit, dormant, state, persistAgents, agentsForDir, notifyAgentsChanged, record, displayLabel } from './state.js';
 import { settings, termOpts } from './settings.js';
 import { confirmDialog, promptText, closeMenu } from './modals.js';
 import { updateStageBar, openSearch } from './stage.js';
@@ -212,7 +212,7 @@ export function removeDormant(id) {
 export async function renameAgent(id) {
   const a = agents.get(id);
   if (!a) return;
-  const current = a.customLabel || (a.branch ? `⎇ ${a.branch}` : a.label);
+  const current = displayLabel(a);
   const name = await promptText('Rename worktree', current);
   if (!name) return;
   a.customLabel = name;
@@ -333,18 +333,7 @@ function convertToDormant(id) {
   }
   a.el.remove();
   agents.delete(id);
-  dormant.set(id, {
-    id,
-    dir: a.dir,
-    cwd: a.cwd,
-    branch: a.branch,
-    isMain: a.isMain,
-    customLabel: a.customLabel || null,
-    sessionId: a.sessionId,
-    label: a.label,
-    order: a.order ?? 0,
-    lastActive: a.lastActive || Date.now(),
-  });
+  dormant.set(id, record(id, a));
   if (state.activeId === id) {
     state.activeId = null;
     updateStageBar();
@@ -609,7 +598,7 @@ window.api.onEvent(({ agentId, status, sessionId, event, message }) => {
 // ---------------------------------------------------------------------------
 
 function notify(a, kind) {
-  const label = a.customLabel || (a.branch ? `⎇ ${a.branch}` : a.label);
+  const label = displayLabel(a);
   if (settings.sound) beep(kind, settings.soundType, settings.volume);
   // Don't pop an OS toast while the app is focused — the dot already shows it.
   if (settings.notifications && !document.hasFocus()) {

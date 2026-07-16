@@ -1,7 +1,7 @@
 'use strict';
 
 import { els } from './dom.js';
-import { state, agents } from './state.js';
+import { state, agents, readLocalJson } from './state.js';
 import { openMenu } from './modals.js';
 
 // ---------------------------------------------------------------------------
@@ -23,12 +23,8 @@ const DEFAULT_PROMPTS = [
 ];
 
 function load() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORE_KEY));
-    if (Array.isArray(saved)) return saved;
-  } catch {
-    /* fall through to seed */
-  }
+  const saved = readLocalJson(STORE_KEY, null);
+  if (Array.isArray(saved)) return saved;
   const seeded = DEFAULT_PROMPTS.map((p, i) => ({ id: `p${i}`, ...p }));
   localStorage.setItem(STORE_KEY, JSON.stringify(seeded));
   return seeded;

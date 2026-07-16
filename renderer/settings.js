@@ -1,7 +1,7 @@
 'use strict';
 
 import { els } from './dom.js';
-import { agents } from './state.js';
+import { agents, readLocalJson } from './state.js';
 import { beep, SOUNDS } from './sound.js';
 
 // ---------------------------------------------------------------------------
@@ -50,13 +50,7 @@ const DEFAULT_SETTINGS = {
 };
 
 function loadSettings() {
-  let s = {};
-  try {
-    s = JSON.parse(localStorage.getItem('settings')) || {};
-  } catch {
-    s = {};
-  }
-  return { ...DEFAULT_SETTINGS, ...s };
+  return { ...DEFAULT_SETTINGS, ...readLocalJson('settings', {}) };
 }
 
 export const settings = loadSettings();
