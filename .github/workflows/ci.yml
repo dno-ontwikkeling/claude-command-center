@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # The unit suite covers the electron-free modules (jsonstore, gitinfo,
+      # diff-parse, tui-signals) and needs no dependencies, so skip the heavy
+      # electron/node-pty install and just run the tests directly.
+      - name: Run unit tests
+        run: node --test
