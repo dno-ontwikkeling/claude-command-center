@@ -9,20 +9,22 @@ const crypto = require('crypto');
 const { execFile } = require('child_process');
 const pty = require('@lydell/node-pty');
 const log = require('./logger');
+const { errMsg } = require('./util');
 const hookAuth = require('./hookauth');
 const hooksMerge = require('./hooksmerge');
 const { createRequestHandler } = require('./hookserver');
 const { openInVisualStudio, openInVSCode } = require('./editors');
 const { readJsonSafe, writeJsonAtomic, hasShellMeta } = require('./jsonstore');
+const { gitBranch, isGitRepo, detectProjectType } = require('./gitinfo');
 const {
-  gitBranch,
-  isGitRepo,
-  detectProjectType,
-  parseStatusPorcelain,
-  parseWorktreePorcelain,
-  parseBranchList,
-  parseRemoteBranchList,
-} = require('./gitinfo');
+  execGit,
+  runGit,
+  worktreeStatus,
+  listWorktrees,
+  listBranches,
+  listRemoteBranches,
+  resolveDiffBase,
+} = require('./gitops');
 
 // Last-resort handlers so a stray throw/rejection is recorded instead of dying
 // silently (or crashing the whole process with no trace).
@@ -99,7 +101,7 @@ function loadProjects() {
     // Corrupt/unreadable store (already backed up). Surface before any caller
     // can save() over it, then re-throw so the mutation is aborted — never
     // return [] here, that is exactly the data-loss path we are fixing.
-    warnCorruptOnce('projects', 'Command Center — projects.json unreadable', String(err.message || err));
+    warnCorruptOnce('projects', 'Command Center — projects.json unreadable', errMsg(err));
     throw err;
   }
 }
@@ -113,7 +115,7 @@ function persistStore(file, data, label) {
     writeJsonAtomic(file, data);
   } catch (err) {
     log.error('persistence', `could not save ${label}`, err);
-    dialog.showErrorBox(`Command Center — could not save ${label}`, String(err.message || err));
+    dialog.showErrorBox(`Command Center — could not save ${label}`, errMsg(err));
     throw err;
   }
 }
@@ -126,7 +128,7 @@ function loadWorkspaces() {
   try {
     return readJsonSafe(WORKSPACES_FILE, []);
   } catch (err) {
-    warnCorruptOnce('workspaces', 'Command Center — workspaces.json unreadable', String(err.message || err));
+    warnCorruptOnce('workspaces', 'Command Center — workspaces.json unreadable', errMsg(err));
     throw err;
   }
 }
@@ -154,90 +156,6 @@ function detectProjectTypeCached(dir) {
 
 function invalidateProjectType(dir) {
   projectTypeCache.delete(dir);
-}
-
-// Shared git runner: `git -C <dir> <args>`. Never rejects — resolves a
-// consistent { ok, code, stdout, stderr, error } shape so every call site can
-// keep its own existing fallback semantics (based on `ok`/`error`) while this
-// helper takes care of the actual process spawn. On failure it logs via
-// log.warn so a broken env (git not on PATH, corrupt repo, …) leaves a trail
-// instead of silently producing an empty UI state (previously every call site
-// below mapped a git error to a blank fallback with zero logging). maxBuffer
-// defaults to 64MB — large output (e.g. a big diff) used to overflow the
-// default 1MB buffer on some call sites but not others; now all of them share
-// the same, larger, buffer.
-function execGit(dir, args, opts = {}) {
-  return new Promise((resolve) => {
-    execFile(
-      'git',
-      ['-C', dir, ...args],
-      { maxBuffer: 64 * 1024 * 1024, ...opts },
-      (error, stdout, stderr) => {
-        if (error) {
-          log.warn('git', `git ${args.join(' ')} failed in ${dir}`, error);
-        }
-        resolve({
-          ok: !error,
-          code: error ? (error.code ?? null) : 0,
-          stdout: stdout || '',
-          stderr: stderr || '',
-          error,
-        });
-      }
-    );
-  });
-}
-
-// Per-worktree git state: dirty file count and ahead/behind vs upstream.
-function worktreeStatus(wtPath) {
-  return execGit(wtPath, ['status', '--porcelain=v1', '--branch']).then(({ ok, stdout }) =>
-    ok ? parseStatusPorcelain(stdout) : { dirty: 0, ahead: 0, behind: 0, upstream: null }
-  );
-}
-
-// List all worktrees of a repo, each enriched with its dirty/ahead/behind state.
-async function listWorktrees(dir) {
-  const { ok, stdout } = await execGit(dir, ['worktree', 'list', '--porcelain']);
-  const worktrees = ok ? parseWorktreePorcelain(stdout) : [];
-  await Promise.all(worktrees.map(async (w) => Object.assign(w, await worktreeStatus(w.path))));
-  return worktrees;
-}
-
-function listBranches(dir) {
-  return execGit(dir, ['branch', '--format=%(refname:short)']).then(({ ok, stdout }) =>
-    ok ? parseBranchList(stdout) : []
-  );
-}
-
-// Remote-tracking branches (origin/*), minus the symbolic origin/HEAD pointer.
-function listRemoteBranches(dir) {
-  return execGit(dir, ['branch', '-r', '--format=%(refname:short)']).then(({ ok, stdout }) =>
-    ok ? parseRemoteBranchList(stdout) : []
-  );
-}
-
-// Resolve the branch a feature worktree should be diffed against. Prefers the
-// remote's default branch (origin/HEAD -> e.g. origin/main), falling back to a
-// local main / master. Returns null when none of those exist.
-function resolveDiffBase(dir) {
-  const verify = (ref) =>
-    execGit(dir, ['rev-parse', '--verify', '--quiet', ref]).then(({ ok }) => ok);
-  return new Promise((resolve) => {
-    execGit(dir, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']).then(async ({ ok, stdout }) => {
-      const ref = (stdout || '').trim();
-      if (ok && ref) {
-        resolve(ref);
-        return;
-      }
-      for (const cand of ['origin/main', 'origin/master', 'main', 'master']) {
-        if (await verify(cand)) {
-          resolve(cand);
-          return;
-        }
-      }
-      resolve(null);
-    });
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -358,7 +276,7 @@ function spawnAgent(id, cwd, opts = {}) {
   } catch (err) {
     // cwd gone (e.g. a removed worktree) or claude not found — report as an
     // immediate exit so the renderer can surface it rather than hang.
-    sendToRenderer('agent:exit', { id, error: String(err.message || err) });
+    sendToRenderer('agent:exit', { id, error: errMsg(err) });
     return;
   }
 
@@ -540,7 +458,7 @@ function registerIpc() {
     try {
       fs.mkdirSync(dir, { recursive: true });
     } catch (err) {
-      return { error: String(err.message || err).trim() };
+      return { error: errMsg(err).trim() };
     }
     const list = loadWorkspaces();
     if (!list.some((w) => w.dir === dir)) {
@@ -622,7 +540,7 @@ function registerIpc() {
       const r = await execGit(dir, ['worktree', 'add', ...args]);
       if (!r.ok) throw new Error(r.stderr || r.error.message);
     } catch (err) {
-      return { error: String(err.message || err).trim() };
+      return { error: errMsg(err).trim() };
     }
     return { path: target, branch: display };
   });
@@ -635,7 +553,7 @@ function registerIpc() {
       const r = await execGit(dir, args);
       if (!r.ok) throw new Error(r.stderr || r.error.message);
     } catch (err) {
-      return { error: String(err.message || err).trim() };
+      return { error: errMsg(err).trim() };
     }
     // git can unregister the worktree yet leave the directory behind if a file
     // was still locked. Force-clean the leftovers and prune the admin entry.
@@ -767,13 +685,6 @@ function registerIpc() {
     const r = await execGit(cwd, ['diff', 'HEAD']);
     if (!r.ok) return { ok: false, error: r.stderr.trim() || String(r.error.message) };
     return { ok: true, diff: r.stdout };
-  });
-}
-
-function runGit(cwd, args) {
-  return execGit(cwd, args).then(({ ok, stdout, stderr, error }) => {
-    const out = `${stdout}${stderr}`.trim();
-    return { ok, out, error: ok ? null : out || String(error.message) };
   });
 }
 

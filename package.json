@@ -31,10 +31,12 @@
       "logger.js",
       "jsonstore.js",
       "gitinfo.js",
+      "gitops.js",
       "hookauth.js",
       "hookserver.js",
       "hooksmerge.js",
       "editors.js",
+      "util.js",
       "renderer/**",
       "hooks/**",
       "node_modules/**"

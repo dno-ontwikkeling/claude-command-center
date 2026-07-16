@@ -9,6 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
+const { errMsg } = require('./util');
 
 // Locate devenv.exe via vswhere (ships with every VS 2017+ installer). Returns
 // null when neither vswhere nor a VS install is present.
@@ -47,10 +48,10 @@ async function openInVisualStudio(cwd) {
   return new Promise((resolve) => {
     // detached so VS outlives this app; unref so we don't hold the child.
     const child = execFile(devenv, [target], (err) => {
-      if (err) resolve({ error: String(err.message || err).trim() });
+      if (err) resolve({ error: errMsg(err).trim() });
     });
     child.on('spawn', () => resolve({ ok: true }));
-    child.on('error', (err) => resolve({ error: String(err.message || err).trim() }));
+    child.on('error', (err) => resolve({ error: errMsg(err).trim() }));
     child.unref();
   });
 }
@@ -108,7 +109,7 @@ async function openInVSCode(cwd) {
         ['/d', '/s', '/c', line],
         { shell: false, windowsHide: true, windowsVerbatimArguments: true },
         (err, _stdout, stderr) => {
-          if (err) resolve({ error: (stderr || '').trim() || String(err.message || err).trim() });
+          if (err) resolve({ error: (stderr || '').trim() || errMsg(err).trim() });
           else resolve({ ok: true });
         }
       );
@@ -116,7 +117,7 @@ async function openInVSCode(cwd) {
   }
   return new Promise((resolve) => {
     execFile(code, [cwd], { shell: false, windowsHide: true }, (err, _stdout, stderr) => {
-      if (err) resolve({ error: (stderr || '').trim() || String(err.message || err).trim() });
+      if (err) resolve({ error: (stderr || '').trim() || errMsg(err).trim() });
       else resolve({ ok: true });
     });
   });

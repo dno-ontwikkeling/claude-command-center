@@ -150,7 +150,6 @@ module.exports = {
   gitBranch,
   isGitRepo,
   detectProjectType,
-  PTYPE_SKIP_DIRS,
   parseStatusPorcelain,
   parseWorktreePorcelain,
   parseBranchList,

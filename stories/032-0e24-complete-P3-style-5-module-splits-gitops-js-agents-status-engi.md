@@ -1,12 +1,13 @@
 ---
 id: 032-0e24
 title: "[STYLE-5] Module splits: gitops.js, agents status engine, errMsg, dead export"
-status: ready
+status: complete
 priority: P3
 type: refactor
 created: "2026-07-16T22:38:16.369Z"
-updated: "2026-07-16T22:38:41.667Z"
+updated: "2026-07-16T23:15:02.828Z"
 dependencies: []
+completed_at: "2026-07-16T23:15:02.827Z"
 ---
 
 # [STYLE-5] Module splits: gitops.js, agents status engine, errMsg, dead export
@@ -17,10 +18,10 @@ Continue the codebase extract-to-module pattern. STYLE-5(conf80): renderer/agent
 
 ## Acceptance Criteria
 
-- [ ] Extract agents.js status engine into its own module
-- [ ] Extract main.js worktree/branch git orchestration into gitops.js
-- [ ] Add errMsg helper, replace the 11 duplications
-- [ ] Remove the dead PTYPE_SKIP_DIRS export
+- [x] Extract agents.js status engine into its own module
+- [x] Extract main.js worktree/branch git orchestration into gitops.js
+- [x] Add errMsg helper, replace the 11 duplications
+- [x] Remove the dead PTYPE_SKIP_DIRS export
 
 ## Files
 
@@ -29,4 +30,6 @@ Continue the codebase extract-to-module pattern. STYLE-5(conf80): renderer/agent
 - gitinfo.js
 
 ## Work Log
+
+### 2026-07-16T23:15:02.591Z - Extracted gitops.js + renderer/agent-status.mjs + util.js(errMsg); removed dead PTYPE_SKIP_DIRS export; wiring verified (onData/onExit/onEvent), 81 pass
 
