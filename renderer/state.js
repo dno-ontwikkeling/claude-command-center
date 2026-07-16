@@ -40,6 +40,27 @@ export function dormantForDir(dir) {
 }
 
 // ---------------------------------------------------------------------------
+// Lifecycle pub/sub. agents.js emits a change after every state-mutating action
+// instead of importing the sidebar directly (which formed an agents<->sidebar
+// import cycle). A coordinator (app.js) subscribes and re-renders. Both agents.js
+// and sidebar.js already import this module, so the emitter lives here.
+// ---------------------------------------------------------------------------
+
+const changeSubs = new Set();
+
+/** Register a listener fired after any agent/dormant lifecycle change. Returns
+ *  an unsubscribe function. */
+export function onAgentsChanged(cb) {
+  changeSubs.add(cb);
+  return () => changeSubs.delete(cb);
+}
+
+/** Emit a lifecycle change so subscribers (the sidebar) re-render. */
+export function notifyAgentsChanged() {
+  for (const cb of changeSubs) cb();
+}
+
+// ---------------------------------------------------------------------------
 // Persistence — only session-bearing agents survive a restart, as dormant rows
 // ---------------------------------------------------------------------------
 

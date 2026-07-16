@@ -1,13 +1,14 @@
 ---
 id: 002-9154
 title: [DATA-1] Corrupt config silently overwritten (data loss)
-status: ready
+status: complete
 priority: P1
 type: fix
 created: "2026-07-16T20:25:27.198Z"
-updated: "2026-07-16T20:26:47.026Z"
+updated: "2026-07-16T20:43:26.430Z"
 dependencies: []
 tags: ["review", "DATA-1"]
+completed_at: "2026-07-16T20:43:26.429Z"
 ---
 
 # [DATA-1] Corrupt config silently overwritten (data loss)
@@ -18,10 +19,10 @@ loadProjects/loadWorkspaces catch{return []} treat a corrupt/truncated/permissio
 
 ## Acceptance Criteria
 
-- [ ] Distinguish ENOENT (first run) from parse/IO errors
-- [ ] On parse/IO error do NOT return empty; back up bad file to .bak-<ts>
-- [ ] Surface a dialog before any write can occur
-- [ ] Applies to both loadProjects and loadWorkspaces
+- [x] Distinguish ENOENT (first run) from parse/IO errors
+- [x] On parse/IO error do NOT return empty; back up bad file to .bak-<ts>
+- [x] Surface a dialog before any write can occur
+- [x] Applies to both loadProjects and loadWorkspaces
 
 ## Files
 
@@ -30,4 +31,6 @@ loadProjects/loadWorkspaces catch{return []} treat a corrupt/truncated/permissio
 ## Work Log
 
 ### 2026-07-16T20:26:47.275Z - Source: reviews/review-2026-07-16-full-app.md finding [DATA-1]
+
+### 2026-07-16T20:43:26.197Z - Wave 2: implemented + node --check passed
 

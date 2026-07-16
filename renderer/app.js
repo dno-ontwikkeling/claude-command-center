@@ -3,10 +3,10 @@
 // Entry point. Imports wire up each module's event listeners as a side effect;
 // this file only kicks off the initial render and the periodic refresh.
 
-import { agents, loadDormant } from './state.js';
+import { agents, loadDormant, onAgentsChanged } from './state.js';
 import { els } from './dom.js';
 import { initTheme } from './settings.js';
-import { refreshProjects } from './sidebar.js';
+import { refreshProjects, renderSidebar } from './sidebar.js';
 import './stage.js'; // stage toolbar + find-in-terminal wiring
 import './diff.js'; // GitKraken-style diff viewer wiring
 import './prompts.js'; // smart prompts button wiring
@@ -16,6 +16,10 @@ import './prompts.js'; // smart prompts button wiring
 // ---------------------------------------------------------------------------
 
 initTheme();
+// Coordinator wiring: agents.js emits lifecycle changes via state's pub/sub
+// rather than importing the sidebar (which formed an import cycle). Register the
+// re-render before any agent action can fire, so no change is missed.
+onAgentsChanged(renderSidebar);
 loadDormant(); // resumable sessions from the previous run, shown as dormant rows
 refreshProjects();
 

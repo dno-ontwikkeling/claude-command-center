@@ -47,33 +47,90 @@ const HOOK_EVENTS = {
 };
 
 // ---------------------------------------------------------------------------
+// Safe JSON IO (crash/corruption resistant)
+// ---------------------------------------------------------------------------
+
+// Copy a bad/unreadable file aside so it is never silently lost when we later
+// refuse to overwrite it. Returns the backup path, or null if even the copy
+// failed. Best-effort: a failed backup must not mask the original error.
+function backupBadFile(file) {
+  try {
+    const bak = `${file}.bak-${Date.now()}`;
+    fs.copyFileSync(file, bak);
+    return bak;
+  } catch {
+    return null;
+  }
+}
+
+// Read + parse JSON, distinguishing "file does not exist yet" (genuine first
+// run -> return `fallback`) from a corrupt/truncated/permission-failed read. In
+// the latter case we must NOT return the fallback: a caller would then save()
+// over the file and permanently destroy recoverable data. Instead back up the
+// bad file and throw so the caller aborts before any write.
+function readJsonSafe(file, fallback) {
+  let raw;
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (err) {
+    if (err.code === 'ENOENT') return fallback;
+    const bak = backupBadFile(file);
+    throw new Error(
+      `Could not read ${file}: ${err.message}${bak ? ` (backed up to ${bak})` : ''}`
+    );
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    const bak = backupBadFile(file);
+    throw new Error(
+      `Could not parse ${file}: ${err.message}${bak ? ` (backed up to ${bak})` : ''}`
+    );
+  }
+}
+
+// Write JSON atomically: serialize to a temp file in the same directory, then
+// rename over the target. rename is atomic on the same filesystem, so a crash
+// or power loss mid-write can never leave a truncated live file (which the
+// readers above would otherwise treat as corrupt).
+function writeJsonAtomic(file, obj) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2));
+  fs.renameSync(tmp, file);
+}
+
+// ---------------------------------------------------------------------------
 // Project persistence
 // ---------------------------------------------------------------------------
 
 function loadProjects() {
   try {
-    return JSON.parse(fs.readFileSync(PROJECTS_FILE, 'utf8'));
-  } catch {
-    return [];
+    return readJsonSafe(PROJECTS_FILE, []);
+  } catch (err) {
+    // Corrupt/unreadable store (already backed up). Surface before any caller
+    // can save() over it, then re-throw so the mutation is aborted — never
+    // return [] here, that is exactly the data-loss path we are fixing.
+    dialog.showErrorBox('Command Center — projects.json unreadable', String(err.message || err));
+    throw err;
   }
 }
 
 function saveProjects(projects) {
-  fs.mkdirSync(path.dirname(PROJECTS_FILE), { recursive: true });
-  fs.writeFileSync(PROJECTS_FILE, JSON.stringify(projects, null, 2));
+  writeJsonAtomic(PROJECTS_FILE, projects);
 }
 
 function loadWorkspaces() {
   try {
-    return JSON.parse(fs.readFileSync(WORKSPACES_FILE, 'utf8'));
-  } catch {
-    return [];
+    return readJsonSafe(WORKSPACES_FILE, []);
+  } catch (err) {
+    dialog.showErrorBox('Command Center — workspaces.json unreadable', String(err.message || err));
+    throw err;
   }
 }
 
 function saveWorkspaces(workspaces) {
-  fs.mkdirSync(path.dirname(WORKSPACES_FILE), { recursive: true });
-  fs.writeFileSync(WORKSPACES_FILE, JSON.stringify(workspaces, null, 2));
+  writeJsonAtomic(WORKSPACES_FILE, workspaces);
 }
 
 // ---------------------------------------------------------------------------
@@ -292,6 +349,16 @@ function resolveClaude() {
   return bin; // fall back to PATH
 }
 
+// Shell / command metacharacters that must never end up in a folder name: the
+// name is later baked into a filesystem path that gets handed to launchers
+// (VS Code, git). Rejecting them at creation time is defence-in-depth on top of
+// launching with shell:false. (`/` and `\` are handled separately by callers,
+// which normalise them to `-`.)
+const SHELL_META = /[&|;<>()!^%$"'`\n\r]/;
+function hasShellMeta(name) {
+  return SHELL_META.test(String(name));
+}
+
 // ---------------------------------------------------------------------------
 // Global hook installation (env-gated: only app-launched agents report)
 // ---------------------------------------------------------------------------
@@ -306,12 +373,28 @@ function hooksInstalled(settings) {
 
 async function ensureHooksInstalled() {
   const file = settingsPath();
-  let settings = {};
+  // This file is the shared CLI config — NOT owned by this app. Distinguish a
+  // missing file (first run, fine to create) from a parse/IO failure. On a
+  // parse failure readJsonSafe backs it up and throws; we must then bail out
+  // rather than default settings to {} and write it back, which would wipe the
+  // user's permissions / model prefs / other hooks.
+  let settings;
   try {
-    settings = JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    settings = {};
+    settings = readJsonSafe(file, null); // null sentinel = missing (first run)
+  } catch (err) {
+    await dialog.showMessageBox(mainWindow, {
+      type: 'error',
+      title: 'Command Center setup',
+      message: 'Could not read ~/.claude/settings.json',
+      detail:
+        `${err.message}\n\n` +
+        'A backup was saved alongside it. Status hooks were NOT installed, to ' +
+        'avoid overwriting your existing settings. Fix or restore the file and ' +
+        'restart to try again.',
+    });
+    return;
   }
+  if (settings === null) settings = {}; // genuine first run — safe to create
 
   if (hooksInstalled(settings)) return;
 
@@ -329,6 +412,8 @@ async function ensureHooksInstalled() {
   });
   if (response !== 0) return;
 
+  // Merge the hooks block in place so every pre-existing key on `settings`
+  // (permissions, model prefs, unrelated hooks) is preserved.
   settings.hooks = settings.hooks || {};
   for (const [event, status] of Object.entries(HOOK_EVENTS)) {
     const command = `node "${REPORT_SCRIPT}" ${status}`;
@@ -336,8 +421,7 @@ async function ensureHooksInstalled() {
     settings.hooks[event].push({ hooks: [{ type: 'command', command }] });
   }
 
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(settings, null, 2));
+  writeJsonAtomic(file, settings);
 }
 
 // ---------------------------------------------------------------------------
@@ -488,6 +572,9 @@ function registerIpc() {
       title: `Choose parent folder for workspace "${name}"`,
     });
     if (canceled || !filePaths[0]) return { canceled: true };
+    if (hasShellMeta(name)) {
+      return { error: 'Workspace name contains unsafe characters (& | ; < > ( ) ! ^ % $ " \' `).' };
+    }
     const dir = path.join(filePaths[0], name.replace(/[/\\]/g, '-'));
     try {
       fs.mkdirSync(dir, { recursive: true });
@@ -549,6 +636,9 @@ function registerIpc() {
       title: `Choose parent folder for worktree "${branch}"`,
     });
     if (canceled || !filePaths[0]) return { canceled: true };
+    if (hasShellMeta(branch)) {
+      return { error: 'Branch name contains unsafe characters (& | ; < > ( ) ! ^ % $ " \' `).' };
+    }
 
     let display = branch;
     let args;
@@ -744,18 +834,50 @@ async function openInVisualStudio(cwd) {
   });
 }
 
-// Open a worktree in VS Code via the `code` CLI. `code` is code.cmd on Windows
-// so it needs a shell; it launches the editor and exits, so we resolve on the
-// callback. Missing CLI surfaces as an error string the UI can show.
-function openInVSCode(cwd) {
+// Resolve the `code` CLI's real path once and cache it. Never route the launch
+// through a shell (the old shell:true fed a git-branch-derived path to cmd.exe,
+// allowing command injection via metacharacters in a hostile branch name).
+//   undefined = not resolved yet, null = looked up but not found, string = path.
+let vscodeCliPath;
+
+function resolveVSCode() {
   return new Promise((resolve) => {
-    execFile('code', [cwd], { shell: true }, (err, _stdout, stderr) => {
+    if (vscodeCliPath !== undefined) {
+      resolve(vscodeCliPath);
+      return;
+    }
+    const finder = process.platform === 'win32' ? 'where' : 'which';
+    execFile(finder, ['code'], { windowsHide: true }, (err, stdout) => {
+      const first = (stdout || '')
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter(Boolean)[0];
+      vscodeCliPath = !err && first ? first : null;
+      resolve(vscodeCliPath);
+    });
+  });
+}
+
+// Open a worktree in VS Code via the resolved `code` CLI. On Windows `code` is
+// the code.cmd shim; a .cmd cannot be spawned without a shell, so we run it via
+// the comspec with cwd as a separate argv element — never a concatenated shell
+// string — so path metacharacters stay inert. It launches the editor and exits,
+// so we resolve on the callback. Missing CLI surfaces as an error string.
+async function openInVSCode(cwd) {
+  const code = await resolveVSCode();
+  if (!code) {
+    return {
+      error:
+        "VS Code CLI (`code`) not found on PATH. In VS Code run: Shell Command: Install 'code' command in PATH.",
+    };
+  }
+  const isWin = process.platform === 'win32';
+  const file = isWin ? process.env.ComSpec || 'cmd.exe' : code;
+  const args = isWin ? ['/d', '/s', '/c', code, cwd] : [cwd];
+  return new Promise((resolve) => {
+    execFile(file, args, { shell: false, windowsHide: true }, (err, _stdout, stderr) => {
       if (err) {
-        resolve({
-          error:
-            (stderr || '').trim() ||
-            "VS Code CLI (`code`) not found on PATH. In VS Code run: Shell Command: Install 'code' command in PATH.",
-        });
+        resolve({ error: (stderr || '').trim() || String(err.message || err).trim() });
       } else {
         resolve({ ok: true });
       }

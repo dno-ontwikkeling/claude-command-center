@@ -3,10 +3,9 @@
 /* global Terminal, FitAddon, SearchAddon, WebLinksAddon */
 
 import { els } from './dom.js';
-import { agents, agentSeq, pendingExit, dormant, state, persistAgents, agentsForDir } from './state.js';
+import { agents, agentSeq, pendingExit, dormant, state, persistAgents, agentsForDir, notifyAgentsChanged } from './state.js';
 import { settings, termOpts } from './settings.js';
 import { confirmDialog, promptText, closeMenu } from './modals.js';
-import { renderSidebar } from './sidebar.js';
 import { updateStageBar, openSearch } from './stage.js';
 import { beep } from './sound.js';
 
@@ -183,7 +182,7 @@ export function spawn(dir, cwd, branch, isMain, restore = null) {
 
   window.api.spawn(id, cwd, { bypass: settings.bypass, resume: restore?.sessionId || null });
   persistAgents();
-  renderSidebar();
+  notifyAgentsChanged();
   activate(id);
 }
 
@@ -207,7 +206,7 @@ export function removeDormant(id) {
   dormant.delete(id);
   persistAgents();
   if (agents.size === 0 && dormant.size === 0) els.empty.style.display = '';
-  renderSidebar();
+  notifyAgentsChanged();
 }
 
 export async function renameAgent(id) {
@@ -218,7 +217,7 @@ export async function renameAgent(id) {
   if (!name) return;
   a.customLabel = name;
   persistAgents();
-  renderSidebar();
+  notifyAgentsChanged();
 }
 
 export async function deleteWorktree(id) {
@@ -305,7 +304,7 @@ function cleanupAgent(id, skipRender = false) {
   // starts back at "Agent 1" instead of climbing forever.
   if (agentsForDirCount(a.dir) === 0) agentSeq.delete(a.dir);
   if (agents.size === 0 && dormant.size === 0) els.empty.style.display = '';
-  if (!skipRender) renderSidebar();
+  if (!skipRender) notifyAgentsChanged();
 }
 
 // pty exited on its own (Claude quit / app closed). If the agent carries a
@@ -339,7 +338,7 @@ function convertToDormant(id) {
     updateStageBar();
   }
   persistAgents();
-  renderSidebar();
+  notifyAgentsChanged();
 }
 
 // Reorder agents within a project: dropping `draggedId` onto `targetId`
@@ -356,7 +355,7 @@ export function reorderAgent(draggedId, targetId) {
     agents.get(id).order = i;
   });
   persistAgents();
-  renderSidebar();
+  notifyAgentsChanged();
 }
 
 function agentsForDirCount(dir) {
