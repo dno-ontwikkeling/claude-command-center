@@ -105,7 +105,10 @@ async function openWorktreePicker(p) {
     for (const ref of refs) {
       const li = document.createElement('li');
       li.className = 'wt-row';
-      li.innerHTML = `<span class="wt-branch">${ref.icon} ${ref.label}</span>`;
+      const branchEl = document.createElement('span');
+      branchEl.className = 'wt-branch';
+      branchEl.textContent = `${ref.icon} ${ref.label}`;
+      li.appendChild(branchEl);
       li.addEventListener('click', () =>
         createWorktreeFlow(p, { mode: 'new', branch: pendingName, base: ref.value })
       );
@@ -175,7 +178,10 @@ function worktreeRow(p, w, close) {
 function localRow(p, b) {
   const li = document.createElement('li');
   li.className = 'wt-row';
-  li.innerHTML = `<span class="wt-branch">⎇ ${b.name}</span>`;
+  const branchEl = document.createElement('span');
+  branchEl.className = 'wt-branch';
+  branchEl.textContent = `⎇ ${b.name}`;
+  li.appendChild(branchEl);
   li.addEventListener('click', () => createWorktreeFlow(p, { mode: 'local', branch: b.name }));
   return li;
 }
@@ -183,7 +189,10 @@ function localRow(p, b) {
 function remoteRow(p, r) {
   const li = document.createElement('li');
   li.className = 'wt-row';
-  li.innerHTML = `<span class="wt-branch">⬇ ${r.name}</span>`;
+  const branchEl = document.createElement('span');
+  branchEl.className = 'wt-branch';
+  branchEl.textContent = `⬇ ${r.name}`;
+  li.appendChild(branchEl);
   li.title = 'Creates a local tracking branch';
   li.addEventListener('click', () => createWorktreeFlow(p, { mode: 'remote', branch: r.name }));
   return li;

@@ -45,6 +45,29 @@ function toggleCollapse(dir) {
   renderSidebar();
 }
 
+function saveCollapsed() {
+  localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed]));
+}
+
+// Collapse-all / expand-all toggle: if anything is open, collapse everything;
+// otherwise expand everything. Operates on both projects and workspaces.
+function toggleCollapseAll() {
+  const dirs = [
+    ...state.projectsData.map((p) => p.dir),
+    ...state.workspacesData.map((w) => w.dir),
+  ];
+  const anyOpen = dirs.some((d) => !collapsed.has(d));
+  collapsed.clear();
+  if (anyOpen) for (const d of dirs) collapsed.add(d);
+  saveCollapsed();
+  renderSidebar();
+}
+
+// Live name filter. Empty string shows everything. Filtering toggles row
+// visibility (see applyFilter) rather than rebuilding the sidebar, so keystrokes
+// never re-spawn the git subprocesses that a full render triggers.
+let filterText = '';
+
 // ---------------------------------------------------------------------------
 // Shared row builders (used by both projects and workspaces)
 // ---------------------------------------------------------------------------
@@ -201,6 +224,8 @@ function buildAgentList(dir) {
 function buildItemHeader(p, { dragType, onReorder, onOpen, menuItems }) {
   const item = document.createElement('li');
   item.className = 'project-item';
+  // Stashed for applyFilter so it can toggle visibility without a rebuild.
+  item.dataset.name = p.name.toLowerCase();
 
   const isCollapsed = collapsed.has(p.dir);
   if (isCollapsed) item.classList.add('collapsed');
@@ -309,6 +334,16 @@ async function reorderWorkspace(draggedDir, targetDir) {
 export function renderSidebar() {
   renderProjects();
   renderWorkspaces();
+  applyFilter();
+}
+
+// Toggle each item's visibility against the current filter. Cheap DOM-only pass
+// (no data rebuild, no git spawns), so it's safe to run on every keystroke.
+function applyFilter() {
+  for (const item of [...els.list.children, ...els.wsList.children]) {
+    const name = item.dataset.name || '';
+    item.hidden = filterText ? !name.includes(filterText) : false;
+  }
 }
 
 function renderProjects() {
@@ -406,3 +441,24 @@ els.addBtn.addEventListener('click', async () => {
 });
 
 els.addWsBtn.addEventListener('click', createWorkspace);
+
+els.collapseAllBtn.addEventListener('click', toggleCollapseAll);
+
+// Debounce the filter so a fast typist doesn't fire an applyFilter per keystroke.
+let filterTimer = null;
+els.sidebarFilter.addEventListener('input', () => {
+  clearTimeout(filterTimer);
+  filterTimer = setTimeout(() => {
+    filterText = els.sidebarFilter.value.trim().toLowerCase();
+    applyFilter();
+  }, 200);
+});
+// Esc clears the filter while the box is focused (immediate, no debounce).
+els.sidebarFilter.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && filterText) {
+    clearTimeout(filterTimer);
+    els.sidebarFilter.value = '';
+    filterText = '';
+    applyFilter();
+  }
+});

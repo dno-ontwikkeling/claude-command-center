@@ -5,7 +5,7 @@
 import { els } from './dom.js';
 import { agents, agentSeq, pendingExit, dormant, state, persistAgents, agentsForDir } from './state.js';
 import { settings, termOpts } from './settings.js';
-import { confirmDialog, promptText } from './modals.js';
+import { confirmDialog, promptText, closeMenu } from './modals.js';
 import { renderSidebar } from './sidebar.js';
 import { updateStageBar, openSearch } from './stage.js';
 import { beep } from './sound.js';
@@ -13,6 +13,46 @@ import { beep } from './sound.js';
 // ---------------------------------------------------------------------------
 // Agents / terminals
 // ---------------------------------------------------------------------------
+
+// Right-click terminal menu. Claude's TUI turns on mouse tracking, which
+// swallows plain drag-select and the browser's native menu, so we give an
+// explicit Copy/Paste path here. Reuses the kebab `.menu` styling.
+function closeTermMenu() {
+  document.getElementById('term-menu')?.remove();
+}
+
+function openTermMenu(x, y, term) {
+  closeMenu(); // dismiss any open kebab menu
+  closeTermMenu();
+  const menu = document.createElement('div');
+  menu.className = 'menu';
+  menu.id = 'term-menu';
+  const items = [
+    { label: 'Copy', disabled: !term.hasSelection(), action: () => window.api.writeClipboard(term.getSelection()) },
+    {
+      label: 'Paste',
+      action: () => {
+        const t = window.api.readClipboard();
+        if (t) term.paste(t);
+      },
+    },
+  ];
+  for (const it of items) {
+    const b = document.createElement('button');
+    b.textContent = it.label;
+    if (it.disabled) b.disabled = true;
+    else b.addEventListener('click', () => { closeTermMenu(); it.action(); });
+    menu.appendChild(b);
+  }
+  document.body.appendChild(menu);
+  menu.style.top = `${Math.min(y, window.innerHeight - menu.offsetHeight - 8)}px`;
+  menu.style.left = `${Math.min(x, window.innerWidth - menu.offsetWidth - 8)}px`;
+}
+
+// Any click outside the menu dismisses it (fires before contextmenu reopen).
+document.addEventListener('mousedown', (e) => {
+  if (!e.target.closest('#term-menu')) closeTermMenu();
+});
 
 // `restore` resumes a dormant agent: it reuses the old id/label and passes the
 // stored session id so Claude reopens the same conversation (`claude --resume`).
@@ -42,6 +82,22 @@ export function spawn(dir, cwd, branch, isMain, restore = null) {
     new WebLinksAddon.WebLinksAddon((_e, uri) => window.api.openExternal(uri))
   );
   term.open(el);
+
+  // Select-to-copy (Linux-terminal style). Mouse tracking eats plain
+  // drag-select while Claude is grabbing the mouse; hold Shift to force a
+  // local selection in any mode (xterm built-in). On mouseup, push whatever
+  // is selected to the clipboard so no Ctrl+C is needed.
+  el.addEventListener('mouseup', () => {
+    if (settings.copyOnSelect && term.hasSelection()) {
+      window.api.writeClipboard(term.getSelection());
+    }
+  });
+
+  // Right-click -> Copy/Paste menu at the cursor.
+  el.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    openTermMenu(e.clientX, e.clientY, term);
+  });
 
   // Custom key handling. xterm has no Edit-role menu wired (no Electron menu),
   // and treats Ctrl+Enter the same as Enter, so we intercept both here.
@@ -200,8 +256,13 @@ export async function deleteWorktree(id) {
     if (del.error) await confirmDialog('Branch deletion failed', del.error, { alert: true });
   }
 
-  // The agent is already dead; drop its row regardless of removal outcome.
-  cleanupAgent(id);
+  // The pty is already dead (we had to kill it to release the cwd lock before
+  // git could touch the folder). If the worktree is really gone, drop the row
+  // for good. But if removal was aborted or failed, the worktree + branch still
+  // exist on disk — keep the session as a resumable dormant record so there's a
+  // UI path back, instead of silently forgetting it.
+  if (res.error) convertToDormant(id);
+  else cleanupAgent(id);
 }
 
 // Kill the agent's pty and resolve once it has actually exited (with a short

@@ -6,17 +6,19 @@ import { els } from './dom.js';
 // Kebab dropdown menu
 // ---------------------------------------------------------------------------
 
-export function openMenu(anchor, items) {
+export function openMenu(anchor, items, opts = {}) {
   // Read the anchor rect before closeMenu — a submenu re-anchors to the same
   // (persistent) kebab button, but capturing first is cheap insurance.
   const r0 = anchor.getBoundingClientRect();
   closeMenu();
   const menu = document.createElement('div');
   menu.className = 'menu';
+  if (opts.className) menu.classList.add(opts.className);
   menu.id = 'kebab-menu';
   for (const it of items) {
     const b = document.createElement('button');
-    b.textContent = it.label;
+    if (it.icon) b.innerHTML = `${it.icon}<span>${it.label}</span>`;
+    else b.textContent = it.label;
     if (it.danger) b.classList.add('danger');
     if (it.disabled) {
       b.disabled = true;
@@ -36,6 +38,8 @@ export function openMenu(anchor, items) {
   }
   document.body.appendChild(menu);
   const r = r0;
+  // Match the anchor's width so the menu sits flush beneath a button.
+  if (opts.matchWidth) menu.style.minWidth = `${r.width}px`;
   // Flip above the anchor when there isn't room below (e.g. footer buttons).
   const below = r.bottom + 4;
   const top = below + menu.offsetHeight > window.innerHeight - 8 ? r.top - menu.offsetHeight - 4 : below;
@@ -55,7 +59,14 @@ document.addEventListener('click', (e) => {
 // Text prompt modal (Electron renderer has no window.prompt)
 // ---------------------------------------------------------------------------
 
+// The overlay is a singleton: a second call before the first resolves would
+// overwrite the shared handlers and strand the first Promise. Settle any
+// pending dialog (as a cancel) before opening a new one so every caller's
+// await resolves exactly once.
+let pendingPromptDone = null;
+
 export function promptText(title, placeholder = '') {
+  pendingPromptDone?.(null);
   return new Promise((resolve) => {
     els.promptTitle.textContent = title;
     els.promptInput.value = '';
@@ -64,12 +75,15 @@ export function promptText(title, placeholder = '') {
     els.promptInput.focus();
 
     const done = (val) => {
+      if (pendingPromptDone !== done) return;
+      pendingPromptDone = null;
       els.promptOverlay.hidden = true;
       els.promptOk.onclick = null;
       els.promptCancel.onclick = null;
       els.promptInput.onkeydown = null;
       resolve(val);
     };
+    pendingPromptDone = done;
     els.promptOk.onclick = () => done(els.promptInput.value.trim() || null);
     els.promptCancel.onclick = () => done(null);
     els.promptInput.onkeydown = (e) => {
@@ -81,7 +95,12 @@ export function promptText(title, placeholder = '') {
 
 // title, message, { okLabel, danger, alert, checkbox } -> Promise<boolean>
 // When `checkbox` (a label string) is given, resolves { ok, checked } instead.
+let pendingConfirmDone = null;
+
 export function confirmDialog(title, message, opts = {}) {
+  // Same singleton-overlay reentrancy guard as promptText: settle any pending
+  // dialog (as a cancel) so a superseded caller's Promise still resolves.
+  pendingConfirmDone?.(false);
   return new Promise((resolve) => {
     els.confirmTitle.textContent = title;
     els.confirmMsg.textContent = message;
@@ -100,6 +119,8 @@ export function confirmDialog(title, message, opts = {}) {
     els.confirmOk.focus();
 
     const done = (val) => {
+      if (pendingConfirmDone !== done) return;
+      pendingConfirmDone = null;
       els.confirmOverlay.hidden = true;
       els.confirmOk.onclick = null;
       els.confirmCancel.onclick = null;
@@ -107,6 +128,7 @@ export function confirmDialog(title, message, opts = {}) {
       document.onkeydown = null;
       resolve(hasCheck ? { ok: val, checked: els.confirmCheck.checked } : val);
     };
+    pendingConfirmDone = done;
     els.confirmOk.onclick = () => done(true);
     els.confirmCancel.onclick = () => done(false);
     els.confirmX.onclick = () => done(false);

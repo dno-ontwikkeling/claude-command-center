@@ -636,6 +636,9 @@ function registerIpc() {
   // the folder ("Open Folder" mode). Returns an error string the UI can surface.
   ipcMain.handle('vs:open', (_e, cwd) => openInVisualStudio(cwd));
 
+  // Open a worktree in VS Code via the `code` CLI (on PATH after install).
+  ipcMain.handle('code:open', (_e, cwd) => openInVSCode(cwd));
+
   // Reveal a worktree in the OS file manager (Explorer / Finder / Files).
   ipcMain.handle('explorer:open', async (_e, cwd) => {
     const err = await shell.openPath(cwd); // returns '' on success
@@ -741,6 +744,25 @@ async function openInVisualStudio(cwd) {
   });
 }
 
+// Open a worktree in VS Code via the `code` CLI. `code` is code.cmd on Windows
+// so it needs a shell; it launches the editor and exits, so we resolve on the
+// callback. Missing CLI surfaces as an error string the UI can show.
+function openInVSCode(cwd) {
+  return new Promise((resolve) => {
+    execFile('code', [cwd], { shell: true }, (err, _stdout, stderr) => {
+      if (err) {
+        resolve({
+          error:
+            (stderr || '').trim() ||
+            "VS Code CLI (`code`) not found on PATH. In VS Code run: Shell Command: Install 'code' command in PATH.",
+        });
+      } else {
+        resolve({ ok: true });
+      }
+    });
+  });
+}
+
 function runGit(cwd, args) {
   return new Promise((resolve) => {
     execFile('git', ['-C', cwd, ...args], (err, stdout, stderr) => {
@@ -766,6 +788,22 @@ function createWindow() {
     },
   });
   mainWindow.loadFile(path.join('renderer', 'index.html'));
+}
+
+// Single-instance lock. A second launch would race the first on the JSON
+// stores (projects.json / workspaces.json), so bail out early and hand focus
+// back to the window that already owns them.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
 }
 
 app.whenReady().then(async () => {

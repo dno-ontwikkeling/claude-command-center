@@ -58,6 +58,7 @@ function showMessage(text) {
 async function load() {
   const cwd = activeCwd;
   if (!cwd) return;
+  const requestedMode = mode;
 
   const a = activeAgent();
   els.diffTitle.textContent = a && a.branch ? `⎇ ${a.branch}` : 'Diff';
@@ -65,12 +66,12 @@ async function load() {
   els.diffFiles.innerHTML = '';
   showMessage('Loading…');
 
-  const res = await window.api.gitDiff(cwd, mode);
-  // The user may have closed the viewer or switched worktree while git ran.
-  if (els.diffViewer.hidden || cwd !== activeCwd) return;
+  const res = await window.api.gitDiff(cwd, requestedMode);
+  // The user may have closed the viewer, switched worktree, or switched mode while git ran.
+  if (els.diffViewer.hidden || cwd !== activeCwd || requestedMode !== mode) return;
 
   els.diffSub.textContent =
-    mode === 'branch' ? (res.base ? `vs ${res.base}` : '') : 'uncommitted vs HEAD';
+    requestedMode === 'branch' ? (res.base ? `vs ${res.base}` : '') : 'uncommitted vs HEAD';
 
   if (!res.ok) {
     showMessage(res.error || 'git reported an error.');
@@ -79,7 +80,7 @@ async function load() {
 
   currentFiles = parseDiff(res.diff);
   if (!currentFiles.length) {
-    showMessage(mode === 'branch' ? 'No differences from the base branch.' : 'No uncommitted changes.');
+    showMessage(requestedMode === 'branch' ? 'No differences from the base branch.' : 'No uncommitted changes.');
     return;
   }
   renderFiles(currentFiles);
