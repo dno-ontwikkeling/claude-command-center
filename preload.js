@@ -2,7 +2,12 @@
 
 const { contextBridge, ipcRenderer, clipboard } = require('electron');
 
-contextBridge.exposeInMainWorld('api', {
+/**
+ * The renderer-facing API. Shape is defined once in types/ipc.d.ts (as
+ * window.api) so renderer code type-checks against a single contract.
+ * @type {import('./types/ipc').Api}
+ */
+const api = {
   // projects
   listProjects: () => ipcRenderer.invoke('projects:list'),
   addProject: () => ipcRenderer.invoke('projects:add'),
@@ -48,4 +53,6 @@ contextBridge.exposeInMainWorld('api', {
   onData: (cb) => ipcRenderer.on('agent:data', (_e, p) => cb(p)),
   onExit: (cb) => ipcRenderer.on('agent:exit', (_e, p) => cb(p)),
   onEvent: (cb) => ipcRenderer.on('agent:event', (_e, p) => cb(p)),
-});
+};
+
+contextBridge.exposeInMainWorld('api', api);

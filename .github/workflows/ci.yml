@@ -18,3 +18,15 @@ jobs:
       # electron/node-pty install and just run the tests directly.
       - name: Run unit tests
         run: node --test
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # Checks the IPC boundary (preload.js) against the types/ipc.d.ts contract.
+      # Self-contained via npx — no project install needed.
+      - name: Typecheck IPC boundary
+        run: npm run typecheck
