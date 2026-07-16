@@ -1,12 +1,13 @@
 ---
 id: 020-aaba
 title: [DATA-1] removeProject destroys resumable sessions with no confirm
-status: ready
+status: complete
 priority: P1
 type: fix
 created: "2026-07-16T22:38:16.356Z"
-updated: "2026-07-16T22:38:40.285Z"
+updated: "2026-07-16T22:48:07.849Z"
 dependencies: []
+completed_at: "2026-07-16T22:48:07.849Z"
 ---
 
 # [DATA-1] removeProject destroys resumable sessions with no confirm
@@ -17,9 +18,9 @@ removeProject(dir) (sidebar.js:389) has NO confirmDialog unlike removeWorkspace.
 
 ## Acceptance Criteria
 
-- [ ] removeProject shows a confirmDialog before teardown (match removeWorkspace)
-- [ ] Resumable agents (sessionId+used) convert to dormant not cleanupAgent - reuse deleteWorktree preservation path
-- [ ] removeProject and removeWorkspace prune dormant records for the removed dir (DATA-2)
+- [x] removeProject shows a confirmDialog before teardown
+- [x] Resumable agents (sessionId+used) convert to dormant not cleanupAgent - reuse deleteWorktree preservation path
+- [x] removeProject and removeWorkspace prune dormant records for the removed dir
 
 ## Files
 
@@ -28,4 +29,6 @@ removeProject(dir) (sidebar.js:389) has NO confirmDialog unlike removeWorkspace.
 - renderer/state.js
 
 ## Work Log
+
+### 2026-07-16T22:48:07.618Z - Wave 1: implemented; 62 tests + typecheck green
 

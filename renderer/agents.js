@@ -3,7 +3,7 @@
 /* global Terminal, FitAddon, SearchAddon, WebLinksAddon */
 
 import { els } from './dom.js';
-import { agents, agentSeq, pendingExit, dormant, state, persistAgents, agentsForDir, notifyAgentsChanged, record, displayLabel } from './state.js';
+import { agents, agentSeq, pendingExit, dormant, state, persistAgents, agentsForDir, dormantForDir, notifyAgentsChanged, record, displayLabel } from './state.js';
 import { settings, termOpts } from './settings.js';
 import { confirmDialog, promptText, closeMenu } from './modals.js';
 import { updateStageBar, openSearch } from './stage.js';
@@ -210,6 +210,16 @@ export function removeDormant(id) {
   notifyAgentsChanged();
 }
 
+// Forget every dormant record for a dir that's being torn down entirely
+// (removeProject / removeWorkspace) — otherwise those rows linger in
+// localStorage forever, pointing at a project that no longer exists.
+export function pruneDormantForDir(dir, skipRender = false) {
+  for (const [id] of dormantForDir(dir)) dormant.delete(id);
+  persistAgents();
+  if (agents.size === 0 && dormant.size === 0) els.empty.style.display = '';
+  if (!skipRender) notifyAgentsChanged();
+}
+
 export async function renameAgent(id) {
   const a = agents.get(id);
   if (!a) return;
@@ -323,7 +333,7 @@ function cleanupAgent(id, skipRender = false) {
 // pty exited on its own (Claude quit / app closed). If the agent carries a
 // session id and the exit was not deliberate, keep it as a resumable dormant
 // record instead of discarding it.
-function convertToDormant(id) {
+function convertToDormant(id, skipRender = false) {
   const a = agents.get(id);
   if (!a) return;
   try {
@@ -340,7 +350,7 @@ function convertToDormant(id) {
     updateStageBar();
   }
   persistAgents();
-  notifyAgentsChanged();
+  if (!skipRender) notifyAgentsChanged();
 }
 
 // Reorder agents within a project: dropping `draggedId` onto `targetId`
@@ -367,8 +377,13 @@ function agentsForDirCount(dir) {
 }
 
 export function removeAgent(id, skipRender = false) {
+  const a = agents.get(id);
   window.api.kill(id);
-  cleanupAgent(id, skipRender);
+  // A resumable session (has a sessionId and was actually used) is preserved as
+  // a dormant record instead of being discarded outright — same preservation
+  // rule deleteWorktree and the pty-exit handler already apply.
+  if (a && a.sessionId && a.used) convertToDormant(id, skipRender);
+  else cleanupAgent(id, skipRender);
 }
 
 export function activate(id) {

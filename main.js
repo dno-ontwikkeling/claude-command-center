@@ -433,7 +433,7 @@ function killAgent(id) {
 async function rmDirRetry(target) {
   for (let i = 0; i < 5; i++) {
     try {
-      fs.rmSync(target, { recursive: true, force: true });
+      await fs.promises.rm(target, { recursive: true, force: true });
     } catch {
       /* locked; retry */
     }

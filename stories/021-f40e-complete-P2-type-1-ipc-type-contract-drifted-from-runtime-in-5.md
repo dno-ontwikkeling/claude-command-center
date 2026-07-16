@@ -1,12 +1,13 @@
 ---
 id: 021-f40e
 title: [TYPE-1] IPC type contract drifted from runtime in 5 handlers
-status: ready
+status: complete
 priority: P2
 type: fix
 created: "2026-07-16T22:38:16.359Z"
-updated: "2026-07-16T22:38:40.408Z"
+updated: "2026-07-16T22:48:08.616Z"
 dependencies: []
+completed_at: "2026-07-16T22:48:08.615Z"
 ---
 
 # [TYPE-1] IPC type contract drifted from runtime in 5 handlers
@@ -17,9 +18,9 @@ types/ipc.d.ts declares shapes that no longer match main.js; renderer follows th
 
 ## Acceptance Criteria
 
-- [ ] Rewrite the 5 declarations in types/ipc.d.ts to match shapes renderer consumers rely on
-- [ ] Fix spawn/open-external declared Promise<OpResult> vs actual void
-- [ ] Replace opts:object on createWorktree/spawn with concrete interfaces
+- [x] Rewrite the 5 declarations in types/ipc.d.ts to match shapes renderer consumers rely on
+- [x] Fix spawn/open-external declared Promise<OpResult> vs actual void
+- [x] Replace opts:object on createWorktree/spawn with concrete interfaces
 
 ## Files
 
@@ -27,4 +28,6 @@ types/ipc.d.ts declares shapes that no longer match main.js; renderer follows th
 - main.js
 
 ## Work Log
+
+### 2026-07-16T22:48:08.387Z - Wave 1: implemented; 62 tests + typecheck green
 

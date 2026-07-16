@@ -116,7 +116,10 @@ export function confirmDialog(title, message, opts = {}) {
     }
 
     els.confirmOverlay.hidden = false;
-    els.confirmOk.focus();
+    // For danger variants, default focus to Cancel so a stray/queued Enter
+    // (common in a terminal-heavy UI) lands on the safe action rather than
+    // the destructive one. Non-danger dialogs keep focusing OK.
+    (opts.danger ? els.confirmCancel : els.confirmOk).focus();
 
     const done = (val) => {
       if (pendingConfirmDone !== done) return;
@@ -125,15 +128,18 @@ export function confirmDialog(title, message, opts = {}) {
       els.confirmOk.onclick = null;
       els.confirmCancel.onclick = null;
       els.confirmX.onclick = null;
-      document.onkeydown = null;
+      els.confirmOverlay.onkeydown = null;
       resolve(hasCheck ? { ok: val, checked: els.confirmCheck.checked } : val);
     };
     pendingConfirmDone = done;
     els.confirmOk.onclick = () => done(true);
     els.confirmCancel.onclick = () => done(false);
     els.confirmX.onclick = () => done(false);
-    document.onkeydown = (e) => {
-      if (e.key === 'Enter') done(true);
+    // Scoped to the overlay (not document) so it doesn't leak globally once
+    // the handler is cleared. Danger dialogs never auto-confirm on Enter —
+    // it falls through to the focused Cancel button's native click instead.
+    els.confirmOverlay.onkeydown = (e) => {
+      if (e.key === 'Enter' && !opts.danger) done(true);
       if (e.key === 'Escape') done(false);
     };
   });

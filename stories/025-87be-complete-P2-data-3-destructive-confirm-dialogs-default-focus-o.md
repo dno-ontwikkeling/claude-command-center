@@ -1,12 +1,13 @@
 ---
 id: 025-87be
 title: [DATA-3] Destructive confirm dialogs default-focus OK and Enter-confirm
-status: ready
+status: complete
 priority: P2
 type: fix
 created: "2026-07-16T22:38:16.363Z"
-updated: "2026-07-16T22:38:40.852Z"
+updated: "2026-07-16T22:48:09.382Z"
 dependencies: []
+completed_at: "2026-07-16T22:48:09.382Z"
 ---
 
 # [DATA-3] Destructive confirm dialogs default-focus OK and Enter-confirm
@@ -17,12 +18,14 @@ confirmDialog (modals.js:100-140) always confirmOk.focus() and binds a document-
 
 ## Acceptance Criteria
 
-- [ ] For danger variants focus Cancel by default (or require a distinct confirmation step)
-- [ ] Scope the Enter keydown handler to the overlay not document
+- [x] For danger variants focus Cancel by default
+- [x] Scope the Enter keydown handler to the overlay not document
 
 ## Files
 
 - renderer/modals.js
 
 ## Work Log
+
+### 2026-07-16T22:48:09.148Z - Wave 1: implemented; 62 tests + typecheck green
 

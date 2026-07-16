@@ -4,7 +4,7 @@ import { els } from './dom.js';
 import { state, agents, agentsForDir, dormantForDir, displayLabel, readLocalJson } from './state.js';
 import { openMenu, promptText, confirmDialog } from './modals.js';
 import { fmtDiff, refreshAgentGit } from './agent-git.mjs';
-import { activate, removeAgent, renameAgent, deleteWorktree, resume, removeDormant, reorderAgent, forceStatus, spawn } from './agents.js';
+import { activate, removeAgent, renameAgent, deleteWorktree, resume, removeDormant, pruneDormantForDir, reorderAgent, forceStatus, spawn } from './agents.js';
 import { newAgent } from './worktree.js';
 
 // ---------------------------------------------------------------------------
@@ -387,7 +387,14 @@ export async function refreshProjects() {
 }
 
 async function removeProject(dir) {
+  const ok = await confirmDialog(
+    'Remove project',
+    'This removes the project from Command Center. The folder on disk is left untouched.',
+    { okLabel: 'Remove', danger: true }
+  );
+  if (!ok) return;
   for (const [id] of agentsForDir(dir)) removeAgent(id, true);
+  pruneDormantForDir(dir, true);
   state.projectsData = await window.api.removeProject(dir);
   renderSidebar();
 }
@@ -400,6 +407,7 @@ async function removeWorkspace(dir) {
   );
   if (!ok) return;
   for (const [id] of agentsForDir(dir)) removeAgent(id, true);
+  pruneDormantForDir(dir, true);
   state.workspacesData = await window.api.removeWorkspace(dir);
   renderSidebar();
 }
