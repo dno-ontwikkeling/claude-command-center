@@ -90,6 +90,10 @@ export interface Api {
   // logging (renderer -> main log file)
   log(level: LogLevel, args: unknown[]): void;
 
+  // git-change watchers
+  setWatchDirs(dirs: string[]): void;
+  onGitChanged(cb: () => void): void;
+
   // agents
   spawn(id: string, cwd: string, opts: object): Promise<OpResult>;
   sendInput(id: string, data: string): void;

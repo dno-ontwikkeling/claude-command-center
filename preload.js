@@ -43,6 +43,10 @@ const api = {
   // logging (renderer -> main log file)
   log: (level, args) => ipcRenderer.send('log', { level, args }),
 
+  // git-change watchers: register the dirs to watch; main pushes 'git:changed'
+  setWatchDirs: (dirs) => ipcRenderer.send('watch:set', dirs),
+  onGitChanged: (cb) => ipcRenderer.on('git:changed', () => cb()),
+
   // agents
   spawn: (id, cwd, opts) => ipcRenderer.invoke('agent:spawn', { id, cwd, opts }),
   sendInput: (id, data) => ipcRenderer.send('agent:input', { id, data }),

@@ -443,10 +443,59 @@ async function rmDirRetry(target) {
 }
 
 // ---------------------------------------------------------------------------
+// Git change watchers — push a 'git:changed' to the renderer when a watched
+// repo's .git changes (branch switch, commit, staging), so the sidebar updates
+// promptly instead of only on the next poll. Best-effort and purely additive:
+// the renderer keeps a foreground poll as the correctness floor, so a missed or
+// unsupported fs.watch event just falls back to the slower refresh.
+// ---------------------------------------------------------------------------
+
+const gitWatchers = new Map(); // dir -> FSWatcher
+let gitChangeTimer = null;
+
+function scheduleGitChanged() {
+  // git touches several files per operation; coalesce into one notification.
+  clearTimeout(gitChangeTimer);
+  gitChangeTimer = setTimeout(() => sendToRenderer('git:changed'), 400);
+}
+
+function watchGitDirs(dirs) {
+  const wanted = new Set(Array.isArray(dirs) ? dirs : []);
+  for (const [dir, w] of gitWatchers) {
+    if (wanted.has(dir)) continue;
+    try {
+      w.close();
+    } catch {
+      /* already closed */
+    }
+    gitWatchers.delete(dir);
+  }
+  for (const dir of wanted) {
+    if (gitWatchers.has(dir)) continue;
+    try {
+      const w = fs.watch(path.join(dir, '.git'), { persistent: false }, () => scheduleGitChanged());
+      w.on('error', () => {
+        try {
+          w.close();
+        } catch {
+          /* noop */
+        }
+        gitWatchers.delete(dir);
+      });
+      gitWatchers.set(dir, w);
+    } catch {
+      // No .git, or fs.watch unsupported for this path — the poll floor covers it.
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // IPC
 // ---------------------------------------------------------------------------
 
 function registerIpc() {
+  ipcMain.on('watch:set', (_e, dirs) => watchGitDirs(dirs));
+
   const enrich = (p) => ({ ...p, isGit: isGitRepo(p.dir), type: detectProjectTypeCached(p.dir) });
 
   // Renderer-forwarded log lines land in the same file as main-process logs.

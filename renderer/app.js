@@ -3,11 +3,11 @@
 // Entry point. Imports wire up each module's event listeners as a side effect;
 // this file only kicks off the initial render and the periodic refresh.
 
-import { agents, loadDormant, onAgentsChanged } from './state.js';
+import { agents, state, loadDormant, onAgentsChanged } from './state.js';
 import { els } from './dom.js';
 import { initTheme } from './settings.js';
-import { refreshProjects, renderSidebar } from './sidebar.js';
-import { installGlobalHandlers } from './logger.js';
+import { refreshProjects, renderSidebar, refreshAllAgentsGit } from './sidebar.js';
+import { installGlobalHandlers, log } from './logger.js';
 import './stage.js'; // stage toolbar + find-in-terminal wiring
 import './diff.js'; // GitKraken-style diff viewer wiring
 import './prompts.js'; // smart prompts button wiring
@@ -17,17 +17,46 @@ import './prompts.js'; // smart prompts button wiring
 // ---------------------------------------------------------------------------
 
 installGlobalHandlers(); // record uncaught renderer errors to the main log file
+log.info('renderer', 'boot'); // confirms the module graph loaded without a throw
 initTheme();
 // Coordinator wiring: agents.js emits lifecycle changes via state's pub/sub
 // rather than importing the sidebar (which formed an import cycle). Register the
 // re-render before any agent action can fire, so no change is missed.
-onAgentsChanged(renderSidebar);
-loadDormant(); // resumable sessions from the previous run, shown as dormant rows
-refreshProjects();
+// Keep the set of watched git dirs in sync with what's on screen (projects,
+// workspaces, and live agent worktrees), so main can push 'git:changed'.
+function syncWatch() {
+  const dirs = new Set();
+  for (const p of state.projectsData) dirs.add(p.dir);
+  for (const w of state.workspacesData) dirs.add(w.dir);
+  for (const a of agents.values()) if (a.cwd) dirs.add(a.cwd);
+  window.api.setWatchDirs([...dirs]);
+}
 
-// Branch can change while you work; refresh the sidebar periodically.
-setInterval(refreshProjects, 15000);
+onAgentsChanged(() => {
+  renderSidebar();
+  syncWatch();
+});
+loadDormant(); // resumable sessions from the previous run, shown as dormant rows
+refreshProjects().then(syncWatch);
+
+// A git change in a watched repo (branch switch, commit, staging) pushes here;
+// refresh the sidebar and per-agent branch/diff cache promptly.
+window.api.onGitChanged(() => {
+  refreshProjects();
+  refreshAllAgentsGit();
+});
+
+// Event-driven above; this foreground poll is the correctness floor for cases
+// fs.watch can't see (e.g. a worktree whose .git is a file). Paused while the
+// window is hidden/blurred so a backgrounded window does no periodic work; focus
+// and becoming-visible refresh immediately.
+setInterval(() => {
+  if (document.visibilityState === 'visible') refreshProjects();
+}, 15000);
 window.addEventListener('focus', refreshProjects);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') refreshProjects();
+});
 
 // Char metrics depend on Cascadia Mono being loaded; once fonts are ready,
 // refit every terminal so row/col counts match the real glyph size.

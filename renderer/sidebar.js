@@ -107,10 +107,15 @@ function refreshAgentGit(id, a) {
 // Independent slow timer: repopulate every live agent's git cache without
 // coupling to renderSidebar(). Keeps branch labels + diff badges reasonably
 // fresh while a render itself stays git-free.
-function refreshAllAgentsGit() {
+export function refreshAllAgentsGit() {
   for (const [id, a] of agents) refreshAgentGit(id, a);
 }
-setInterval(refreshAllAgentsGit, 15000);
+// Only poll while the window is in the foreground — a hidden/backgrounded window
+// does no periodic git work. Returning to the window refreshes immediately.
+setInterval(() => {
+  if (document.visibilityState === 'visible') refreshAllAgentsGit();
+}, 15000);
+window.addEventListener('focus', refreshAllAgentsGit);
 
 function buildAgentRow(id, a) {
   const row = document.createElement('li');
