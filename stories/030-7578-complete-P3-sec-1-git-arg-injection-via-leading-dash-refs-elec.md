@@ -1,12 +1,13 @@
 ---
 id: 030-7578
 title: [SEC-1] Git arg injection via leading-dash refs + Electron hardening cluster
-status: ready
+status: complete
 priority: P3
 type: fix
 created: "2026-07-16T22:38:16.368Z"
-updated: "2026-07-16T22:38:41.434Z"
+updated: "2026-07-16T23:28:07.698Z"
 dependencies: []
+completed_at: "2026-07-16T23:28:07.698Z"
 ---
 
 # [SEC-1] Git arg injection via leading-dash refs + Electron hardening cluster
@@ -17,11 +18,11 @@ Defense-in-depth cluster (all confirmed real, low current blast radius). SEC-1(c
 
 ## Acceptance Criteria
 
-- [ ] Insert -- before positional git ref/base args (and/or reject leading dash in ref names)
-- [ ] Validate incoming dir/cwd against loadProjects/loadWorkspaces/agents before acting
-- [ ] server.setTimeout on the hook server
-- [ ] openMenu builds icon as DOM node, label via textContent
-- [ ] Add sandbox:true, setWindowOpenHandler(deny), will-navigate guard
+- [x] Insert -- before positional git ref/base args
+- [x] Validate incoming dir/cwd against loadProjects/loadWorkspaces/agents before acting
+- [x] server.setTimeout on the hook server
+- [x] openMenu builds icon as DOM node, label via textContent
+- [x] Add sandbox:true, setWindowOpenHandler(deny), will-navigate guard
 
 ## Files
 
@@ -30,4 +31,6 @@ Defense-in-depth cluster (all confirmed real, low current blast radius). SEC-1(c
 - renderer/modals.js
 
 ## Work Log
+
+### 2026-07-16T23:28:07.464Z - SEC-1 --separator+leading-dash reject (verified vs real git), SEC-2 isKnownDir on all dir handlers, SEC-3 server.setTimeout, SEC-4 modals icon DOM node, SEC-5 sandbox+nav guards; preload sandbox-safe; 81 pass
 

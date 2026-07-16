@@ -14,7 +14,7 @@ const hookAuth = require('./hookauth');
 const hooksMerge = require('./hooksmerge');
 const { createRequestHandler } = require('./hookserver');
 const { openInVisualStudio, openInVSCode } = require('./editors');
-const { readJsonSafe, writeJsonAtomic, hasShellMeta } = require('./jsonstore');
+const { readJsonSafe, writeJsonAtomic, hasShellMeta, hasLeadingDash } = require('./jsonstore');
 const { gitBranch, isGitRepo, detectProjectType } = require('./gitinfo');
 const {
   execGit,
@@ -138,6 +138,54 @@ function saveWorkspaces(workspaces) {
 }
 
 // ---------------------------------------------------------------------------
+// Known-directory validation (SEC-2) — IPC handlers below take a renderer-
+// supplied dir/cwd (git ops, editor/explorer opens, worktree ops). A
+// compromised/buggy renderer could otherwise point them at an arbitrary path.
+// "Known" means: a registered project root, a registered workspace root, or a
+// dir this process has itself spawned a live agent into (a worktree or
+// workspace path — see spawnAgent below). The latter is populated at
+// agent:spawn time, which always happens (from the real UI flows) before any
+// subsequent git/editor IPC call could reference that same cwd — including a
+// freshly created worktree, since the renderer spawns an agent into it
+// immediately after worktree:create resolves. Entries are intentionally never
+// removed on pty exit: deleteWorktree() kills the agent (releasing its cwd's
+// file lock) BEFORE calling worktree:remove, so clearing on exit would reject
+// that very removal call.
+const knownAgentDirs = new Set(); // normalized dirs
+
+function normPath(p) {
+  const resolved = path.resolve(String(p));
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+function rememberAgentDir(dir) {
+  try {
+    knownAgentDirs.add(normPath(dir));
+  } catch {
+    /* not a usable path — nothing to remember */
+  }
+}
+
+function isKnownDir(dir) {
+  if (typeof dir !== 'string' || !dir) return false;
+  let target;
+  try {
+    target = normPath(dir);
+  } catch {
+    return false;
+  }
+  try {
+    if (loadProjects().some((p) => normPath(p.dir) === target)) return true;
+    if (loadWorkspaces().some((w) => normPath(w.dir) === target)) return true;
+  } catch {
+    // Corrupt store: already surfaced via warnCorruptOnce elsewhere. Fall
+    // through to the agent-dir check rather than throwing from inside a
+    // validation helper.
+  }
+  return knownAgentDirs.has(target);
+}
+
+// ---------------------------------------------------------------------------
 // Project type detection cache — gitBranch/isGitRepo/detectProjectType live in
 // ./gitinfo.js (electron-free, unit tested). detectProjectType is a synchronous
 // depth-3 recursion that blocks the event loop (which also pumps PTY onData/
@@ -242,6 +290,11 @@ function startServer() {
     const server = http.createServer(
       createRequestHandler({ agents, agentSecret, sendToRenderer, log })
     );
+    // A connection that opens and never sends (or sends a partial request and
+    // stalls) would otherwise hang its socket forever. 5s is generous for a
+    // localhost loopback hook payload; setTimeout emits 'timeout' on the
+    // socket, whose default handler (none set here) just destroys it.
+    server.setTimeout(5000);
     // An unhandled server 'error' event is fatal — same rationale as the
     // per-request 'error' listener inside the handler.
     server.on('error', (err) => log.error('hook-server', 'server error', err));
@@ -257,6 +310,10 @@ function startServer() {
 // ---------------------------------------------------------------------------
 
 function spawnAgent(id, cwd, opts = {}) {
+  // Record the cwd as known BEFORE the actual spawn (even a failed spawn's
+  // cwd was legitimately requested through the agent lifecycle, not just any
+  // renderer-supplied string reaching a git/editor handler directly).
+  rememberAgentDir(cwd);
   const shell = resolveClaude();
   // `--resume <id>` reopens a prior Claude session; permission flag (if any)
   // follows so it applies to the resumed run too.
@@ -485,11 +542,12 @@ function registerIpc() {
     return ordered.map(enrich);
   });
 
-  ipcMain.handle('projects:worktrees', (_e, dir) => listWorktrees(dir));
+  ipcMain.handle('projects:worktrees', (_e, dir) => (isKnownDir(dir) ? listWorktrees(dir) : []));
 
   // Local + remote branches, each flagged for whether it already has a worktree
   // (local) or a matching local branch (remote). Plus the repo's current branch.
   ipcMain.handle('branches:list', async (_e, dir) => {
+    if (!isKnownDir(dir)) return { current: null, local: [], remote: [] };
     const [local, remote, worktrees] = await Promise.all([
       listBranches(dir),
       listRemoteBranches(dir),
@@ -512,6 +570,7 @@ function registerIpc() {
   //   local  -> check out an existing local branch
   //   remote -> create a local tracking branch from a remote ref (origin/x -> x)
   ipcMain.handle('worktree:create', async (_e, { dir, mode, branch, base }) => {
+    if (!isKnownDir(dir)) return { error: 'Unknown project directory.' };
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
       properties: ['openDirectory', 'createDirectory'],
       title: `Choose parent folder for worktree "${branch}"`,
@@ -520,21 +579,32 @@ function registerIpc() {
     if (hasShellMeta(branch)) {
       return { error: 'Branch name contains unsafe characters (& | ; < > ( ) ! ^ % $ " \' `).' };
     }
+    // A ref/branch name starting with '-' is indistinguishable from a git
+    // option once it hits argv — reject it up front rather than relying on
+    // the `--` separator below alone (see hasLeadingDash in jsonstore.js for
+    // why `--` isn't sufficient on its own for `-b <name>`).
+    if (hasLeadingDash(branch) || hasLeadingDash(base)) {
+      return { error: 'Branch name cannot start with "-".' };
+    }
 
     let display = branch;
     let args;
     let target;
     if (mode === 'remote') {
       const localName = branch.split('/').slice(1).join('/') || branch;
+      if (hasLeadingDash(localName)) {
+        return { error: 'Branch name cannot start with "-".' };
+      }
       target = path.join(filePaths[0], localName.replace(/[/\\]/g, '-'));
-      args = [target, '-b', localName, branch]; // tracks the remote ref
+      // `--` ends option parsing before the positional path/commit-ish args.
+      args = ['-b', localName, '--', target, branch]; // tracks the remote ref
       display = localName;
     } else if (mode === 'new') {
       target = path.join(filePaths[0], branch.replace(/[/\\]/g, '-'));
-      args = [target, '-b', branch, ...(base ? [base] : [])];
+      args = ['-b', branch, '--', target, ...(base ? [base] : [])];
     } else {
       target = path.join(filePaths[0], branch.replace(/[/\\]/g, '-'));
-      args = [target, branch];
+      args = ['--', target, branch];
     }
     try {
       const r = await execGit(dir, ['worktree', 'add', ...args]);
@@ -546,9 +616,10 @@ function registerIpc() {
   });
 
   ipcMain.handle('worktree:remove', async (_e, { dir, path: wtPath, force }) => {
+    if (!isKnownDir(dir) || !isKnownDir(wtPath)) return { error: 'Unknown directory.' };
     const args = ['worktree', 'remove'];
     if (force) args.push('--force');
-    args.push(wtPath);
+    args.push('--', wtPath);
     try {
       const r = await execGit(dir, args);
       if (!r.ok) throw new Error(r.stderr || r.error.message);
@@ -599,14 +670,23 @@ function registerIpc() {
 
   // Git fetch / pull for the active worktree. pull is --ff-only so a button
   // press can never spawn a merge commit or drop the user into a conflict.
-  ipcMain.handle('git:fetch', (_e, cwd) => runGit(cwd, ['fetch', '--prune']));
-  ipcMain.handle('git:pull', (_e, cwd) => runGit(cwd, ['pull', '--ff-only']));
+  ipcMain.handle('git:fetch', (_e, cwd) =>
+    isKnownDir(cwd) ? runGit(cwd, ['fetch', '--prune']) : { ok: false, error: 'Unknown directory.' }
+  );
+  ipcMain.handle('git:pull', (_e, cwd) =>
+    isKnownDir(cwd) ? runGit(cwd, ['pull', '--ff-only']) : { ok: false, error: 'Unknown directory.' }
+  );
   // Delete a local branch (used after its worktree is removed). Try the safe
   // `-d` first — git refuses if the branch has commits not merged into its
   // upstream/HEAD, which `-D` would orphan. Only on that refusal do we surface a
   // clear warning and, if the user confirms, escalate to the destructive `-D`.
   ipcMain.handle('git:delete-branch', async (_e, { dir, branch }) => {
-    const safe = await runGit(dir, ['branch', '-d', branch]);
+    if (!isKnownDir(dir)) return { ok: false, error: 'Unknown directory.' };
+    // `--` ends option parsing before the positional branch name; a leading
+    // '-' in `branch` is rejected up front too (belt-and-braces, see
+    // hasLeadingDash in jsonstore.js).
+    if (hasLeadingDash(branch)) return { ok: false, error: 'Branch name cannot start with "-".' };
+    const safe = await runGit(dir, ['branch', '-d', '--', branch]);
     if (safe.ok) return safe;
     // Anything other than the "not fully merged" refusal is a real failure the
     // user should see as-is (branch missing, still checked out elsewhere, …).
@@ -625,12 +705,12 @@ function registerIpc() {
         "aren't merged or pushed elsewhere. This cannot be undone.",
     });
     if (response !== 0) return { ok: false, cancelled: true, error: 'Branch deletion cancelled.' };
-    return runGit(dir, ['branch', '-D', branch]);
+    return runGit(dir, ['branch', '-D', '--', branch]);
   });
 
   // Current branch for a worktree (reads .git/HEAD). Lets the sidebar refresh a
   // stale label after the user switches branch inside the worktree's terminal.
-  ipcMain.handle('git:branch', (_e, cwd) => gitBranch(cwd));
+  ipcMain.handle('git:branch', (_e, cwd) => (isKnownDir(cwd) ? gitBranch(cwd) : null));
 
   // Open a terminal link in the user's default browser. Only http(s) — never
   // hand arbitrary schemes (file:, javascript:) to the OS shell.
@@ -640,13 +720,18 @@ function registerIpc() {
 
   // Open a worktree in Visual Studio. Prefers a top-level .sln; otherwise opens
   // the folder ("Open Folder" mode). Returns an error string the UI can surface.
-  ipcMain.handle('vs:open', (_e, cwd) => openInVisualStudio(cwd));
+  ipcMain.handle('vs:open', (_e, cwd) =>
+    isKnownDir(cwd) ? openInVisualStudio(cwd) : { error: 'Unknown directory.' }
+  );
 
   // Open a worktree in VS Code via the `code` CLI (on PATH after install).
-  ipcMain.handle('code:open', (_e, cwd) => openInVSCode(cwd));
+  ipcMain.handle('code:open', (_e, cwd) =>
+    isKnownDir(cwd) ? openInVSCode(cwd) : { error: 'Unknown directory.' }
+  );
 
   // Reveal a worktree in the OS file manager (Explorer / Finder / Files).
   ipcMain.handle('explorer:open', async (_e, cwd) => {
+    if (!isKnownDir(cwd)) return { error: 'Unknown directory.' };
     const err = await shell.openPath(cwd); // returns '' on success
     return err ? { error: err } : { ok: true };
   });
@@ -654,6 +739,7 @@ function registerIpc() {
   // Added + removed line counts for a worktree vs HEAD (staged + unstaged),
   // shown as a "+N/-M" badge in the sidebar.
   ipcMain.handle('git:diffstat', async (_e, cwd) => {
+    if (!isKnownDir(cwd)) return { added: 0, removed: 0 };
     const { ok, stdout } = await execGit(cwd, ['diff', '--numstat', 'HEAD']);
     if (!ok) return { added: 0, removed: 0 };
     let added = 0;
@@ -674,6 +760,7 @@ function registerIpc() {
   // Returns { ok, diff, base? } or { ok:false, error }. maxBuffer is bumped so a
   // large diff isn't truncated into a spawn error.
   ipcMain.handle('git:diff', async (_e, { cwd, mode }) => {
+    if (!isKnownDir(cwd)) return { ok: false, error: 'Unknown directory.' };
     if (mode === 'branch') {
       const base = await resolveDiffBase(cwd);
       if (!base) return { ok: false, error: 'No base branch (origin/main, main, master…) found.' };
@@ -701,7 +788,19 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
+  });
+  // Never let window.open (or a target=_blank link) spawn a second, unmanaged
+  // BrowserWindow — terminal links already route through open-external
+  // (shell.openExternal), so there is no legitimate use of a new window here.
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  // Block any renderer-initiated top-level navigation (e.g. a compromised
+  // renderer setting window.location). The only real navigation — the initial
+  // loadFile below — is issued from the main process and does not fire this
+  // event, so this can safely deny unconditionally.
+  mainWindow.webContents.on('will-navigate', (event) => {
+    event.preventDefault();
   });
   mainWindow.loadFile(path.join('renderer', 'index.html'));
 }

@@ -17,8 +17,20 @@ export function openMenu(anchor, items, opts = {}) {
   menu.id = 'kebab-menu';
   for (const it of items) {
     const b = document.createElement('button');
-    if (it.icon) b.innerHTML = `${it.icon}<span>${it.label}</span>`;
-    else b.textContent = it.label;
+    if (it.icon) {
+      // it.icon is trusted markup (a hardcoded <svg> literal from the
+      // EDITORS table); it.label is not (can carry a repo/branch/user-
+      // supplied name), so it must never be interpolated into innerHTML
+      // alongside it. Build the icon as its own DOM node and set the label
+      // via textContent instead.
+      const iconEl = document.createElement('span');
+      iconEl.innerHTML = it.icon;
+      const labelEl = document.createElement('span');
+      labelEl.textContent = it.label;
+      b.append(iconEl, labelEl);
+    } else {
+      b.textContent = it.label;
+    }
     if (it.danger) b.classList.add('danger');
     if (it.disabled) {
       b.disabled = true;

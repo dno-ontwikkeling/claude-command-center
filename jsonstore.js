@@ -81,4 +81,17 @@ function hasShellMeta(name) {
   return SHELL_META.test(String(name));
 }
 
-module.exports = { backupBadFile, readJsonSafe, writeJsonAtomic, hasShellMeta };
+// A git ref/branch name starting with '-' is indistinguishable from an option
+// once it reaches argv (e.g. `-b -x`, `-b --evil`). `--` before the positional
+// path/commit-ish args (added at the git-invocation call sites) stops git's
+// top-level worktree/branch parser from misreading it, but manual testing
+// showed `git worktree add -b <leading-dash-name>` still fails with a
+// confusing internal "unknown switch"/"unknown option" error from the branch-
+// creation code path underneath, even behind `--`. Reject it up front instead
+// so the caller gets a clean message rather than relying on git's own parser
+// to fail safe.
+function hasLeadingDash(name) {
+  return typeof name === 'string' && name.startsWith('-');
+}
+
+module.exports = { backupBadFile, readJsonSafe, writeJsonAtomic, hasShellMeta, hasLeadingDash };
