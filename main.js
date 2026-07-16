@@ -10,6 +10,7 @@ const { execFile } = require('child_process');
 const pty = require('@lydell/node-pty');
 const log = require('./logger');
 const { readJsonSafe, writeJsonAtomic, hasShellMeta } = require('./jsonstore');
+const { gitBranch, isGitRepo, detectProjectType } = require('./gitinfo');
 
 // Last-resort handlers so a stray throw/rejection is recorded instead of dying
 // silently (or crashing the whole process with no trace).
@@ -107,101 +108,13 @@ function saveWorkspaces(workspaces) {
 }
 
 // ---------------------------------------------------------------------------
-// Git branch (no git dependency — read .git/HEAD; handles worktrees)
-// ---------------------------------------------------------------------------
-
-function gitBranch(dir) {
-  try {
-    const dotGit = path.join(dir, '.git');
-    const stat = fs.statSync(dotGit);
-    let headFile;
-    if (stat.isDirectory()) {
-      headFile = path.join(dotGit, 'HEAD');
-    } else {
-      // worktree: .git is a file "gitdir: <path>"
-      const gitdir = fs.readFileSync(dotGit, 'utf8').replace('gitdir:', '').trim();
-      headFile = path.join(gitdir, 'HEAD');
-    }
-    const head = fs.readFileSync(headFile, 'utf8').trim();
-    if (head.startsWith('ref:')) return head.replace('ref: refs/heads/', '');
-    return head.slice(0, 7); // detached HEAD -> short sha
-  } catch {
-    return null;
-  }
-}
-
-function isGitRepo(dir) {
-  return gitBranch(dir) !== null;
-}
-
-// ---------------------------------------------------------------------------
-// Project type detection (for the sidebar icon) — cheap, one readdir per call
-// ---------------------------------------------------------------------------
-
-// Directories never worth scanning for project markers — heavy and/or noise.
-const PTYPE_SKIP_DIRS = new Set([
-  'node_modules',
-  '.git',
-  '.vs',
-  '.idea',
-  '.vscode',
-  'bin',
-  'obj',
-  'dist',
-  'build',
-  'out',
-  'target',
-  'vendor',
-  '.next',
-  '.nuxt',
-]);
-
-// Walk up to `maxDepth` levels collecting which language markers exist, then
-// pick a type by priority. Recursive so a .sln (or any marker) in a subfolder
-// is still found, but depth-limited and skips heavy dirs to stay cheap.
-function detectProjectType(dir, maxDepth = 3) {
-  const found = { dotnet: false, node: false, go: false, rust: false, python: false };
-
-  const scan = (d, depth) => {
-    let entries;
-    try {
-      entries = fs.readdirSync(d, { withFileTypes: true });
-    } catch {
-      return; // unreadable dir
-    }
-    for (const e of entries) {
-      if (e.isFile()) {
-        const n = e.name.toLowerCase();
-        if (n.endsWith('.sln') || n.endsWith('.csproj') || n.endsWith('.fsproj')) found.dotnet = true;
-        else if (n === 'package.json') found.node = true;
-        else if (n === 'go.mod') found.go = true;
-        else if (n === 'cargo.toml') found.rust = true;
-        else if (n === 'pyproject.toml' || n === 'requirements.txt' || n === 'setup.py' || n === 'pipfile')
-          found.python = true;
-      } else if (e.isDirectory() && depth < maxDepth && !PTYPE_SKIP_DIRS.has(e.name.toLowerCase())) {
-        scan(path.join(d, e.name), depth + 1);
-      }
-    }
-  };
-
-  scan(dir, 0);
-  // Priority: a .NET solution outranks an incidental package.json (tooling).
-  return (
-    (found.dotnet && 'dotnet') ||
-    (found.node && 'node') ||
-    (found.go && 'go') ||
-    (found.rust && 'rust') ||
-    (found.python && 'python') ||
-    null
-  );
-}
-
-// A project's type never changes for a given dir while the app runs, yet the
-// scan above is a synchronous depth-3 recursion that blocks the event loop
-// (which also pumps PTY onData/onExit). Cache the result per dir so the
-// projects:list / workspaces:list handlers — including the 15s auto-refresh —
-// don't re-walk the tree every call. The add/remove handlers invalidate the
-// entry so a re-added dir is re-scanned.
+// Project type detection cache — gitBranch/isGitRepo/detectProjectType live in
+// ./gitinfo.js (electron-free, unit tested). detectProjectType is a synchronous
+// depth-3 recursion that blocks the event loop (which also pumps PTY onData/
+// onExit), yet a dir's type never changes while the app runs. Cache per dir so
+// the projects:list / workspaces:list handlers — including the 15s auto-refresh
+// — don't re-walk the tree every call; add/remove handlers invalidate the entry
+// so a re-added dir is re-scanned.
 const projectTypeCache = new Map();
 
 function detectProjectTypeCached(dir) {

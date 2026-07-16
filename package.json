@@ -29,6 +29,7 @@
       "preload.js",
       "logger.js",
       "jsonstore.js",
+      "gitinfo.js",
       "renderer/**",
       "hooks/**",
       "node_modules/**"
