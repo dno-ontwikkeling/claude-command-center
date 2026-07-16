@@ -58,7 +58,7 @@ test('loadSettings: corrupt settings.json aborts (ok:false) instead of falling b
 });
 
 test('hooksInstalled: false when hooks are entirely absent', () => {
-  assert.equal(hooksInstalled({}, HOOK_EVENTS), false);
+  assert.equal(hooksInstalled({}, HOOK_EVENTS, REPORT_SCRIPT), false);
 });
 
 test('hooksInstalled: false when only some events have a report.js command (partial/interrupted install)', () => {
@@ -68,13 +68,13 @@ test('hooksInstalled: false when only some events have a report.js command (part
       // the rest are missing
     },
   };
-  assert.equal(hooksInstalled(settings, HOOK_EVENTS), false);
+  assert.equal(hooksInstalled(settings, HOOK_EVENTS, REPORT_SCRIPT), false);
 });
 
 test('hooksInstalled: true once every tracked event has a report.js command', () => {
   const settings = {};
   mergeHooksInto(settings, HOOK_EVENTS, REPORT_SCRIPT);
-  assert.equal(hooksInstalled(settings, HOOK_EVENTS), true);
+  assert.equal(hooksInstalled(settings, HOOK_EVENTS, REPORT_SCRIPT), true);
 });
 
 test('mergeHooksInto: preserves pre-existing unrelated keys (permissions, model prefs, other hooks)', () => {

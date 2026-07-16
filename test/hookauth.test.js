@@ -2,7 +2,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { agentSecret, secretMatches, eventHasReport } = require('../hookauth');
+const { agentSecret, secretMatches, eventHasReport, REPORT_SCRIPT } = require('../hookauth');
 
 const MASTER = 'deadbeef'.repeat(8);
 
@@ -31,8 +31,8 @@ test('secretMatches rejects a wrong token, missing token, and length mismatch', 
   assert.equal(secretMatches('short', tok), false);
 });
 
-test('eventHasReport detects a report.js command in hook entries', () => {
-  const entries = [{ hooks: [{ type: 'command', command: 'node "/x/report.js" busy' }] }];
+test('eventHasReport detects a command invoking this app\'s resolved REPORT_SCRIPT', () => {
+  const entries = [{ hooks: [{ type: 'command', command: `node "${REPORT_SCRIPT}" busy` }] }];
   assert.equal(eventHasReport(entries), true);
 });
 
@@ -41,4 +41,10 @@ test('eventHasReport is false for empty/unrelated entries', () => {
   assert.equal(eventHasReport([]), false);
   assert.equal(eventHasReport([{ hooks: [{ type: 'command', command: 'echo hi' }] }]), false);
   assert.equal(eventHasReport([{ hooks: [] }]), false);
+});
+
+test('eventHasReport does not match an unrelated hook that merely contains the "report.js" substring', () => {
+  // A different tool's own report.js, not this app's resolved REPORT_SCRIPT path.
+  const entries = [{ hooks: [{ type: 'command', command: 'node "/some/other/tool/report.js" run' }] }];
+  assert.equal(eventHasReport(entries), false);
 });

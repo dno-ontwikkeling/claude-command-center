@@ -28,9 +28,9 @@ function loadSettings(file) {
 // True only when EVERY tracked event already has a report.js command — a
 // blunt blob `includes` would treat a partial/interrupted prior install as
 // complete and never add the missing events.
-function hooksInstalled(settings, hookEvents) {
+function hooksInstalled(settings, hookEvents, reportScript) {
   const hooks = settings.hooks || {};
-  return Object.keys(hookEvents).every((event) => hookAuth.eventHasReport(hooks[event]));
+  return Object.keys(hookEvents).every((event) => hookAuth.eventHasReport(hooks[event], reportScript));
 }
 
 // Merge the hooks block into `settings` IN PLACE so every pre-existing key on
@@ -42,7 +42,7 @@ function mergeHooksInto(settings, hookEvents, reportScript) {
   settings.hooks = settings.hooks || {};
   for (const [event, status] of Object.entries(hookEvents)) {
     settings.hooks[event] = settings.hooks[event] || [];
-    if (hookAuth.eventHasReport(settings.hooks[event])) continue; // don't duplicate on re-run
+    if (hookAuth.eventHasReport(settings.hooks[event], reportScript)) continue; // don't duplicate on re-run
     const command = `node "${reportScript}" ${status}`;
     settings.hooks[event].push({ hooks: [{ type: 'command', command }] });
   }

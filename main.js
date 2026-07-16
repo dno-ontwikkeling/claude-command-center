@@ -61,9 +61,10 @@ const PROJECTS_FILE = path.join(app.getPath('userData'), 'projects.json');
 const WORKSPACES_FILE = path.join(app.getPath('userData'), 'workspaces.json');
 // In a packaged build the hook script is unpacked from the asar so `node` can
 // actually execute it (you cannot run a file from inside the virtual asar).
-const REPORT_SCRIPT = path
-  .join(__dirname, 'hooks', 'report.js')
-  .replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
+// Sourced from hookauth.js so eventHasReport's install-detection always
+// matches the exact path this app installs, never a duplicated computation
+// that could drift out of sync.
+const REPORT_SCRIPT = hookAuth.REPORT_SCRIPT;
 
 // Lifecycle events we hook, mapped to the status the agent should report.
 const HOOK_EVENTS = {
@@ -253,7 +254,7 @@ async function ensureHooksInstalled() {
   }
   const settings = loaded.settings; // genuine first run already normalized to {}
 
-  if (hooksMerge.hooksInstalled(settings, HOOK_EVENTS)) return;
+  if (hooksMerge.hooksInstalled(settings, HOOK_EVENTS, REPORT_SCRIPT)) return;
 
   const { response } = await dialog.showMessageBox(mainWindow, {
     type: 'question',
@@ -478,7 +479,7 @@ function registerIpc() {
     if (canceled || !filePaths[0]) return loadProjects().map(enrich);
     const projects = loadProjects();
     const dir = filePaths[0];
-    if (!projects.some((p) => p.dir === dir)) {
+    if (!projects.some((p) => normPath(p.dir) === normPath(dir))) {
       invalidateProjectType(dir); // re-scan a (possibly re-added) dir fresh
       projects.push({ dir, name: path.basename(dir) });
       saveProjects(projects);
@@ -518,7 +519,7 @@ function registerIpc() {
       return { error: errMsg(err).trim() };
     }
     const list = loadWorkspaces();
-    if (!list.some((w) => w.dir === dir)) {
+    if (!list.some((w) => normPath(w.dir) === normPath(dir))) {
       invalidateProjectType(dir); // fresh dir — drop any stale cached type
       list.push({ dir, name });
       saveWorkspaces(list);

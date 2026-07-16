@@ -200,10 +200,11 @@ els.setSoundType.addEventListener('change', () => {
   beep('done', settings.soundType, settings.volume); // preview on change
 });
 els.setVolume.addEventListener('input', () => {
-  settings.volume = Number(els.setVolume.value) / 100;
-  saveSettings();
+  settings.volume = Number(els.setVolume.value) / 100; // live update while dragging
 });
 els.setVolume.addEventListener('change', () => {
+  settings.volume = Number(els.setVolume.value) / 100;
+  saveSettings(); // persist once the drag ends, not on every tick
   beep('done', settings.soundType, settings.volume); // preview once the drag ends
 });
 els.setSoundTest.addEventListener('click', () => {

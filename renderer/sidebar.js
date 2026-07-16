@@ -396,6 +396,7 @@ async function removeProject(dir) {
   for (const [id] of agentsForDir(dir)) removeAgent(id, true);
   pruneDormantForDir(dir, true);
   state.projectsData = await window.api.removeProject(dir);
+  if (collapsed.delete(dir)) saveCollapsed(); // don't leak a stale entry into localStorage forever
   renderSidebar();
 }
 
@@ -409,6 +410,7 @@ async function removeWorkspace(dir) {
   for (const [id] of agentsForDir(dir)) removeAgent(id, true);
   pruneDormantForDir(dir, true);
   state.workspacesData = await window.api.removeWorkspace(dir);
+  if (collapsed.delete(dir)) saveCollapsed(); // don't leak a stale entry into localStorage forever
   renderSidebar();
 }
 

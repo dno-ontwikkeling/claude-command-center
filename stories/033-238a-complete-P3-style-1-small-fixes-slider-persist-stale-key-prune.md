@@ -1,12 +1,13 @@
 ---
 id: 033-238a
 title: "[STYLE-1] Small fixes: slider persist, stale-key prune, case path, eventHasReport, sidebar"
-status: ready
+status: complete
 priority: P3
 type: fix
 created: "2026-07-16T22:38:16.370Z"
-updated: "2026-07-16T22:38:41.781Z"
+updated: "2026-07-16T23:36:06.050Z"
 dependencies: []
+completed_at: "2026-07-16T23:36:06.050Z"
 ---
 
 # [STYLE-1] Small fixes: slider persist, stale-key prune, case path, eventHasReport, sidebar
@@ -17,11 +18,11 @@ Low-risk independent nits. STYLE-1(conf85): volume slider saveSettings() on ever
 
 ## Acceptance Criteria
 
-- [ ] Volume slider persists on change not per-tick
-- [ ] collapsedProjects entry deleted on project/workspace removal
-- [ ] Path dedup normalizes case
-- [ ] eventHasReport matches the resolved REPORT_SCRIPT path
-- [ ] (optional) sidebar row-level patch instead of full rebuild
+- [x] Volume slider persists on change not per-tick
+- [x] collapsedProjects entry deleted on project/workspace removal
+- [x] Path dedup normalizes case
+- [x] eventHasReport matches the resolved REPORT_SCRIPT path
+- [REJECTED] (optional) sidebar row-level patch instead of full rebuild (PERF-4 sidebar row-level patch deferred: full-rebuild rewrite too invasive for a low-risk cluster; revisit standalone)
 
 ## Files
 
@@ -31,4 +32,6 @@ Low-risk independent nits. STYLE-1(conf85): volume slider saveSettings() on ever
 - hookauth.js
 
 ## Work Log
+
+### 2026-07-16T23:36:05.811Z - STYLE-1 persist-on-change, STYLE-6 prune collapsed, BUG-6 case-insensitive dedup, BUG-5 match resolved REPORT_SCRIPT (+neg test); PERF-4 deferred; 82 pass
 

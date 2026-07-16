@@ -8,6 +8,7 @@
 // ---------------------------------------------------------------------------
 
 const crypto = require('crypto');
+const path = require('path');
 
 // Per-agent token = HMAC(agentId, master). Deterministic for a given master+id,
 // but not computable without the master, so an agent can't derive another's.
@@ -23,12 +24,23 @@ function secretMatches(got, expected) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-// Does a settings.hooks[event] array already contain a report.js command? Used to
-// detect a (possibly partial) prior install without a blunt whole-blob search.
-function eventHasReport(entries) {
+// Resolved path to the hook script this app installs. Mirrors main.js's own
+// REPORT_SCRIPT computation (same asar-unpack rewrite) so eventHasReport below
+// can match our own hook command by its real path, not a blunt substring.
+// Exported as the default/production value of `reportScript`; callers that
+// need a different resolved path (e.g. tests) pass their own.
+const REPORT_SCRIPT = path
+  .join(__dirname, 'hooks', 'report.js')
+  .replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
+
+// Does a settings.hooks[event] array already contain a command that invokes
+// `reportScript` (matched by resolved path, not a blunt "report.js" substring
+// search)? Used to detect a (possibly partial) prior install without falsely
+// matching some other tool's unrelated report.js hook.
+function eventHasReport(entries, reportScript = REPORT_SCRIPT) {
   return (entries || []).some((e) =>
-    (e.hooks || []).some((h) => typeof h.command === 'string' && h.command.includes('report.js'))
+    (e.hooks || []).some((h) => typeof h.command === 'string' && h.command.includes(reportScript))
   );
 }
 
-module.exports = { agentSecret, secretMatches, eventHasReport };
+module.exports = { agentSecret, secretMatches, eventHasReport, REPORT_SCRIPT };
