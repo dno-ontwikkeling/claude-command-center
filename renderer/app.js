@@ -7,6 +7,7 @@ import { agents, loadDormant, onAgentsChanged } from './state.js';
 import { els } from './dom.js';
 import { initTheme } from './settings.js';
 import { refreshProjects, renderSidebar } from './sidebar.js';
+import { installGlobalHandlers } from './logger.js';
 import './stage.js'; // stage toolbar + find-in-terminal wiring
 import './diff.js'; // GitKraken-style diff viewer wiring
 import './prompts.js'; // smart prompts button wiring
@@ -15,6 +16,7 @@ import './prompts.js'; // smart prompts button wiring
 // Boot
 // ---------------------------------------------------------------------------
 
+installGlobalHandlers(); // record uncaught renderer errors to the main log file
 initTheme();
 // Coordinator wiring: agents.js emits lifecycle changes via state's pub/sub
 // rather than importing the sidebar (which formed an import cycle). Register the

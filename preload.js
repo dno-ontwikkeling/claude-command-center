@@ -35,6 +35,9 @@ contextBridge.exposeInMainWorld('api', {
   readClipboard: () => clipboard.readText(),
   writeClipboard: (text) => clipboard.writeText(text),
 
+  // logging (renderer -> main log file)
+  log: (level, args) => ipcRenderer.send('log', { level, args }),
+
   // agents
   spawn: (id, cwd, opts) => ipcRenderer.invoke('agent:spawn', { id, cwd, opts }),
   sendInput: (id, data) => ipcRenderer.send('agent:input', { id, data }),

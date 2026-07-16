@@ -8,6 +8,12 @@ const http = require('http');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 const pty = require('@lydell/node-pty');
+const log = require('./logger');
+
+// Last-resort handlers so a stray throw/rejection is recorded instead of dying
+// silently (or crashing the whole process with no trace).
+process.on('uncaughtException', (err) => log.error('uncaughtException', err));
+process.on('unhandledRejection', (reason) => log.error('unhandledRejection', reason));
 
 // ---------------------------------------------------------------------------
 // State
@@ -112,6 +118,7 @@ function writeJsonAtomic(file, obj) {
   } catch (err) {
     // Leave the live file untouched; clean up the orphaned temp before rethrowing
     // so repeated failures (full disk, AV lock) don't accumulate .tmp-* files.
+    log.error('persistence', `atomic write failed for ${file}`, err);
     try {
       fs.rmSync(tmp, { force: true });
     } catch {
@@ -495,7 +502,10 @@ function startServer() {
       // A client reset mid-stream emits 'error' on req; with no listener Node
       // throws it as an uncaught exception that would kill the whole main process
       // (and every live pty with it).
-      req.on('error', () => res.destroy());
+      req.on('error', (err) => {
+        log.warn('hook-server', 'request stream error', err);
+        res.destroy();
+      });
       let body = '';
       req.on('data', (c) => (body += c));
       req.on('end', () => {
@@ -510,14 +520,14 @@ function startServer() {
             res.writeHead(404).end();
             return;
           }
-        } catch {
-          /* ignore malformed */
+        } catch (err) {
+          log.warn('hook-server', 'malformed event body', err);
         }
         res.writeHead(200).end();
       });
     });
     // Same rationale for the server itself — an unhandled 'error' event is fatal.
-    server.on('error', () => {});
+    server.on('error', (err) => log.error('hook-server', 'server error', err));
     server.listen(0, '127.0.0.1', () => {
       serverPort = server.address().port;
       resolve();
@@ -568,7 +578,9 @@ function killAgent(id) {
   const term = agents.get(id);
   if (!term) return;
   if (process.platform === 'win32') {
-    execFile('taskkill', ['/F', '/T', '/PID', String(term.pid)], () => {});
+    execFile('taskkill', ['/F', '/T', '/PID', String(term.pid)], (err) => {
+      if (err) log.warn('pty', `taskkill failed for agent ${id} (pid ${term.pid})`, err);
+    });
   }
   try {
     term.kill();
@@ -600,6 +612,13 @@ async function rmDirRetry(target) {
 
 function registerIpc() {
   const enrich = (p) => ({ ...p, isGit: isGitRepo(p.dir), type: detectProjectTypeCached(p.dir) });
+
+  // Renderer-forwarded log lines land in the same file as main-process logs.
+  const rendererLog = log.make('renderer');
+  ipcMain.on('log', (_e, { level, args }) => {
+    const fn = rendererLog[level] || rendererLog.info;
+    fn(...(Array.isArray(args) ? args : [args]));
+  });
 
   ipcMain.handle('projects:list', () => loadProjects().map(enrich));
 
@@ -1076,6 +1095,7 @@ if (!gotSingleInstanceLock) {
     registerIpc();
     await startServer();
     createWindow();
+    log.info('main', `app ready — logging to ${log.logFilePath()}`);
     await ensureHooksInstalled();
 
     app.on('activate', () => {
