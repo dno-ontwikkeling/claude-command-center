@@ -7,7 +7,7 @@
     "start": "electron .",
     "dist": "electron-builder",
     "test": "node --test",
-    "typecheck": "npx -y -p typescript@5 tsc --noEmit --checkJs --strict --skipLibCheck --module nodenext --moduleResolution nodenext preload.js"
+    "typecheck": "npx -y -p typescript@5 tsc -p tsconfig.typecheck.json"
   },
   "author": "",
   "license": "MIT",

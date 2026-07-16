@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "noEmit": true,
+    "checkJs": true,
+    "allowJs": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": [],
+    "baseUrl": ".",
+    "paths": {
+      "electron": ["./types/electron.d.ts"]
+    }
+  },
+  "files": ["preload.js", "types/ipc.d.ts"]
+}
