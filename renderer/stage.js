@@ -42,12 +42,18 @@ async function runGit(action, label) {
   gitInFlight.add(action);
   btn.disabled = true;
   lbl.textContent = `${label}…`;
-  const res = action === 'fetch'
-    ? await window.api.gitFetch(a.cwd)
-    : await window.api.gitPull(a.cwd);
-  gitInFlight.delete(action);
-  lbl.textContent = label;
-  btn.disabled = false;
+  let res;
+  try {
+    res = action === 'fetch'
+      ? await window.api.gitFetch(a.cwd)
+      : await window.api.gitPull(a.cwd);
+  } finally {
+    // Always clear in-flight state, even if the IPC call rejects — otherwise the
+    // shared button stays permanently disabled and stuck on "Fetch…".
+    gitInFlight.delete(action);
+    lbl.textContent = label;
+    btn.disabled = false;
+  }
   if (!res.ok) {
     await confirmDialog(`${label} failed`, res.error || 'git reported an error.', { alert: true });
   } else if (res.out) {

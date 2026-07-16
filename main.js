@@ -58,10 +58,15 @@ const HOOK_EVENTS = {
 // Copy a bad/unreadable file aside so it is never silently lost when we later
 // refuse to overwrite it. Returns the backup path, or null if even the copy
 // failed. Best-effort: a failed backup must not mask the original error.
+// De-duped per file: loaders run on a 15s poll, so without this a persistently
+// corrupt file would spawn a new .bak-<ts> copy every tick.
+const backedUpFiles = new Map(); // file -> backup path (this session)
 function backupBadFile(file) {
+  if (backedUpFiles.has(file)) return backedUpFiles.get(file);
   try {
     const bak = `${file}.bak-${Date.now()}`;
     fs.copyFileSync(file, bak);
+    backedUpFiles.set(file, bak);
     return bak;
   } catch {
     return null;
@@ -101,8 +106,29 @@ function readJsonSafe(file, fallback) {
 function writeJsonAtomic(file, obj) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
-  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2));
-  fs.renameSync(tmp, file);
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(obj, null, 2));
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    // Leave the live file untouched; clean up the orphaned temp before rethrowing
+    // so repeated failures (full disk, AV lock) don't accumulate .tmp-* files.
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {
+      /* temp already gone or unremovable — nothing more to do */
+    }
+    throw err;
+  }
+}
+
+// A corrupt store re-throws on every load; loaders run on a 15s poll, so surface
+// the blocking dialog only once per file per session (the backup is de-duped in
+// backupBadFile). Returns true the first time a given file is reported.
+const corruptWarned = new Set();
+function warnCorruptOnce(file, title, message) {
+  if (corruptWarned.has(file)) return;
+  corruptWarned.add(file);
+  dialog.showErrorBox(title, message);
 }
 
 // ---------------------------------------------------------------------------
@@ -116,7 +142,7 @@ function loadProjects() {
     // Corrupt/unreadable store (already backed up). Surface before any caller
     // can save() over it, then re-throw so the mutation is aborted — never
     // return [] here, that is exactly the data-loss path we are fixing.
-    dialog.showErrorBox('Command Center — projects.json unreadable', String(err.message || err));
+    warnCorruptOnce('projects', 'Command Center — projects.json unreadable', String(err.message || err));
     throw err;
   }
 }
@@ -129,7 +155,7 @@ function loadWorkspaces() {
   try {
     return readJsonSafe(WORKSPACES_FILE, []);
   } catch (err) {
-    dialog.showErrorBox('Command Center — workspaces.json unreadable', String(err.message || err));
+    warnCorruptOnce('workspaces', 'Command Center — workspaces.json unreadable', String(err.message || err));
     throw err;
   }
 }
@@ -466,6 +492,10 @@ function startServer() {
         res.writeHead(403).end();
         return;
       }
+      // A client reset mid-stream emits 'error' on req; with no listener Node
+      // throws it as an uncaught exception that would kill the whole main process
+      // (and every live pty with it).
+      req.on('error', () => res.destroy());
       let body = '';
       req.on('data', (c) => (body += c));
       req.on('end', () => {
@@ -486,6 +516,8 @@ function startServer() {
         res.writeHead(200).end();
       });
     });
+    // Same rationale for the server itself — an unhandled 'error' event is fatal.
+    server.on('error', () => {});
     server.listen(0, '127.0.0.1', () => {
       serverPort = server.address().port;
       resolve();
@@ -952,10 +984,14 @@ function resolveVSCode() {
 }
 
 // Open a worktree in VS Code via the resolved `code` CLI. On Windows `code` is
-// the code.cmd shim; a .cmd cannot be spawned without a shell, so we run it via
-// the comspec with cwd as a separate argv element — never a concatenated shell
-// string — so path metacharacters stay inert. It launches the editor and exits,
-// so we resolve on the callback. Missing CLI surfaces as an error string.
+// the code.cmd shim which must run through cmd.exe. cmd re-parses its command
+// line, so an UNQUOTED metacharacter (& | ^ …) in the path would be treated as
+// a command separator — real injection, since the target IS cmd.exe. libuv only
+// auto-quotes args containing whitespace/quotes, so we must quote explicitly and
+// pass the line verbatim (windowsVerbatimArguments) using cmd's `/s` convention
+// (outer quotes stripped, the rest taken literally). A path containing a literal
+// `"` cannot be safely quoted, so we refuse it. This keeps legitimate paths
+// (e.g. a folder named "R&D") working while making metacharacters inert.
 async function openInVSCode(cwd) {
   const code = await resolveVSCode();
   if (!code) {
@@ -964,16 +1000,28 @@ async function openInVSCode(cwd) {
         "VS Code CLI (`code`) not found on PATH. In VS Code run: Shell Command: Install 'code' command in PATH.",
     };
   }
-  const isWin = process.platform === 'win32';
-  const file = isWin ? process.env.ComSpec || 'cmd.exe' : code;
-  const args = isWin ? ['/d', '/s', '/c', code, cwd] : [cwd];
+  if (process.platform === 'win32') {
+    if (String(cwd).includes('"') || String(code).includes('"')) {
+      return { error: 'Path contains an unsupported character (") and cannot be opened.' };
+    }
+    const comspec = process.env.ComSpec || 'cmd.exe';
+    const line = `""${code}" "${cwd}""`;
+    return new Promise((resolve) => {
+      execFile(
+        comspec,
+        ['/d', '/s', '/c', line],
+        { shell: false, windowsHide: true, windowsVerbatimArguments: true },
+        (err, _stdout, stderr) => {
+          if (err) resolve({ error: (stderr || '').trim() || String(err.message || err).trim() });
+          else resolve({ ok: true });
+        }
+      );
+    });
+  }
   return new Promise((resolve) => {
-    execFile(file, args, { shell: false, windowsHide: true }, (err, _stdout, stderr) => {
-      if (err) {
-        resolve({ error: (stderr || '').trim() || String(err.message || err).trim() });
-      } else {
-        resolve({ ok: true });
-      }
+    execFile(code, [cwd], { shell: false, windowsHide: true }, (err, _stdout, stderr) => {
+      if (err) resolve({ error: (stderr || '').trim() || String(err.message || err).trim() });
+      else resolve({ ok: true });
     });
   });
 }
@@ -1010,6 +1058,9 @@ function createWindow() {
 // back to the window that already owns them.
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
+  // A second instance would race the first on the JSON stores. app.quit() is
+  // async and does not halt this script, so we MUST NOT fall through to
+  // registerIpc()/startServer()/createWindow() below — guard the whole bootstrap.
   app.quit();
 } else {
   app.on('second-instance', () => {
@@ -1019,19 +1070,19 @@ if (!gotSingleInstanceLock) {
       mainWindow.focus();
     }
   });
-}
 
-app.whenReady().then(async () => {
-  Menu.setApplicationMenu(null); // no File/Edit/View/Window/Help bar
-  registerIpc();
-  await startServer();
-  createWindow();
-  await ensureHooksInstalled();
+  app.whenReady().then(async () => {
+    Menu.setApplicationMenu(null); // no File/Edit/View/Window/Help bar
+    registerIpc();
+    await startServer();
+    createWindow();
+    await ensureHooksInstalled();
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
   });
-});
+}
 
 app.on('window-all-closed', () => {
   for (const term of agents.values()) term.kill();
