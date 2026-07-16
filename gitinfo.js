@@ -94,4 +94,65 @@ function detectProjectType(dir, maxDepth = 3) {
   );
 }
 
-module.exports = { gitBranch, isGitRepo, detectProjectType, PTYPE_SKIP_DIRS };
+// --- git output parsers (pure; fed raw stdout by main.js execFile callbacks) --
+
+// Parse `git status --porcelain=v1 --branch` -> dirty count + ahead/behind/upstream.
+// First line is the branch header "## main...origin/main [ahead 1, behind 2]".
+function parseStatusPorcelain(stdout) {
+  const lines = String(stdout).split(/\r?\n/);
+  const head = lines[0] || '';
+  const up = head.match(/\.\.\.(\S+)/);
+  const ahead = head.match(/ahead (\d+)/);
+  const behind = head.match(/behind (\d+)/);
+  return {
+    dirty: lines.slice(1).filter(Boolean).length,
+    ahead: ahead ? +ahead[1] : 0,
+    behind: behind ? +behind[1] : 0,
+    upstream: up ? up[1] : null,
+  };
+}
+
+// Parse `git worktree list --porcelain` -> [{ path, branch, isMain? }]. git lists
+// the main working tree first; it cannot be removed, so flag it.
+function parseWorktreePorcelain(stdout) {
+  const out = [];
+  let cur = null;
+  for (const line of String(stdout).split(/\r?\n/)) {
+    if (line.startsWith('worktree ')) {
+      cur = { path: line.slice(9), branch: null };
+      out.push(cur);
+    } else if (line.startsWith('branch ') && cur) {
+      cur.branch = line.slice(7).replace('refs/heads/', '');
+    }
+  }
+  if (out.length) out[0].isMain = true;
+  return out;
+}
+
+// Parse `git branch --format=%(refname:short)` -> trimmed non-empty names.
+function parseBranchList(stdout) {
+  return String(stdout)
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+// Parse `git branch -r --format=%(refname:short)` -> remote-tracking names, minus
+// the symbolic origin/HEAD pointer.
+function parseRemoteBranchList(stdout) {
+  return String(stdout)
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter((n) => n.includes('/') && !n.endsWith('/HEAD'));
+}
+
+module.exports = {
+  gitBranch,
+  isGitRepo,
+  detectProjectType,
+  PTYPE_SKIP_DIRS,
+  parseStatusPorcelain,
+  parseWorktreePorcelain,
+  parseBranchList,
+  parseRemoteBranchList,
+};

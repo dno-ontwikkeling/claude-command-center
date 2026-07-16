@@ -10,7 +10,15 @@ const { execFile } = require('child_process');
 const pty = require('@lydell/node-pty');
 const log = require('./logger');
 const { readJsonSafe, writeJsonAtomic, hasShellMeta } = require('./jsonstore');
-const { gitBranch, isGitRepo, detectProjectType } = require('./gitinfo');
+const {
+  gitBranch,
+  isGitRepo,
+  detectProjectType,
+  parseStatusPorcelain,
+  parseWorktreePorcelain,
+  parseBranchList,
+  parseRemoteBranchList,
+} = require('./gitinfo');
 
 // Last-resort handlers so a stray throw/rejection is recorded instead of dying
 // silently (or crashing the whole process with no trace).
@@ -136,18 +144,7 @@ function worktreeStatus(wtPath) {
         resolve({ dirty: 0, ahead: 0, behind: 0, upstream: null });
         return;
       }
-      const lines = stdout.split(/\r?\n/);
-      const head = lines[0] || ''; // "## main...origin/main [ahead 1, behind 2]"
-      const up = head.match(/\.\.\.(\S+)/);
-      const ahead = head.match(/ahead (\d+)/);
-      const behind = head.match(/behind (\d+)/);
-      const dirty = lines.slice(1).filter(Boolean).length;
-      resolve({
-        dirty,
-        ahead: ahead ? +ahead[1] : 0,
-        behind: behind ? +behind[1] : 0,
-        upstream: up ? up[1] : null,
-      });
+      resolve(parseStatusPorcelain(stdout));
     });
   });
 }
@@ -156,23 +153,7 @@ function worktreeStatus(wtPath) {
 async function listWorktrees(dir) {
   const worktrees = await new Promise((resolve) => {
     execFile('git', ['-C', dir, 'worktree', 'list', '--porcelain'], (err, stdout) => {
-      if (err) {
-        resolve([]);
-        return;
-      }
-      const out = [];
-      let cur = null;
-      for (const line of stdout.split(/\r?\n/)) {
-        if (line.startsWith('worktree ')) {
-          cur = { path: line.slice(9), branch: null };
-          out.push(cur);
-        } else if (line.startsWith('branch ') && cur) {
-          cur.branch = line.slice(7).replace('refs/heads/', '');
-        }
-      }
-      // git lists the main working tree first; it cannot be removed.
-      if (out.length) out[0].isMain = true;
-      resolve(out);
+      resolve(err ? [] : parseWorktreePorcelain(stdout));
     });
   });
   await Promise.all(worktrees.map(async (w) => Object.assign(w, await worktreeStatus(w.path))));
@@ -182,16 +163,7 @@ async function listWorktrees(dir) {
 function listBranches(dir) {
   return new Promise((resolve) => {
     execFile('git', ['-C', dir, 'branch', '--format=%(refname:short)'], (err, stdout) => {
-      if (err) {
-        resolve([]);
-        return;
-      }
-      resolve(
-        stdout
-          .split(/\r?\n/)
-          .map((s) => s.trim())
-          .filter(Boolean)
-      );
+      resolve(err ? [] : parseBranchList(stdout));
     });
   });
 }
@@ -200,17 +172,7 @@ function listBranches(dir) {
 function listRemoteBranches(dir) {
   return new Promise((resolve) => {
     execFile('git', ['-C', dir, 'branch', '-r', '--format=%(refname:short)'], (err, stdout) => {
-      if (err) {
-        resolve([]);
-        return;
-      }
-      resolve(
-        stdout
-          .split(/\r?\n/)
-          .map((s) => s.trim())
-          // keep "remote/branch", drop the symbolic "origin" (origin/HEAD short form)
-          .filter((n) => n.includes('/') && !n.endsWith('/HEAD'))
-      );
+      resolve(err ? [] : parseRemoteBranchList(stdout));
     });
   });
 }
