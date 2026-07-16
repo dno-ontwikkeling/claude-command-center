@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const { execFile } = require('child_process');
 const pty = require('@lydell/node-pty');
 const log = require('./logger');
+const { readJsonSafe, writeJsonAtomic, hasShellMeta } = require('./jsonstore');
 
 // Last-resort handlers so a stray throw/rejection is recorded instead of dying
 // silently (or crashing the whole process with no trace).
@@ -58,75 +59,9 @@ const HOOK_EVENTS = {
 };
 
 // ---------------------------------------------------------------------------
-// Safe JSON IO (crash/corruption resistant)
+// Safe JSON IO (crash/corruption resistant) — readJsonSafe / writeJsonAtomic /
+// hasShellMeta live in ./jsonstore.js (electron-free so they can be unit tested).
 // ---------------------------------------------------------------------------
-
-// Copy a bad/unreadable file aside so it is never silently lost when we later
-// refuse to overwrite it. Returns the backup path, or null if even the copy
-// failed. Best-effort: a failed backup must not mask the original error.
-// De-duped per file: loaders run on a 15s poll, so without this a persistently
-// corrupt file would spawn a new .bak-<ts> copy every tick.
-const backedUpFiles = new Map(); // file -> backup path (this session)
-function backupBadFile(file) {
-  if (backedUpFiles.has(file)) return backedUpFiles.get(file);
-  try {
-    const bak = `${file}.bak-${Date.now()}`;
-    fs.copyFileSync(file, bak);
-    backedUpFiles.set(file, bak);
-    return bak;
-  } catch {
-    return null;
-  }
-}
-
-// Read + parse JSON, distinguishing "file does not exist yet" (genuine first
-// run -> return `fallback`) from a corrupt/truncated/permission-failed read. In
-// the latter case we must NOT return the fallback: a caller would then save()
-// over the file and permanently destroy recoverable data. Instead back up the
-// bad file and throw so the caller aborts before any write.
-function readJsonSafe(file, fallback) {
-  let raw;
-  try {
-    raw = fs.readFileSync(file, 'utf8');
-  } catch (err) {
-    if (err.code === 'ENOENT') return fallback;
-    const bak = backupBadFile(file);
-    throw new Error(
-      `Could not read ${file}: ${err.message}${bak ? ` (backed up to ${bak})` : ''}`
-    );
-  }
-  try {
-    return JSON.parse(raw);
-  } catch (err) {
-    const bak = backupBadFile(file);
-    throw new Error(
-      `Could not parse ${file}: ${err.message}${bak ? ` (backed up to ${bak})` : ''}`
-    );
-  }
-}
-
-// Write JSON atomically: serialize to a temp file in the same directory, then
-// rename over the target. rename is atomic on the same filesystem, so a crash
-// or power loss mid-write can never leave a truncated live file (which the
-// readers above would otherwise treat as corrupt).
-function writeJsonAtomic(file, obj) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
-  try {
-    fs.writeFileSync(tmp, JSON.stringify(obj, null, 2));
-    fs.renameSync(tmp, file);
-  } catch (err) {
-    // Leave the live file untouched; clean up the orphaned temp before rethrowing
-    // so repeated failures (full disk, AV lock) don't accumulate .tmp-* files.
-    log.error('persistence', `atomic write failed for ${file}`, err);
-    try {
-      fs.rmSync(tmp, { force: true });
-    } catch {
-      /* temp already gone or unremovable — nothing more to do */
-    }
-    throw err;
-  }
-}
 
 // A corrupt store re-throws on every load; loaders run on a 15s poll, so surface
 // the blocking dialog only once per file per session (the backup is de-duped in
@@ -406,15 +341,6 @@ function resolveClaude() {
   return bin; // fall back to PATH
 }
 
-// Shell / command metacharacters that must never end up in a folder name: the
-// name is later baked into a filesystem path that gets handed to launchers
-// (VS Code, git). Rejecting them at creation time is defence-in-depth on top of
-// launching with shell:false. (`/` and `\` are handled separately by callers,
-// which normalise them to `-`.)
-const SHELL_META = /[&|;<>()!^%$"'`\n\r]/;
-function hasShellMeta(name) {
-  return SHELL_META.test(String(name));
-}
 
 // ---------------------------------------------------------------------------
 // Global hook installation (env-gated: only app-launched agents report)
