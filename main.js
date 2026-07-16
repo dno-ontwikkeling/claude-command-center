@@ -156,45 +156,64 @@ function invalidateProjectType(dir) {
   projectTypeCache.delete(dir);
 }
 
+// Shared git runner: `git -C <dir> <args>`. Never rejects — resolves a
+// consistent { ok, code, stdout, stderr, error } shape so every call site can
+// keep its own existing fallback semantics (based on `ok`/`error`) while this
+// helper takes care of the actual process spawn. On failure it logs via
+// log.warn so a broken env (git not on PATH, corrupt repo, …) leaves a trail
+// instead of silently producing an empty UI state (previously every call site
+// below mapped a git error to a blank fallback with zero logging). maxBuffer
+// defaults to 64MB — large output (e.g. a big diff) used to overflow the
+// default 1MB buffer on some call sites but not others; now all of them share
+// the same, larger, buffer.
+function execGit(dir, args, opts = {}) {
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['-C', dir, ...args],
+      { maxBuffer: 64 * 1024 * 1024, ...opts },
+      (error, stdout, stderr) => {
+        if (error) {
+          log.warn('git', `git ${args.join(' ')} failed in ${dir}`, error);
+        }
+        resolve({
+          ok: !error,
+          code: error ? (error.code ?? null) : 0,
+          stdout: stdout || '',
+          stderr: stderr || '',
+          error,
+        });
+      }
+    );
+  });
+}
+
 // Per-worktree git state: dirty file count and ahead/behind vs upstream.
 function worktreeStatus(wtPath) {
-  return new Promise((resolve) => {
-    execFile('git', ['-C', wtPath, 'status', '--porcelain=v1', '--branch'], (err, stdout) => {
-      if (err) {
-        resolve({ dirty: 0, ahead: 0, behind: 0, upstream: null });
-        return;
-      }
-      resolve(parseStatusPorcelain(stdout));
-    });
-  });
+  return execGit(wtPath, ['status', '--porcelain=v1', '--branch']).then(({ ok, stdout }) =>
+    ok ? parseStatusPorcelain(stdout) : { dirty: 0, ahead: 0, behind: 0, upstream: null }
+  );
 }
 
 // List all worktrees of a repo, each enriched with its dirty/ahead/behind state.
 async function listWorktrees(dir) {
-  const worktrees = await new Promise((resolve) => {
-    execFile('git', ['-C', dir, 'worktree', 'list', '--porcelain'], (err, stdout) => {
-      resolve(err ? [] : parseWorktreePorcelain(stdout));
-    });
-  });
+  const { ok, stdout } = await execGit(dir, ['worktree', 'list', '--porcelain']);
+  const worktrees = ok ? parseWorktreePorcelain(stdout) : [];
   await Promise.all(worktrees.map(async (w) => Object.assign(w, await worktreeStatus(w.path))));
   return worktrees;
 }
 
 function listBranches(dir) {
-  return new Promise((resolve) => {
-    execFile('git', ['-C', dir, 'branch', '--format=%(refname:short)'], (err, stdout) => {
-      resolve(err ? [] : parseBranchList(stdout));
-    });
-  });
+  return execGit(dir, ['branch', '--format=%(refname:short)']).then(({ ok, stdout }) =>
+    ok ? parseBranchList(stdout) : []
+  );
 }
 
 // Remote-tracking branches (origin/*), minus the symbolic origin/HEAD pointer.
 function listRemoteBranches(dir) {
-  return new Promise((resolve) => {
-    execFile('git', ['-C', dir, 'branch', '-r', '--format=%(refname:short)'], (err, stdout) => {
-      resolve(err ? [] : parseRemoteBranchList(stdout));
-    });
-  });
+  return execGit(dir, ['branch', '-r', '--format=%(refname:short)']).then(({ ok, stdout }) =>
+    ok ? parseRemoteBranchList(stdout) : []
+  );
 }
 
 // Resolve the branch a feature worktree should be diffed against. Prefers the
@@ -202,15 +221,11 @@ function listRemoteBranches(dir) {
 // local main / master. Returns null when none of those exist.
 function resolveDiffBase(dir) {
   const verify = (ref) =>
-    new Promise((resolve) => {
-      execFile('git', ['-C', dir, 'rev-parse', '--verify', '--quiet', ref], (err) =>
-        resolve(!err)
-      );
-    });
+    execGit(dir, ['rev-parse', '--verify', '--quiet', ref]).then(({ ok }) => ok);
   return new Promise((resolve) => {
-    execFile('git', ['-C', dir, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], async (err, stdout) => {
+    execGit(dir, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']).then(async ({ ok, stdout }) => {
       const ref = (stdout || '').trim();
-      if (!err && ref) {
+      if (ok && ref) {
         resolve(ref);
         return;
       }
@@ -604,11 +619,8 @@ function registerIpc() {
       args = [target, branch];
     }
     try {
-      await new Promise((resolve, reject) => {
-        execFile('git', ['-C', dir, 'worktree', 'add', ...args], (err, _o, stderr) =>
-          err ? reject(new Error(stderr || err.message)) : resolve()
-        );
-      });
+      const r = await execGit(dir, ['worktree', 'add', ...args]);
+      if (!r.ok) throw new Error(r.stderr || r.error.message);
     } catch (err) {
       return { error: String(err.message || err).trim() };
     }
@@ -616,24 +628,19 @@ function registerIpc() {
   });
 
   ipcMain.handle('worktree:remove', async (_e, { dir, path: wtPath, force }) => {
-    const args = ['-C', dir, 'worktree', 'remove'];
+    const args = ['worktree', 'remove'];
     if (force) args.push('--force');
     args.push(wtPath);
     try {
-      await new Promise((resolve, reject) => {
-        execFile('git', args, (err, _o, stderr) =>
-          err ? reject(new Error(stderr || err.message)) : resolve()
-        );
-      });
+      const r = await execGit(dir, args);
+      if (!r.ok) throw new Error(r.stderr || r.error.message);
     } catch (err) {
       return { error: String(err.message || err).trim() };
     }
     // git can unregister the worktree yet leave the directory behind if a file
     // was still locked. Force-clean the leftovers and prune the admin entry.
     const cleaned = await rmDirRetry(wtPath);
-    await new Promise((resolve) =>
-      execFile('git', ['-C', dir, 'worktree', 'prune'], () => resolve())
-    );
+    await execGit(dir, ['worktree', 'prune']);
     // git removed the worktree registration, but if the folder itself couldn't
     // be deleted, don't claim success — surface it so the renderer can tell the
     // user the on-disk cleanup was incomplete rather than silently leaving an
@@ -728,25 +735,19 @@ function registerIpc() {
 
   // Added + removed line counts for a worktree vs HEAD (staged + unstaged),
   // shown as a "+N/-M" badge in the sidebar.
-  ipcMain.handle('git:diffstat', (_e, cwd) => {
-    return new Promise((resolve) => {
-      execFile('git', ['-C', cwd, 'diff', '--numstat', 'HEAD'], (err, stdout) => {
-        if (err) {
-          resolve({ added: 0, removed: 0 });
-          return;
-        }
-        let added = 0;
-        let removed = 0;
-        for (const line of stdout.split(/\r?\n/)) {
-          const m = line.match(/^(\d+|-)\t(\d+|-)\t/);
-          if (m) {
-            if (m[1] !== '-') added += +m[1];
-            if (m[2] !== '-') removed += +m[2];
-          }
-        }
-        resolve({ added, removed });
-      });
-    });
+  ipcMain.handle('git:diffstat', async (_e, cwd) => {
+    const { ok, stdout } = await execGit(cwd, ['diff', '--numstat', 'HEAD']);
+    if (!ok) return { added: 0, removed: 0 };
+    let added = 0;
+    let removed = 0;
+    for (const line of stdout.split(/\r?\n/)) {
+      const m = line.match(/^(\d+|-)\t(\d+|-)\t/);
+      if (m) {
+        if (m[1] !== '-') added += +m[1];
+        if (m[2] !== '-') removed += +m[2];
+      }
+    }
+    return { added, removed };
   });
 
   // Full unified diff for the diff viewer. `mode`:
@@ -755,33 +756,24 @@ function registerIpc() {
   // Returns { ok, diff, base? } or { ok:false, error }. maxBuffer is bumped so a
   // large diff isn't truncated into a spawn error.
   ipcMain.handle('git:diff', async (_e, { cwd, mode }) => {
-    const run = (args) =>
-      new Promise((resolve) => {
-        execFile('git', ['-C', cwd, ...args], { maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) =>
-          resolve({ err, stdout: stdout || '', stderr: (stderr || '').trim() })
-        );
-      });
-
     if (mode === 'branch') {
       const base = await resolveDiffBase(cwd);
       if (!base) return { ok: false, error: 'No base branch (origin/main, main, master…) found.' };
-      const r = await run(['diff', `${base}...HEAD`]);
-      if (r.err) return { ok: false, error: r.stderr || String(r.err.message) };
+      const r = await execGit(cwd, ['diff', `${base}...HEAD`]);
+      if (!r.ok) return { ok: false, error: r.stderr.trim() || String(r.error.message) };
       return { ok: true, diff: r.stdout, base };
     }
 
-    const r = await run(['diff', 'HEAD']);
-    if (r.err) return { ok: false, error: r.stderr || String(r.err.message) };
+    const r = await execGit(cwd, ['diff', 'HEAD']);
+    if (!r.ok) return { ok: false, error: r.stderr.trim() || String(r.error.message) };
     return { ok: true, diff: r.stdout };
   });
 }
 
 function runGit(cwd, args) {
-  return new Promise((resolve) => {
-    execFile('git', ['-C', cwd, ...args], (err, stdout, stderr) => {
-      const out = `${stdout || ''}${stderr || ''}`.trim();
-      resolve({ ok: !err, out, error: err ? out || String(err.message) : null });
-    });
+  return execGit(cwd, args).then(({ ok, stdout, stderr, error }) => {
+    const out = `${stdout}${stderr}`.trim();
+    return { ok, out, error: ok ? null : out || String(error.message) };
   });
 }
 

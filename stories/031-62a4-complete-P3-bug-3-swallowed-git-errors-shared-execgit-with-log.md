@@ -1,12 +1,13 @@
 ---
 id: 031-62a4
 title: [BUG-3] Swallowed git errors - shared execGit with logging + diffstat maxBuffer
-status: ready
+status: complete
 priority: P3
 type: refactor
 created: "2026-07-16T22:38:16.368Z"
-updated: "2026-07-16T22:38:41.550Z"
+updated: "2026-07-16T23:03:51.363Z"
 dependencies: []
+completed_at: "2026-07-16T23:03:51.363Z"
 ---
 
 # [BUG-3] Swallowed git errors - shared execGit with logging + diffstat maxBuffer
@@ -17,13 +18,15 @@ BUG-3(conf80): worktreeStatus/listWorktrees/listBranches/listRemoteBranches/git:
 
 ## Acceptance Criteria
 
-- [ ] Add a shared execGit(dir,args,opts) helper that log.warn's failures
-- [ ] Route the ~12 inline call sites through it
-- [ ] git:diffstat uses the same 64MB maxBuffer as git:diff
+- [x] Add a shared execGit(dir,args,opts) helper that log.warn's failures
+- [x] Route the ~12 inline call sites through it
+- [x] git:diffstat uses the same 64MB maxBuffer as git:diff
 
 ## Files
 
 - main.js
 
 ## Work Log
+
+### 2026-07-16T23:03:51.134Z - execGit helper unifies git call sites, logs failures, 64MB buffer for diffstat; fallbacks preserved; 81 pass
 
