@@ -8,9 +8,11 @@ const http = require('http');
 
 const port = process.env.CC_PORT;
 const agentId = process.env.CC_AGENT_ID;
+// Per-run shared secret; the server rejects any /event without a matching one.
+const secret = process.env.CC_SECRET;
 const status = process.argv[2] || 'busy';
 
-if (!port || !agentId) process.exit(0);
+if (!port || !agentId || !secret) process.exit(0);
 
 let input = '';
 process.stdin.on('data', (c) => (input += c));
@@ -40,7 +42,11 @@ process.stdin.on('end', () => {
       port: Number(port),
       path: '/event',
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+        'x-cc-secret': secret,
+      },
       timeout: 500,
     },
     (res) => {

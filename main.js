@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const http = require('http');
+const crypto = require('crypto');
 const { execFile } = require('child_process');
 const pty = require('@lydell/node-pty');
 
@@ -16,6 +17,10 @@ const pty = require('@lydell/node-pty');
 const agents = new Map();
 let mainWindow = null;
 let serverPort = 0;
+// Per-run shared secret. Handed only to agents we spawn (env CC_SECRET) and
+// required on every POST /event, so an unrelated local process can't forge
+// status/notification events or overwrite a persisted sessionId.
+const HOOK_SECRET = crypto.randomBytes(32).toString('hex');
 
 // Safe IPC to the renderer. A pty can emit data after the window is closed or
 // reloaded; `mainWindow?` is still truthy then but its webContents is destroyed,
@@ -454,12 +459,27 @@ function startServer() {
         res.writeHead(404).end();
         return;
       }
+      // Require the per-run shared secret before reading or acting on the body.
+      // Only agents we launched carry CC_SECRET, so a request without it is a
+      // spoof attempt and is rejected outright.
+      if (req.headers['x-cc-secret'] !== HOOK_SECRET) {
+        res.writeHead(403).end();
+        return;
+      }
       let body = '';
       req.on('data', (c) => (body += c));
       req.on('end', () => {
         try {
           const event = JSON.parse(body);
-          sendToRenderer('agent:event', event);
+          // Only forward events for an agent that is actually live. A stale or
+          // forged agentId must never reach the renderer, where it could
+          // overwrite a persisted sessionId later used by `claude --resume`.
+          if (event && agents.has(event.agentId)) {
+            sendToRenderer('agent:event', event);
+          } else {
+            res.writeHead(404).end();
+            return;
+          }
         } catch {
           /* ignore malformed */
         }
@@ -492,7 +512,7 @@ function spawnAgent(id, cwd, opts = {}) {
       cols: 80,
       rows: 30,
       cwd,
-      env: { ...process.env, CC_PORT: String(serverPort), CC_AGENT_ID: id },
+      env: { ...process.env, CC_PORT: String(serverPort), CC_AGENT_ID: id, CC_SECRET: HOOK_SECRET },
     });
   } catch (err) {
     // cwd gone (e.g. a removed worktree) or claude not found — report as an
@@ -526,6 +546,9 @@ function killAgent(id) {
 }
 
 // Force-remove a directory, retrying briefly while handles are released.
+// Returns true once the directory is gone, false if it still exists after all
+// retries (e.g. a process is still holding a lock) so callers can report the
+// incomplete cleanup instead of assuming success.
 async function rmDirRetry(target) {
   for (let i = 0; i < 5; i++) {
     try {
@@ -533,9 +556,10 @@ async function rmDirRetry(target) {
     } catch {
       /* locked; retry */
     }
-    if (!fs.existsSync(target)) return;
+    if (!fs.existsSync(target)) return true;
     await new Promise((r) => setTimeout(r, 300));
   }
+  return !fs.existsSync(target);
 }
 
 // ---------------------------------------------------------------------------
@@ -708,10 +732,23 @@ function registerIpc() {
     }
     // git can unregister the worktree yet leave the directory behind if a file
     // was still locked. Force-clean the leftovers and prune the admin entry.
-    await rmDirRetry(wtPath);
+    const cleaned = await rmDirRetry(wtPath);
     await new Promise((resolve) =>
       execFile('git', ['-C', dir, 'worktree', 'prune'], () => resolve())
     );
+    // git removed the worktree registration, but if the folder itself couldn't
+    // be deleted, don't claim success — surface it so the renderer can tell the
+    // user the on-disk cleanup was incomplete rather than silently leaving an
+    // orphan directory behind.
+    if (!cleaned) {
+      return {
+        ok: false,
+        cleanupIncomplete: true,
+        error:
+          'The worktree was unregistered, but its folder could not be fully ' +
+          `deleted (a file may still be locked). Remove it manually:\n\n${wtPath}`,
+      };
+    }
     return { ok: true };
   });
 
@@ -741,8 +778,32 @@ function registerIpc() {
   // press can never spawn a merge commit or drop the user into a conflict.
   ipcMain.handle('git:fetch', (_e, cwd) => runGit(cwd, ['fetch', '--prune']));
   ipcMain.handle('git:pull', (_e, cwd) => runGit(cwd, ['pull', '--ff-only']));
-  // Force-delete a local branch (used after its worktree is removed).
-  ipcMain.handle('git:delete-branch', (_e, { dir, branch }) => runGit(dir, ['branch', '-D', branch]));
+  // Delete a local branch (used after its worktree is removed). Try the safe
+  // `-d` first — git refuses if the branch has commits not merged into its
+  // upstream/HEAD, which `-D` would orphan. Only on that refusal do we surface a
+  // clear warning and, if the user confirms, escalate to the destructive `-D`.
+  ipcMain.handle('git:delete-branch', async (_e, { dir, branch }) => {
+    const safe = await runGit(dir, ['branch', '-d', branch]);
+    if (safe.ok) return safe;
+    // Anything other than the "not fully merged" refusal is a real failure the
+    // user should see as-is (branch missing, still checked out elsewhere, …).
+    if (!/not fully merged/i.test(safe.error || '')) return safe;
+
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      buttons: ['Force delete', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Branch not fully merged',
+      message: `Branch "${branch}" has commits that are not merged.`,
+      detail:
+        `${safe.error}\n\n` +
+        'Force-deleting permanently discards any commits on this branch that ' +
+        "aren't merged or pushed elsewhere. This cannot be undone.",
+    });
+    if (response !== 0) return { ok: false, cancelled: true, error: 'Branch deletion cancelled.' };
+    return runGit(dir, ['branch', '-D', branch]);
+  });
 
   // Current branch for a worktree (reads .git/HEAD). Lets the sidebar refresh a
   // stale label after the user switches branch inside the worktree's terminal.

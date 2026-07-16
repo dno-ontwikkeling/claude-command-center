@@ -239,28 +239,40 @@ export async function deleteWorktree(id) {
   await killAndWait(id);
 
   let res = await window.api.removeWorktree(dir, cwd, false);
-  if (res.error) {
+  // A hard git refusal (locked/dirty worktree) — offer a force remove. A merely
+  // incomplete on-disk cleanup (cleanupIncomplete) is git-side success and is
+  // reported separately below, not force-retried.
+  if (res.error && !res.cleanupIncomplete) {
     const force = await confirmDialog('Force remove worktree', `git refused:\n\n${res.error}\n\nForce remove? This discards uncommitted changes.`, {
       okLabel: 'Force remove',
       danger: true,
     });
     if (force) res = await window.api.removeWorktree(dir, cwd, true);
   }
-  if (res.error) await confirmDialog('Removal failed', res.error, { alert: true });
+  if (res.cleanupIncomplete) {
+    // git unregistered the worktree but its folder couldn't be fully deleted —
+    // tell the user rather than silently claiming a clean removal.
+    await confirmDialog('Cleanup incomplete', res.error, { alert: true });
+  } else if (res.error) {
+    await confirmDialog('Removal failed', res.error, { alert: true });
+  }
 
-  // Delete the branch only once its worktree is gone (git won't delete a branch
-  // that's still checked out in a worktree).
-  if (alsoBranch && branch && !res.error) {
+  // The worktree registration is gone if git succeeded outright OR left only a
+  // locked-folder remnant. Delete the branch only then (git won't delete a
+  // branch that's still checked out in a live worktree).
+  const worktreeGone = !res.error || res.cleanupIncomplete;
+  if (alsoBranch && branch && worktreeGone) {
     const del = await window.api.gitDeleteBranch(dir, branch);
-    if (del.error) await confirmDialog('Branch deletion failed', del.error, { alert: true });
+    // cancelled = the user declined the force-delete warning; not an error.
+    if (del.error && !del.cancelled) await confirmDialog('Branch deletion failed', del.error, { alert: true });
   }
 
   // The pty is already dead (we had to kill it to release the cwd lock before
   // git could touch the folder). If the worktree is really gone, drop the row
-  // for good. But if removal was aborted or failed, the worktree + branch still
-  // exist on disk — keep the session as a resumable dormant record so there's a
-  // UI path back, instead of silently forgetting it.
-  if (res.error) convertToDormant(id);
+  // for good. But if removal was aborted or failed outright, the worktree +
+  // branch still exist on disk — keep the session as a resumable dormant record
+  // so there's a UI path back, instead of silently forgetting it.
+  if (res.error && !res.cleanupIncomplete) convertToDormant(id);
   else cleanupAgent(id);
 }
 
