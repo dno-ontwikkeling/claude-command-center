@@ -30,6 +30,7 @@
       "logger.js",
       "jsonstore.js",
       "gitinfo.js",
+      "hookauth.js",
       "renderer/**",
       "hooks/**",
       "node_modules/**"

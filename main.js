@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const { execFile } = require('child_process');
 const pty = require('@lydell/node-pty');
 const log = require('./logger');
+const hookAuth = require('./hookauth');
 const { readJsonSafe, writeJsonAtomic, hasShellMeta } = require('./jsonstore');
 const {
   gitBranch,
@@ -33,10 +34,13 @@ process.on('unhandledRejection', (reason) => log.error('unhandledRejection', rea
 const agents = new Map();
 let mainWindow = null;
 let serverPort = 0;
-// Per-run shared secret. Handed only to agents we spawn (env CC_SECRET) and
-// required on every POST /event, so an unrelated local process can't forge
-// status/notification events or overwrite a persisted sessionId.
+// Per-run master secret. Never handed out directly; each agent gets its OWN
+// token = HMAC(agentId, master), injected as CC_SECRET. A spawned agent can read
+// its own token but can't compute another agent's (that needs the master), so it
+// can't forge events for a different agentId — closing agent-to-agent spoofing.
 const HOOK_SECRET = crypto.randomBytes(32).toString('hex');
+const agentSecret = (id) => hookAuth.agentSecret(HOOK_SECRET, id);
+const { secretMatches } = hookAuth;
 
 // Safe IPC to the renderer. A pty can emit data after the window is closed or
 // reloaded; `mainWindow?` is still truthy then but its webContents is destroyed,
@@ -98,8 +102,22 @@ function loadProjects() {
   }
 }
 
+// Persist a store, surfacing write failures instead of letting them become a
+// silent unhandled rejection in the renderer (the live file stays intact — the
+// atomic write leaves it untouched on failure — but the change wasn't saved, so
+// tell the user rather than showing unpersisted state as if it stuck).
+function persistStore(file, data, label) {
+  try {
+    writeJsonAtomic(file, data);
+  } catch (err) {
+    log.error('persistence', `could not save ${label}`, err);
+    dialog.showErrorBox(`Command Center — could not save ${label}`, String(err.message || err));
+    throw err;
+  }
+}
+
 function saveProjects(projects) {
-  writeJsonAtomic(PROJECTS_FILE, projects);
+  persistStore(PROJECTS_FILE, projects, 'projects');
 }
 
 function loadWorkspaces() {
@@ -112,7 +130,7 @@ function loadWorkspaces() {
 }
 
 function saveWorkspaces(workspaces) {
-  writeJsonAtomic(WORKSPACES_FILE, workspaces);
+  persistStore(WORKSPACES_FILE, workspaces, 'workspaces');
 }
 
 // ---------------------------------------------------------------------------
@@ -225,8 +243,12 @@ function settingsPath() {
   return path.join(os.homedir(), '.claude', 'settings.json');
 }
 
+// True only when EVERY tracked event already has a report.js command — a blunt
+// blob `includes` would treat a partial/interrupted prior install as complete
+// and never add the missing events.
 function hooksInstalled(settings) {
-  return JSON.stringify(settings.hooks || {}).includes('report.js');
+  const hooks = settings.hooks || {};
+  return Object.keys(HOOK_EVENTS).every((event) => hookAuth.eventHasReport(hooks[event]));
 }
 
 async function ensureHooksInstalled() {
@@ -274,8 +296,9 @@ async function ensureHooksInstalled() {
   // (permissions, model prefs, unrelated hooks) is preserved.
   settings.hooks = settings.hooks || {};
   for (const [event, status] of Object.entries(HOOK_EVENTS)) {
-    const command = `node "${REPORT_SCRIPT}" ${status}`;
     settings.hooks[event] = settings.hooks[event] || [];
+    if (hookAuth.eventHasReport(settings.hooks[event])) continue; // don't duplicate on re-run
+    const command = `node "${REPORT_SCRIPT}" ${status}`;
     settings.hooks[event].push({ hooks: [{ type: 'command', command }] });
   }
 
@@ -293,13 +316,6 @@ function startServer() {
         res.writeHead(404).end();
         return;
       }
-      // Require the per-run shared secret before reading or acting on the body.
-      // Only agents we launched carry CC_SECRET, so a request without it is a
-      // spoof attempt and is rejected outright.
-      if (req.headers['x-cc-secret'] !== HOOK_SECRET) {
-        res.writeHead(403).end();
-        return;
-      }
       // A client reset mid-stream emits 'error' on req; with no listener Node
       // throws it as an uncaught exception that would kill the whole main process
       // (and every live pty with it).
@@ -308,22 +324,41 @@ function startServer() {
         res.destroy();
       });
       let body = '';
-      req.on('data', (c) => (body += c));
+      let tooBig = false;
+      req.on('data', (c) => {
+        if (tooBig) return;
+        body += c;
+        if (body.length > 64 * 1024) {
+          // A hook payload is tiny; anything this large is malformed/hostile.
+          tooBig = true;
+          res.writeHead(413).end();
+          req.destroy();
+        }
+      });
       req.on('end', () => {
+        if (tooBig) return;
+        let event;
         try {
-          const event = JSON.parse(body);
-          // Only forward events for an agent that is actually live. A stale or
-          // forged agentId must never reach the renderer, where it could
-          // overwrite a persisted sessionId later used by `claude --resume`.
-          if (event && agents.has(event.agentId)) {
-            sendToRenderer('agent:event', event);
-          } else {
-            res.writeHead(404).end();
-            return;
-          }
+          event = JSON.parse(body);
         } catch (err) {
           log.warn('hook-server', 'malformed event body', err);
+          res.writeHead(400).end();
+          return;
         }
+        // The agentId must be live AND the request must carry that agent's own
+        // token. A stale/forged agentId — or a live one without its token — must
+        // never reach the renderer, where it could overwrite a persisted
+        // sessionId later used by `claude --resume`.
+        const id = event && event.agentId;
+        if (!id || !agents.has(id)) {
+          res.writeHead(404).end();
+          return;
+        }
+        if (!secretMatches(req.headers['x-cc-secret'], agentSecret(id))) {
+          res.writeHead(403).end();
+          return;
+        }
+        sendToRenderer('agent:event', event);
         res.writeHead(200).end();
       });
     });
@@ -355,7 +390,7 @@ function spawnAgent(id, cwd, opts = {}) {
       cols: 80,
       rows: 30,
       cwd,
-      env: { ...process.env, CC_PORT: String(serverPort), CC_AGENT_ID: id, CC_SECRET: HOOK_SECRET },
+      env: { ...process.env, CC_PORT: String(serverPort), CC_AGENT_ID: id, CC_SECRET: agentSecret(id) },
     });
   } catch (err) {
     // cwd gone (e.g. a removed worktree) or claude not found — report as an
