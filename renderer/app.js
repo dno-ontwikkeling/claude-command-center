@@ -40,23 +40,34 @@ onAgentsChanged(() => {
 loadDormant(); // resumable sessions from the previous run, shown as dormant rows
 refreshProjects().then(syncWatch);
 
-// A git change in a watched repo (branch switch, commit, staging) pushes here;
-// refresh the sidebar and per-agent branch/diff cache promptly.
-window.api.onGitChanged(() => {
+// A git change in a watched repo (branch switch, commit, staging) pushes here.
+// `payload.dir` is the single dir that fired (main coalesces bursts within its
+// debounce window); it's null/absent when unknown or when more than one dir
+// changed at once, in which case we fall back to refreshing everything. Scoping
+// to `dir` matters because refreshAllAgentsGit spawns a `git diff` per agent —
+// without it, one commit in one worktree would fan out to every live agent.
+window.api.onGitChanged((payload) => {
+  const dir = payload && typeof payload === 'object' ? payload.dir : null;
   refreshProjects();
-  refreshAllAgentsGit();
+  refreshAllAgentsGit(dir || undefined);
 });
 
-// Event-driven above; this foreground poll is the correctness floor for cases
-// fs.watch can't see (e.g. a worktree whose .git is a file). Paused while the
-// window is hidden/blurred so a backgrounded window does no periodic work; focus
-// and becoming-visible refresh immediately.
+// Event-driven above; this single foreground poll is the correctness floor for
+// cases fs.watch can't see (e.g. a worktree whose .git is a file), and covers
+// both refreshProjects and the per-agent git cache so we don't run two
+// independent 15s timers. Paused while the window is hidden/blurred so a
+// backgrounded window does no periodic work; focus and becoming-visible refresh
+// immediately.
+function refreshAllForeground() {
+  refreshProjects();
+  refreshAllAgentsGit();
+}
 setInterval(() => {
-  if (document.visibilityState === 'visible') refreshProjects();
+  if (document.visibilityState === 'visible') refreshAllForeground();
 }, 15000);
-window.addEventListener('focus', refreshProjects);
+window.addEventListener('focus', refreshAllForeground);
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') refreshProjects();
+  if (document.visibilityState === 'visible') refreshAllForeground();
 });
 
 // Char metrics depend on Cascadia Mono being loaded; once fonts are ready,

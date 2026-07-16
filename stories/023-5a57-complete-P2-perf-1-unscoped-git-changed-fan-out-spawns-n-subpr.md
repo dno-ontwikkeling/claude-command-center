@@ -1,12 +1,13 @@
 ---
 id: 023-5a57
 title: "[PERF-1] Unscoped git:changed fan-out spawns N subprocesses per change"
-status: ready
+status: complete
 priority: P2
 type: fix
 created: "2026-07-16T22:38:16.361Z"
-updated: "2026-07-16T22:38:40.628Z"
+updated: "2026-07-16T22:52:42.022Z"
 dependencies: []
+completed_at: "2026-07-16T22:52:42.022Z"
 ---
 
 # [PERF-1] Unscoped git:changed fan-out spawns N subprocesses per change
@@ -17,9 +18,9 @@ fs.watch callback (main.js:477) discards which dir changed and calls scheduleGit
 
 ## Acceptance Criteria
 
-- [ ] Pass the changed dir through the git:changed IPC payload
-- [ ] Refresh only agents whose cwd is under the changed dir
-- [ ] Coalesce the two 15s foreground pollers into one scheduler (PERF-3)
+- [x] Pass the changed dir through the git:changed IPC payload
+- [x] Refresh only agents whose cwd is under the changed dir
+- [x] Coalesce the two 15s foreground pollers into one scheduler
 
 ## Files
 
@@ -28,4 +29,6 @@ fs.watch callback (main.js:477) discards which dir changed and calls scheduleGit
 - renderer/agent-git.mjs
 
 ## Work Log
+
+### 2026-07-16T22:52:41.789Z - Wave 2: implemented; 62 tests + typecheck green
 

@@ -453,11 +453,25 @@ async function rmDirRetry(target) {
 
 const gitWatchers = new Map(); // dir -> FSWatcher
 let gitChangeTimer = null;
+// Dirs that fired since the last flush. `null` means "unknown/mixed" — a caller
+// passed no dir, or more than one distinct dir changed inside the same debounce
+// window — so the renderer should fall back to a full refresh instead of
+// guessing which one to scope to.
+let pendingGitDirs = new Set();
+let pendingGitDirsUnknown = false;
 
-function scheduleGitChanged() {
+function scheduleGitChanged(dir) {
   // git touches several files per operation; coalesce into one notification.
+  if (dir) pendingGitDirs.add(dir);
+  else pendingGitDirsUnknown = true;
   clearTimeout(gitChangeTimer);
-  gitChangeTimer = setTimeout(() => sendToRenderer('git:changed'), 400);
+  gitChangeTimer = setTimeout(() => {
+    const changedDir =
+      !pendingGitDirsUnknown && pendingGitDirs.size === 1 ? [...pendingGitDirs][0] : null;
+    pendingGitDirs = new Set();
+    pendingGitDirsUnknown = false;
+    sendToRenderer('git:changed', { dir: changedDir });
+  }, 400);
 }
 
 function watchGitDirs(dirs) {
@@ -474,7 +488,7 @@ function watchGitDirs(dirs) {
   for (const dir of wanted) {
     if (gitWatchers.has(dir)) continue;
     try {
-      const w = fs.watch(path.join(dir, '.git'), { persistent: false }, () => scheduleGitChanged());
+      const w = fs.watch(path.join(dir, '.git'), { persistent: false }, () => scheduleGitChanged(dir));
       w.on('error', () => {
         try {
           w.close();

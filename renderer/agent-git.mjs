@@ -5,8 +5,9 @@
 // threaded main process, which stalls every PTY — so we never do it during a
 // render. Instead each agent caches branch/diffStat on itself; rows render from
 // the cache, and this module refreshes it out-of-band (lazily when a row first
-// appears, then on a foreground-only timer, and on demand). Split out of
-// sidebar.js so the render path stays purely git-free.
+// appears, on demand, and via app.js's shared foreground timer/event-driven
+// git:changed handler — no timer of its own here). Split out of sidebar.js so
+// the render path stays purely git-free.
 // ---------------------------------------------------------------------------
 
 import { agents } from './state.js';
@@ -41,13 +42,24 @@ export function refreshAgentGit(id, a) {
     });
 }
 
-export function refreshAllAgentsGit() {
-  for (const [id, a] of agents) refreshAgentGit(id, a);
+// True if `cwd` is `dir` itself or nested under it. Path-string comparison
+// only (no fs access from the renderer); normalizes separators and case so it
+// still works with mixed slashes and Windows' case-insensitive paths.
+function isUnderDir(cwd, dir) {
+  if (!cwd || !dir) return false;
+  const norm = (p) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  const c = norm(cwd);
+  const d = norm(dir);
+  return c === d || c.startsWith(`${d}/`);
 }
 
-// Only poll while the window is in the foreground — a hidden/backgrounded window
-// does no periodic git work. Returning to the window refreshes immediately.
-setInterval(() => {
-  if (document.visibilityState === 'visible') refreshAllAgentsGit();
-}, 15000);
-window.addEventListener('focus', refreshAllAgentsGit);
+// `dir`, when given, scopes the refresh to agents whose cwd is under that dir —
+// a single-repo git change (e.g. a commit in one worktree) shouldn't spawn a
+// `git diff` for every other live agent. Omit `dir` for a full refresh (the
+// foreground poll floor, and the fallback when the changed dir is unknown).
+export function refreshAllAgentsGit(dir) {
+  for (const [id, a] of agents) {
+    if (dir && !isUnderDir(a.cwd, dir)) continue;
+    refreshAgentGit(id, a);
+  }
+}

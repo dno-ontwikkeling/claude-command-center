@@ -4,7 +4,15 @@ const { contextBridge, ipcRenderer, clipboard } = require('electron');
 
 /**
  * The renderer-facing API. Shape is defined once in types/ipc.d.ts (as
- * window.api) so renderer code type-checks against a single contract.
+ * window.api). `npm run typecheck` checks THIS object literal (via the
+ * `@type` annotation below) against that contract, so a preload pass-through
+ * whose `ipcRenderer.invoke(channel, ...)` return shape drifts from the
+ * matching Api method here is caught at the preload<->contract boundary
+ * (see types/electron.d.ts's InvokeChannelMap). Renderer call sites
+ * (renderer/**\/*.js) and the main-process handlers themselves (main.js) are
+ * NOT part of this typecheck — they are plain, unchecked JS, so drift
+ * introduced purely in main.js's handler bodies, or in how renderer code
+ * consumes window.api, will not be caught here.
  * @type {import('./types/ipc').Api}
  */
 const api = {
@@ -45,7 +53,7 @@ const api = {
 
   // git-change watchers: register the dirs to watch; main pushes 'git:changed'
   setWatchDirs: (dirs) => ipcRenderer.send('watch:set', dirs),
-  onGitChanged: (cb) => ipcRenderer.on('git:changed', () => cb()),
+  onGitChanged: (cb) => ipcRenderer.on('git:changed', (_e, payload) => cb(payload)),
 
   // agents
   spawn: (id, cwd, opts) => ipcRenderer.invoke('agent:spawn', { id, cwd, opts }),

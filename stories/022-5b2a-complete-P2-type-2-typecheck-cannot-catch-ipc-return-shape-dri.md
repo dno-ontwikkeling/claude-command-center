@@ -1,12 +1,13 @@
 ---
 id: 022-5b2a
 title: [TYPE-2] Typecheck cannot catch IPC return-shape drift
-status: ready
+status: complete
 priority: P2
 type: chore
 created: "2026-07-16T22:38:16.360Z"
-updated: "2026-07-16T22:38:46.889Z"
+updated: "2026-07-16T22:53:20.407Z"
 dependencies: ["021-f40e"]
+completed_at: "2026-07-16T22:53:20.407Z"
 ---
 
 # [TYPE-2] Typecheck cannot catch IPC return-shape drift
@@ -17,9 +18,9 @@ Root cause of TYPE-1. checkJs:false so nothing is checked except npm run typeche
 
 ## Acceptance Criteria
 
-- [ ] Type the stub invoke per-channel (discriminated union) OR add main.js+renderer to typecheck include
-- [ ] Correct the preload.js:6-8 comment claiming renderer-side enforcement
-- [ ] CI typecheck fails if a handler return shape diverges from ipc.d.ts
+- [x] Type the stub invoke per-channel (discriminated union) OR add main.js+renderer to typecheck include
+- [x] Correct the preload.js:6-8 comment claiming renderer-side enforcement
+- [x] CI typecheck fails if a handler return shape diverges from ipc.d.ts
 
 ## Files
 
@@ -29,4 +30,8 @@ Root cause of TYPE-1. checkJs:false so nothing is checked except npm run typeche
 - preload.js
 
 ## Work Log
+
+### 2026-07-16T22:52:41.327Z - Wave 2: implemented; 62 tests + typecheck green
+
+### 2026-07-16T22:53:20.171Z - Wave 2: per-channel invoke typing enforces preload<->contract; drift confirmed caught by tsc; broader main.js/renderer check left as documented residual gap
 

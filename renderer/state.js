@@ -1,5 +1,7 @@
 'use strict';
 
+import { log } from './logger.js';
+
 // Shared mutable state. Maps are exported directly (mutated in place). Values
 // that get reassigned live on the `state` object so importers see live updates
 // (an exported `let` binding is read-only for importers).
@@ -102,15 +104,25 @@ export function record(id, a) {
   };
 }
 
+// Best-effort write: a quota-exceeded/private-mode/non-serializable-field throw
+// here must not propagate, since spawn() calls this before notifyAgentsChanged()
+// / activate(id) — an uncaught throw would abort those, leaving a live pty in
+// main with no sidebar row (split-brain). Losing this persist just means the
+// in-memory state and the sidebar stay correct but the next restart won't see
+// the change, which is far better than a half-spawned agent.
 export function persistAgents() {
-  const out = [];
-  // Only persist agents whose session has had a real prompt — an untouched
-  // session is never written to disk, so `claude --resume` would fail on it.
-  for (const [id, a] of agents) {
-    if (a.sessionId && a.used) out.push(record(id, a));
+  try {
+    const out = [];
+    // Only persist agents whose session has had a real prompt — an untouched
+    // session is never written to disk, so `claude --resume` would fail on it.
+    for (const [id, a] of agents) {
+      if (a.sessionId && a.used) out.push(record(id, a));
+    }
+    for (const d of dormant.values()) out.push(d);
+    localStorage.setItem(STORE_KEY, JSON.stringify(out));
+  } catch (err) {
+    log.warn('state', 'persistAgents failed — saved agents may be stale on next restart', err);
   }
-  for (const d of dormant.values()) out.push(d);
-  localStorage.setItem(STORE_KEY, JSON.stringify(out));
 }
 
 export function loadDormant() {

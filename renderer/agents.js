@@ -524,21 +524,25 @@ window.api.onExit(({ id, exitCode, error }) => {
     setTimeout(resolve, 250); // grace for OS to release the cwd handle
   }
 
-  // A spawn failure (bad cwd, claude not found) never produced a pty, so write
-  // the reason into the empty terminal — otherwise it's just a silent dead tab.
+  // A spawn failure (bad cwd, claude not found, a broken --resume session) never
+  // produced usable pty output. Writing it into the terminal is pointless when
+  // the very next step below (convertToDormant) synchronously disposes that
+  // terminal — the text never gets a chance to paint. Surface it via dialog
+  // instead, and keep the dormant record intact (if any) so Resume can be
+  // retried; a repeat failure re-shows this dialog every time.
   if (error) {
-    try {
-      a.term.write(`\r\n\x1b[31m[Command Center] failed to start: ${error}\x1b[0m\r\n`);
-    } catch {
-      /* term disposed */
-    }
+    if (a.sessionId && a.used && !a.intentional) convertToDormant(id);
+    else if (!a.intentional) setStatus(id, 'error');
+    else setStatus(id, 'dead');
+    confirmDialog('Failed to start', error, { alert: true });
+    return;
   }
 
   // Natural exit with a *used* session -> keep it resumable; otherwise dead.
   // (An untouched session has no transcript on disk, so resume would fail.)
-  // A non-zero exit or spawn error that wasn't a deliberate kill = flag it red.
+  // A non-zero exit that wasn't a deliberate kill = flag it red.
   if (a.sessionId && a.used && !a.intentional) convertToDormant(id);
-  else if (!a.intentional && (exitCode || error)) setStatus(id, 'error');
+  else if (!a.intentional && exitCode) setStatus(id, 'error');
   else setStatus(id, 'dead');
 });
 

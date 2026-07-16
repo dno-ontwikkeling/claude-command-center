@@ -124,7 +124,7 @@ export interface Api {
 
   // git-change watchers
   setWatchDirs(dirs: string[]): void;
-  onGitChanged(cb: () => void): void;
+  onGitChanged(cb: (payload: { dir: string | null }) => void): void;
 
   // agents
   spawn(id: string, cwd: string, opts: SpawnOpts): Promise<void>;

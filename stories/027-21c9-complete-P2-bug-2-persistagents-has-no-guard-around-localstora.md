@@ -1,12 +1,13 @@
 ---
 id: 027-21c9
 title: [BUG-2] persistAgents has no guard around localStorage.setItem
-status: ready
+status: complete
 priority: P2
 type: fix
 created: "2026-07-16T22:38:16.365Z"
-updated: "2026-07-16T22:38:41.083Z"
+updated: "2026-07-16T22:52:43.580Z"
 dependencies: []
+completed_at: "2026-07-16T22:52:43.580Z"
 ---
 
 # [BUG-2] persistAgents has no guard around localStorage.setItem
@@ -17,12 +18,14 @@ persistAgents() (state.js:105-114) can throw synchronously (quota, private-mode,
 
 ## Acceptance Criteria
 
-- [ ] Wrap persistAgents body in try/catch with a logged warning
-- [ ] A persist failure does not abort spawn notify/activate sequence
+- [x] Wrap persistAgents body in try/catch with a logged warning
+- [x] A persist failure does not abort spawn notify/activate sequence
 
 ## Files
 
 - renderer/state.js
 
 ## Work Log
+
+### 2026-07-16T22:52:43.340Z - Wave 2: implemented; 62 tests + typecheck green
 

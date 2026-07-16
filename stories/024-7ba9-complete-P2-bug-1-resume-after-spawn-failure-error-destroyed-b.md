@@ -1,12 +1,13 @@
 ---
 id: 024-7ba9
 title: [BUG-1] Resume-after-spawn-failure error destroyed before it renders
-status: ready
+status: complete
 priority: P2
 type: fix
 created: "2026-07-16T22:38:16.363Z"
-updated: "2026-07-16T22:38:40.738Z"
+updated: "2026-07-16T22:52:42.796Z"
 dependencies: []
+completed_at: "2026-07-16T22:52:42.796Z"
 ---
 
 # [BUG-1] Resume-after-spawn-failure error destroyed before it renders
@@ -17,12 +18,14 @@ On resume used is set true unconditionally (agents.js:172). If the pty fails to 
 
 ## Acceptance Criteria
 
-- [ ] When agent:exit carries error, skip convertToDormant and surface a dialog/toast instead of writing to a soon-disposed terminal
-- [ ] Repeated Resume of a broken session gives visible feedback each time
+- [x] When agent:exit carries error, skip convertToDormant and surface a dialog/toast instead of writing to a soon-disposed terminal
+- [x] Repeated Resume of a broken session gives visible feedback each time
 
 ## Files
 
 - renderer/agents.js
 
 ## Work Log
+
+### 2026-07-16T22:52:42.563Z - Wave 2: implemented; 62 tests + typecheck green
 
