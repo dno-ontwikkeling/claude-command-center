@@ -12,11 +12,18 @@
       <header class="bar">
         <span class="title">Command Center</span>
         <div class="actions">
+          <button id="collapse-all" class="icon-btn" title="Collapse all">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5-5 5 5"/><path d="m7 8 5-5 5 5"/></svg>
+          </button>
           <button id="compact-toggle" class="icon-btn" title="Compact mode">⊟</button>
           <button id="theme-toggle" class="icon-btn" title="Toggle theme">◐</button>
         </div>
       </header>
       <div id="lists">
+        <div class="sidebar-search">
+          <svg class="search-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input id="sidebar-filter" type="text" placeholder="Filter projects…" spellcheck="false" />
+        </div>
         <div class="section-head">
           <span class="section-title">Projects</span>
           <button id="add-project" class="icon-btn" title="Add project">＋</button>
@@ -41,14 +48,15 @@
       <div id="stage-bar" hidden>
         <span id="sb-branch" class="sb-branch"></span>
         <div class="sb-actions">
-          <button id="sb-vs" class="sb-btn" title="Open worktree in Visual Studio">
-            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="#9B4F96" d="M17.6 1.9 11 8.5 6.6 5 4 6.2v11.6L6.6 19 11 15.5l6.6 6.6L21 20.4V3.6L17.6 1.9ZM6.6 14.6V9.4L9.2 12l-2.6 2.6Zm9.4.9L12.4 12 16 8.5v7Z"/></svg>
-            <span class="sb-label">Visual Studio</span>
-          </button>
-          <button id="sb-explorer" class="sb-btn" title="Reveal worktree in file manager">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
-            <span class="sb-label">Explorer</span>
-          </button>
+          <div class="sb-split">
+            <button id="sb-vs" class="sb-btn sb-split-main" title="Open worktree in the selected editor">
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="#9B4F96" d="M17.6 1.9 11 8.5 6.6 5 4 6.2v11.6L6.6 19 11 15.5l6.6 6.6L21 20.4V3.6L17.6 1.9ZM6.6 14.6V9.4L9.2 12l-2.6 2.6Zm9.4.9L12.4 12 16 8.5v7Z"/></svg>
+              <span class="sb-label">Visual Studio</span>
+            </button>
+            <button id="sb-editor-caret" class="sb-btn sb-split-caret" title="Choose editor">
+              <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+          </div>
           <span class="sb-sep"></span>
           <button id="sb-fetch" class="sb-btn" title="git fetch --prune">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
@@ -80,65 +88,94 @@
     </main>
 
     <div id="settings" class="overlay" hidden>
-      <div class="modal">
+      <div class="modal modal-settings">
         <header>
           <span>Settings</span>
           <button id="settings-close" class="icon-btn">✕</button>
         </header>
-        <label>Theme
-          <select id="set-theme">
-            <option value="dark">Dark</option>
-            <option value="light">Light</option>
-          </select>
-        </label>
-        <label>Font size
-          <input id="set-fontsize" type="number" min="8" max="32" step="1" />
-        </label>
-        <label>Font family
-          <select id="set-fontfamily">
-            <option value="Cascadia Mono, Consolas, monospace">Cascadia Mono</option>
-            <option value="Cascadia Code, monospace">Cascadia Code</option>
-            <option value="JetBrains Mono, monospace">JetBrains Mono</option>
-            <option value="Fira Code, monospace">Fira Code</option>
-            <option value="Consolas, monospace">Consolas</option>
-          </select>
-        </label>
-        <label>Cursor style
-          <select id="set-cursor">
-            <option value="bar">Bar</option>
-            <option value="block">Block</option>
-            <option value="underline">Underline</option>
-          </select>
-        </label>
-        <label>Cursor blink
-          <input id="set-blink" type="checkbox" />
-        </label>
-        <label>Scrollback
-          <input id="set-scrollback" type="number" min="100" max="100000" step="100" />
-        </label>
-        <label>Bypass permissions
-          <input id="set-bypass" type="checkbox" />
-        </label>
-        <p class="hint">Bypass applies to newly launched worktrees.</p>
-        <label>Desktop notifications
-          <input id="set-notifications" type="checkbox" />
-        </label>
-        <label>Notification sound
-          <input id="set-sound" type="checkbox" />
-        </label>
-        <label>Always sound on finish
-          <input id="set-always-sound" type="checkbox" />
-        </label>
-        <label>Sound
-          <select id="set-soundtype"></select>
-        </label>
-        <label>Volume
-          <input id="set-volume" type="range" min="0" max="100" step="5" />
-        </label>
-        <label>Test notification
-          <button id="set-sound-test" class="btn-ghost">Test</button>
-        </label>
-        <p class="hint">Alerts when a worktree needs input or finishes while unfocused.</p>
+
+        <nav class="set-tabs">
+          <button class="set-tab is-active" data-tab="general">General</button>
+          <button class="set-tab" data-tab="terminal">Terminal</button>
+          <button class="set-tab" data-tab="notify">Notifications</button>
+        </nav>
+
+        <section class="set-panel is-active" data-panel="general">
+          <label>Theme
+            <select id="set-theme">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+          </label>
+          <div class="set-row">
+            <div class="set-txt">
+              <span>Bypass permissions</span>
+              <small>Applies to newly launched worktrees.</small>
+            </div>
+            <label class="switch"><input id="set-bypass" type="checkbox" /><span class="slider"></span></label>
+          </div>
+        </section>
+
+        <section class="set-panel" data-panel="terminal">
+          <label>Font size
+            <input id="set-fontsize" type="number" min="8" max="32" step="1" />
+          </label>
+          <label>Font family
+            <select id="set-fontfamily">
+              <option value="Cascadia Mono, Consolas, monospace">Cascadia Mono</option>
+              <option value="Cascadia Code, monospace">Cascadia Code</option>
+              <option value="JetBrains Mono, monospace">JetBrains Mono</option>
+              <option value="Fira Code, monospace">Fira Code</option>
+              <option value="Consolas, monospace">Consolas</option>
+            </select>
+          </label>
+          <label>Cursor style
+            <select id="set-cursor">
+              <option value="bar">Bar</option>
+              <option value="block">Block</option>
+              <option value="underline">Underline</option>
+            </select>
+          </label>
+          <div class="set-row">
+            <span>Cursor blink</span>
+            <label class="switch"><input id="set-blink" type="checkbox" /><span class="slider"></span></label>
+          </div>
+          <label>Scrollback
+            <input id="set-scrollback" type="number" min="100" max="100000" step="100" />
+          </label>
+          <div class="set-row">
+            <div class="set-txt">
+              <span>Copy on select</span>
+              <small>Selecting text copies it to the clipboard.</small>
+            </div>
+            <label class="switch"><input id="set-copyselect" type="checkbox" /><span class="slider"></span></label>
+          </div>
+        </section>
+
+        <section class="set-panel" data-panel="notify">
+          <div class="set-row">
+            <span>Desktop notifications</span>
+            <label class="switch"><input id="set-notifications" type="checkbox" /><span class="slider"></span></label>
+          </div>
+          <div class="set-row">
+            <span>Notification sound</span>
+            <label class="switch"><input id="set-sound" type="checkbox" /><span class="slider"></span></label>
+          </div>
+          <div class="set-row">
+            <span>Always sound on finish</span>
+            <label class="switch"><input id="set-always-sound" type="checkbox" /><span class="slider"></span></label>
+          </div>
+          <label>Sound
+            <select id="set-soundtype"></select>
+          </label>
+          <label>Volume
+            <input id="set-volume" type="range" min="0" max="100" step="5" />
+          </label>
+          <label>Test notification
+            <button id="set-sound-test" class="btn-ghost">Test</button>
+          </label>
+          <p class="hint">Alerts when a worktree needs input or finishes while unfocused.</p>
+        </section>
       </div>
     </div>
 
@@ -247,20 +284,13 @@
     </div>
 
     <div id="prompts-mgr" class="overlay" hidden>
-      <div class="modal">
+      <div class="modal modal-wide">
         <header>
           <span>Manage prompts</span>
           <button id="pm-close" class="icon-btn">✕</button>
         </header>
+        <p class="hint">Click a prompt to edit · drag to reorder · use {branch} / {cwd} as placeholders.</p>
         <ul id="pm-list" class="pm-list"></ul>
-        <div id="pm-editor" class="pm-editor" hidden>
-          <input id="pm-label" type="text" placeholder="Label" />
-          <textarea id="pm-text" rows="4" placeholder="Prompt text — use {branch} / {cwd}"></textarea>
-          <div class="modal-actions">
-            <button id="pm-cancel" class="btn-ghost">Cancel</button>
-            <button id="pm-save" class="btn-primary">Save</button>
-          </div>
-        </div>
         <button id="pm-add" class="btn-primary">✚ Add prompt</button>
       </div>
     </div>

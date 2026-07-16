@@ -67,17 +67,33 @@ els.promptsBtn.addEventListener('click', (e) => {
 });
 
 // ---- manager modal ----
+// Single scrollable list of prompt cards. A card is either in display mode
+// (label + text preview, hover reveals edit/delete) or edit mode (inline
+// label/textarea). `editingId` tracks which card is open; `draftId` marks a
+// freshly-added card that is discarded if cancelled before its first save.
 
 let editingId = null;
+let draftId = null;
 
 function openManager() {
+  editingId = null;
+  draftId = null;
   renderList();
-  hideEditor();
   els.promptsMgr.hidden = false;
 }
 
 function closeManager() {
+  discardDraft();
   els.promptsMgr.hidden = true;
+}
+
+// Drop an unsaved new card if the user leaves it without saving.
+function discardDraft() {
+  if (draftId) {
+    prompts = prompts.filter((x) => x.id !== draftId);
+    draftId = null;
+  }
+  editingId = null;
 }
 
 function renderList() {
@@ -89,73 +105,160 @@ function renderList() {
     els.pmList.appendChild(li);
     return;
   }
-  for (const p of prompts) {
-    const row = document.createElement('li');
-    row.className = 'pm-row';
-
-    const label = document.createElement('span');
-    label.className = 'pm-rowlabel';
-    label.textContent = p.label;
-    label.title = p.text;
-
-    const edit = document.createElement('button');
-    edit.className = 'sb-btn';
-    edit.textContent = 'Edit';
-    edit.addEventListener('click', () => showEditor(p.id));
-
-    const del = document.createElement('button');
-    del.className = 'sb-btn';
-    del.textContent = 'Delete';
-    del.addEventListener('click', () => {
-      prompts = prompts.filter((x) => x.id !== p.id);
-      save();
-      renderList();
-      if (editingId === p.id) hideEditor();
-    });
-
-    row.append(label, edit, del);
-    els.pmList.appendChild(row);
-  }
+  prompts.forEach((p, i) => {
+    els.pmList.appendChild(p.id === editingId ? editCard(p) : displayCard(p, i));
+  });
 }
 
-function showEditor(id) {
+function displayCard(p, index) {
+  const row = document.createElement('li');
+  row.className = 'pm-card';
+  row.draggable = true;
+  attachDrag(row, index);
+
+  const handle = document.createElement('span');
+  handle.className = 'pm-drag';
+  handle.textContent = '⠿';
+  handle.title = 'Drag to reorder';
+
+  const body = document.createElement('div');
+  body.className = 'pm-body';
+  body.addEventListener('click', () => startEdit(p.id));
+  const label = document.createElement('span');
+  label.className = 'pm-label';
+  label.textContent = p.label;
+  const preview = document.createElement('span');
+  preview.className = 'pm-preview';
+  preview.textContent = p.text;
+  body.append(label, preview);
+
+  const acts = document.createElement('div');
+  acts.className = 'pm-acts';
+  const edit = iconBtn('✎', 'Edit', () => startEdit(p.id));
+  const del = iconBtn('🗑', 'Delete', () => {
+    prompts = prompts.filter((x) => x.id !== p.id);
+    save();
+    renderList();
+  });
+  del.classList.add('pm-del');
+  acts.append(edit, del);
+
+  row.append(handle, body, acts);
+  return row;
+}
+
+function editCard(p) {
+  const row = document.createElement('li');
+  row.className = 'pm-card pm-card-edit';
+
+  const label = document.createElement('input');
+  label.type = 'text';
+  label.className = 'pm-ed-label';
+  label.placeholder = 'Label';
+  label.value = p.label;
+
+  const text = document.createElement('textarea');
+  text.className = 'pm-ed-text';
+  text.rows = 4;
+  text.placeholder = 'Prompt text — use {branch} / {cwd}';
+  text.value = p.text;
+
+  const actions = document.createElement('div');
+  actions.className = 'modal-actions';
+  const cancel = document.createElement('button');
+  cancel.className = 'btn-ghost';
+  cancel.textContent = 'Cancel';
+  cancel.addEventListener('click', () => {
+    discardDraft();
+    renderList();
+  });
+  const ok = document.createElement('button');
+  ok.className = 'btn-primary';
+  ok.textContent = 'Save';
+  const commit = () => {
+    const l = label.value.trim();
+    const t = text.value.trim();
+    if (!l || !t) return;
+    p.label = l;
+    p.text = t;
+    draftId = null;
+    editingId = null;
+    save();
+    renderList();
+  };
+  ok.addEventListener('click', commit);
+  // Ctrl/Cmd+Enter saves from the textarea.
+  text.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') commit();
+  });
+  actions.append(cancel, ok);
+
+  row.append(label, text, actions);
+  setTimeout(() => label.focus(), 0);
+  return row;
+}
+
+function iconBtn(glyph, title, onClick) {
+  const b = document.createElement('button');
+  b.className = 'icon-btn';
+  b.textContent = glyph;
+  b.title = title;
+  b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    onClick();
+  });
+  return b;
+}
+
+function startEdit(id) {
+  discardDraft();
   editingId = id;
-  const p = prompts.find((x) => x.id === id);
-  els.pmLabel.value = p ? p.label : '';
-  els.pmText.value = p ? p.text : '';
-  els.pmEditor.hidden = false;
-  els.pmLabel.focus();
-}
-
-function hideEditor() {
-  editingId = null;
-  els.pmEditor.hidden = true;
-  els.pmLabel.value = '';
-  els.pmText.value = '';
-}
-
-function saveEditor() {
-  const label = els.pmLabel.value.trim();
-  const text = els.pmText.value.trim();
-  if (!label || !text) return;
-  if (editingId) {
-    const p = prompts.find((x) => x.id === editingId);
-    if (p) {
-      p.label = label;
-      p.text = text;
-    }
-  } else {
-    prompts.push({ id: `p${Date.now()}`, label, text });
-  }
-  save();
   renderList();
-  hideEditor();
 }
 
-els.pmAdd.addEventListener('click', () => showEditor(null));
-els.pmSave.addEventListener('click', saveEditor);
-els.pmCancel.addEventListener('click', hideEditor);
+// ---- drag reorder ----
+
+let dragFrom = null;
+
+function attachDrag(row, index) {
+  row.addEventListener('dragstart', (e) => {
+    dragFrom = index;
+    row.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  row.addEventListener('dragend', () => {
+    dragFrom = null;
+    row.classList.remove('dragging');
+    els.pmList.querySelectorAll('.drop-target').forEach((n) => n.classList.remove('drop-target'));
+  });
+  row.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    if (dragFrom !== null && dragFrom !== index) row.classList.add('drop-target');
+  });
+  row.addEventListener('dragleave', () => row.classList.remove('drop-target'));
+  row.addEventListener('drop', (e) => {
+    e.preventDefault();
+    row.classList.remove('drop-target');
+    if (dragFrom === null || dragFrom === index) return;
+    const [moved] = prompts.splice(dragFrom, 1);
+    prompts.splice(index, 0, moved);
+    save();
+    renderList();
+  });
+}
+
+els.pmAdd.addEventListener('click', () => {
+  discardDraft();
+  const p = { id: `p${Date.now()}`, label: '', text: '' };
+  prompts.push(p);
+  draftId = p.id;
+  editingId = p.id;
+  renderList();
+});
 els.pmClose.addEventListener('click', closeManager);
 els.promptsMgr.addEventListener('click', (e) => {
   if (e.target === els.promptsMgr) closeManager();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !els.promptsMgr.hidden) closeManager();
 });

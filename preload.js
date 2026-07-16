@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('api', {
   gitDeleteBranch: (dir, branch) => ipcRenderer.invoke('git:delete-branch', { dir, branch }),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   openInVS: (cwd) => ipcRenderer.invoke('vs:open', cwd),
+  openInVSCode: (cwd) => ipcRenderer.invoke('code:open', cwd),
   openInExplorer: (cwd) => ipcRenderer.invoke('explorer:open', cwd),
 
   // clipboard

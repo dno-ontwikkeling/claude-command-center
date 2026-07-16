@@ -40,6 +40,7 @@ const DEFAULT_SETTINGS = {
   cursorStyle: 'bar',
   cursorBlink: true,
   scrollback: 9001,
+  copyOnSelect: true,
   bypass: true,
   notifications: true,
   sound: true,
@@ -116,13 +117,24 @@ els.setSoundType.innerHTML = Object.entries(SOUNDS)
   .map(([id, def]) => `<option value="${id}">${def.label}</option>`)
   .join('');
 
+// Tabbed panels: clicking a tab shows its matching panel, hides the rest.
+const setTabs = [...document.querySelectorAll('.set-tab')];
+const setPanels = [...document.querySelectorAll('.set-panel')];
+function selectTab(name) {
+  for (const t of setTabs) t.classList.toggle('is-active', t.dataset.tab === name);
+  for (const p of setPanels) p.classList.toggle('is-active', p.dataset.panel === name);
+}
+for (const t of setTabs) t.addEventListener('click', () => selectTab(t.dataset.tab));
+
 function openSettings() {
+  selectTab('general'); // always open on the first tab
   els.setTheme.value = settings.theme;
   els.setFontSize.value = settings.fontSize;
   els.setFontFamily.value = settings.fontFamily;
   els.setCursor.value = settings.cursorStyle;
   els.setBlink.checked = settings.cursorBlink;
   els.setScrollback.value = settings.scrollback;
+  els.setCopySelect.checked = settings.copyOnSelect;
   els.setBypass.checked = settings.bypass;
   els.setNotifications.checked = settings.notifications;
   els.setSound.checked = settings.sound;
@@ -167,6 +179,10 @@ els.setScrollback.addEventListener('change', () => {
   settings.scrollback = Number(els.setScrollback.value);
   saveSettings();
   applyTermSettings();
+});
+els.setCopySelect.addEventListener('change', () => {
+  settings.copyOnSelect = els.setCopySelect.checked;
+  saveSettings();
 });
 els.setBypass.addEventListener('change', () => {
   settings.bypass = els.setBypass.checked;
