@@ -32,6 +32,8 @@
       "jsonstore.js",
       "gitinfo.js",
       "hookauth.js",
+      "hookserver.js",
+      "hooksmerge.js",
       "editors.js",
       "renderer/**",
       "hooks/**",

@@ -10,6 +10,8 @@ const { execFile } = require('child_process');
 const pty = require('@lydell/node-pty');
 const log = require('./logger');
 const hookAuth = require('./hookauth');
+const hooksMerge = require('./hooksmerge');
+const { createRequestHandler } = require('./hookserver');
 const { openInVisualStudio, openInVSCode } = require('./editors');
 const { readJsonSafe, writeJsonAtomic, hasShellMeta } = require('./jsonstore');
 const {
@@ -41,7 +43,6 @@ let serverPort = 0;
 // can't forge events for a different agentId — closing agent-to-agent spoofing.
 const HOOK_SECRET = crypto.randomBytes(32).toString('hex');
 const agentSecret = (id) => hookAuth.agentSecret(HOOK_SECRET, id);
-const { secretMatches } = hookAuth;
 
 // Safe IPC to the renderer. A pty can emit data after the window is closed or
 // reloaded; `mainWindow?` is still truthy then but its webContents is destroyed,
@@ -244,25 +245,19 @@ function settingsPath() {
   return path.join(os.homedir(), '.claude', 'settings.json');
 }
 
-// True only when EVERY tracked event already has a report.js command — a blunt
-// blob `includes` would treat a partial/interrupted prior install as complete
-// and never add the missing events.
-function hooksInstalled(settings) {
-  const hooks = settings.hooks || {};
-  return Object.keys(HOOK_EVENTS).every((event) => hookAuth.eventHasReport(hooks[event]));
-}
-
+// hooksInstalled/mergeHooksInto/loadSettings live in ./hooksmerge.js (electron-
+// free so the merge — and the corrupt-settings abort path below — can be unit
+// tested; see test/hooksmerge.test.js).
 async function ensureHooksInstalled() {
   const file = settingsPath();
-  // This file is the shared CLI config — NOT owned by this app. Distinguish a
-  // missing file (first run, fine to create) from a parse/IO failure. On a
-  // parse failure readJsonSafe backs it up and throws; we must then bail out
-  // rather than default settings to {} and write it back, which would wipe the
-  // user's permissions / model prefs / other hooks.
-  let settings;
-  try {
-    settings = readJsonSafe(file, null); // null sentinel = missing (first run)
-  } catch (err) {
+  // This file is the shared CLI config — NOT owned by this app. loadSettings
+  // distinguishes a missing file (first run, fine to create) from a parse/IO
+  // failure. On a parse failure we must bail out rather than default settings
+  // to {} and write it back, which would wipe the user's permissions / model
+  // prefs / other hooks.
+  const loaded = hooksMerge.loadSettings(file);
+  if (!loaded.ok) {
+    const err = loaded.error;
     await dialog.showMessageBox(mainWindow, {
       type: 'error',
       title: 'Command Center setup',
@@ -275,9 +270,9 @@ async function ensureHooksInstalled() {
     });
     return;
   }
-  if (settings === null) settings = {}; // genuine first run — safe to create
+  const settings = loaded.settings; // genuine first run already normalized to {}
 
-  if (hooksInstalled(settings)) return;
+  if (hooksMerge.hooksInstalled(settings, HOOK_EVENTS)) return;
 
   const { response } = await dialog.showMessageBox(mainWindow, {
     type: 'question',
@@ -295,13 +290,7 @@ async function ensureHooksInstalled() {
 
   // Merge the hooks block in place so every pre-existing key on `settings`
   // (permissions, model prefs, unrelated hooks) is preserved.
-  settings.hooks = settings.hooks || {};
-  for (const [event, status] of Object.entries(HOOK_EVENTS)) {
-    settings.hooks[event] = settings.hooks[event] || [];
-    if (hookAuth.eventHasReport(settings.hooks[event])) continue; // don't duplicate on re-run
-    const command = `node "${REPORT_SCRIPT}" ${status}`;
-    settings.hooks[event].push({ hooks: [{ type: 'command', command }] });
-  }
+  hooksMerge.mergeHooksInto(settings, HOOK_EVENTS, REPORT_SCRIPT);
 
   writeJsonAtomic(file, settings);
 }
@@ -312,58 +301,16 @@ async function ensureHooksInstalled() {
 
 function startServer() {
   return new Promise((resolve) => {
-    const server = http.createServer((req, res) => {
-      if (req.method !== 'POST' || req.url !== '/event') {
-        res.writeHead(404).end();
-        return;
-      }
-      // A client reset mid-stream emits 'error' on req; with no listener Node
-      // throws it as an uncaught exception that would kill the whole main process
-      // (and every live pty with it).
-      req.on('error', (err) => {
-        log.warn('hook-server', 'request stream error', err);
-        res.destroy();
-      });
-      let body = '';
-      let tooBig = false;
-      req.on('data', (c) => {
-        if (tooBig) return;
-        body += c;
-        if (body.length > 64 * 1024) {
-          // A hook payload is tiny; anything this large is malformed/hostile.
-          tooBig = true;
-          res.writeHead(413).end();
-          req.destroy();
-        }
-      });
-      req.on('end', () => {
-        if (tooBig) return;
-        let event;
-        try {
-          event = JSON.parse(body);
-        } catch (err) {
-          log.warn('hook-server', 'malformed event body', err);
-          res.writeHead(400).end();
-          return;
-        }
-        // The agentId must be live AND the request must carry that agent's own
-        // token. A stale/forged agentId — or a live one without its token — must
-        // never reach the renderer, where it could overwrite a persisted
-        // sessionId later used by `claude --resume`.
-        const id = event && event.agentId;
-        if (!id || !agents.has(id)) {
-          res.writeHead(404).end();
-          return;
-        }
-        if (!secretMatches(req.headers['x-cc-secret'], agentSecret(id))) {
-          res.writeHead(403).end();
-          return;
-        }
-        sendToRenderer('agent:event', event);
-        res.writeHead(200).end();
-      });
-    });
-    // Same rationale for the server itself — an unhandled 'error' event is fatal.
+    // Request handling itself lives in ./hookserver.js (electron-free — the
+    // agents map, per-agent secret and renderer sink are injected — so it can
+    // be integration tested against a real http server; see
+    // test/hookserver.test.js). Only the actual http.Server + listen() stay
+    // here since serverPort/agents are main.js state.
+    const server = http.createServer(
+      createRequestHandler({ agents, agentSecret, sendToRenderer, log })
+    );
+    // An unhandled server 'error' event is fatal — same rationale as the
+    // per-request 'error' listener inside the handler.
     server.on('error', (err) => log.error('hook-server', 'server error', err));
     server.listen(0, '127.0.0.1', () => {
       serverPort = server.address().port;
