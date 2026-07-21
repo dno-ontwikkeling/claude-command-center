@@ -501,22 +501,40 @@ function registerIpc() {
 
   ipcMain.handle('workspaces:list', () => loadWorkspaces().map(enrich));
 
-  // Create a workspace: ask where (parent folder picker), make `parent/name`,
-  // register it. Returns the enriched record, or { canceled }/{ error }.
-  ipcMain.handle('workspaces:create', async (_e, name) => {
+  // Step 1 of workspace creation: pick a folder. Existing folders are fine
+  // (the renderer's next step decides whether to use it as-is or nest under
+  // it), and the picker's own "New folder" button covers creating one.
+  ipcMain.handle('workspaces:pickFolder', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
       properties: ['openDirectory', 'createDirectory'],
-      title: `Choose parent folder for workspace "${name}"`,
+      title: 'Choose a folder for the workspace',
     });
     if (canceled || !filePaths[0]) return { canceled: true };
-    if (hasShellMeta(name)) {
-      return { error: 'Workspace name contains unsafe characters (& | ; < > ( ) ! ^ % $ " \' `).' };
-    }
-    const dir = path.join(filePaths[0], name.replace(/[/\\]/g, '-'));
-    try {
-      fs.mkdirSync(dir, { recursive: true });
-    } catch (err) {
-      return { error: errMsg(err).trim() };
+    return { path: filePaths[0] };
+  });
+
+  // Step 2: register the workspace. `useParent` uses the picked folder as-is
+  // (an existing folder becomes the workspace); otherwise `name` is created as
+  // a subfolder `parent/name`. Returns the enriched record, or { canceled }/
+  // { error }.
+  ipcMain.handle('workspaces:create', async (_e, { parent, name, useParent } = {}) => {
+    if (!parent) return { canceled: true };
+    name = (typeof name === 'string' ? name : '').trim() || path.basename(parent);
+    let dir;
+    if (useParent) {
+      dir = parent;
+    } else {
+      // name becomes a path segment here, so reject shell metacharacters that
+      // could leak through when the dir is later used as a cwd.
+      if (hasShellMeta(name)) {
+        return { error: 'Workspace name contains unsafe characters (& | ; < > ( ) ! ^ % $ " \' `).' };
+      }
+      dir = path.join(parent, name.replace(/[/\\]/g, '-'));
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+      } catch (err) {
+        return { error: errMsg(err).trim() };
+      }
     }
     const list = loadWorkspaces();
     if (!list.some((w) => normPath(w.dir) === normPath(dir))) {

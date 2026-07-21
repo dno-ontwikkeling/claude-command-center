@@ -415,16 +415,29 @@ async function removeWorkspace(dir) {
 }
 
 async function createWorkspace() {
-  const name = await promptText('New workspace', 'workspace name');
-  if (!name) return;
-  const res = await window.api.createWorkspace(name);
+  // Step 1: pick a folder (existing folders welcome; the picker also offers
+  // "New folder"). Step 2: name it + decide whether to use that folder as-is
+  // or nest a fresh subfolder under it.
+  const picked = await window.api.pickWorkspaceFolder();
+  if (!picked || picked.canceled || !picked.path) return;
+  const base = picked.path.split(/[/\\]/).filter(Boolean).pop() || 'workspace';
+  const ans = await promptText('New workspace', 'workspace name', {
+    value: base,
+    checkbox: 'Use selected folder as-is (don’t create a subfolder)',
+  });
+  if (!ans) return;
+  const res = await window.api.createWorkspace({
+    parent: picked.path,
+    name: ans.text,
+    useParent: ans.checked,
+  });
   if (res.canceled) return;
   if (res.error) {
     await confirmDialog('Workspace creation failed', res.error, { alert: true });
     return;
   }
   await refreshProjects();
-  // Launch an agent in the fresh workspace straight away.
+  // Launch an agent in the workspace straight away.
   spawn(res.dir, res.dir, null, true);
 }
 

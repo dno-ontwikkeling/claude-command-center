@@ -95,7 +95,15 @@ export interface Api {
 
   // workspaces (scratch folders, no git)
   listWorkspaces(): Promise<Project[]>;
-  createWorkspace(name: string): Promise<{ dir?: string; canceled?: boolean; error?: string }>;
+  /** Step 1: pick a folder for a new workspace (existing folders allowed). */
+  pickWorkspaceFolder(): Promise<{ path?: string; canceled?: boolean }>;
+  /** Step 2: register it. `useParent` uses the picked folder as-is; otherwise
+   * `name` is created as a subfolder under `parent`. */
+  createWorkspace(opts: {
+    parent: string;
+    name?: string;
+    useParent?: boolean;
+  }): Promise<{ dir?: string; canceled?: boolean; error?: string }>;
   removeWorkspace(dir: string): Promise<Project[]>;
   reorderWorkspaces(dirs: string[]): Promise<Project[]>;
 

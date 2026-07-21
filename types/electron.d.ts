@@ -29,6 +29,7 @@ interface InvokeChannelMap {
   'projects:remove': Project[];
   'projects:reorder': Project[];
   'workspaces:list': Project[];
+  'workspaces:pickFolder': { path?: string; canceled?: boolean };
   'workspaces:create': { dir?: string; canceled?: boolean; error?: string };
   'workspaces:remove': Project[];
   'workspaces:reorder': Project[];

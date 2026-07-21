@@ -77,14 +77,25 @@ document.addEventListener('click', (e) => {
 // await resolves exactly once.
 let pendingPromptDone = null;
 
-export function promptText(title, placeholder = '') {
+// opts: { value, checkbox, checked }. Without `checkbox` this resolves the
+// trimmed text (or null on cancel/empty) — the original contract. With
+// `checkbox` (a label string) it resolves { text, checked } instead, or null
+// on cancel, so a caller can collect a name plus a boolean in one dialog.
+export function promptText(title, placeholder = '', opts = {}) {
   pendingPromptDone?.(null);
   return new Promise((resolve) => {
+    const hasCheck = !!opts.checkbox;
     els.promptTitle.textContent = title;
-    els.promptInput.value = '';
+    els.promptInput.value = opts.value || '';
     els.promptInput.placeholder = placeholder;
+    els.promptCheckRow.hidden = !hasCheck;
+    if (hasCheck) {
+      els.promptCheckLabel.textContent = opts.checkbox;
+      els.promptCheck.checked = !!opts.checked;
+    }
     els.promptOverlay.hidden = false;
     els.promptInput.focus();
+    els.promptInput.select();
 
     const done = (val) => {
       if (pendingPromptDone !== done) return;
@@ -93,13 +104,15 @@ export function promptText(title, placeholder = '') {
       els.promptOk.onclick = null;
       els.promptCancel.onclick = null;
       els.promptInput.onkeydown = null;
-      resolve(val);
+      if (!hasCheck) return resolve(val);
+      resolve(val === null ? null : { text: val, checked: els.promptCheck.checked });
     };
     pendingPromptDone = done;
-    els.promptOk.onclick = () => done(els.promptInput.value.trim() || null);
+    const submit = () => done(els.promptInput.value.trim() || null);
+    els.promptOk.onclick = submit;
     els.promptCancel.onclick = () => done(null);
     els.promptInput.onkeydown = (e) => {
-      if (e.key === 'Enter') done(els.promptInput.value.trim() || null);
+      if (e.key === 'Enter') submit();
       if (e.key === 'Escape') done(null);
     };
   });

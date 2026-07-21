@@ -24,7 +24,8 @@ const api = {
 
   // workspaces (scratch folders, no git)
   listWorkspaces: () => ipcRenderer.invoke('workspaces:list'),
-  createWorkspace: (name) => ipcRenderer.invoke('workspaces:create', name),
+  pickWorkspaceFolder: () => ipcRenderer.invoke('workspaces:pickFolder'),
+  createWorkspace: (opts) => ipcRenderer.invoke('workspaces:create', opts),
   removeWorkspace: (dir) => ipcRenderer.invoke('workspaces:remove', dir),
   reorderWorkspaces: (dirs) => ipcRenderer.invoke('workspaces:reorder', dirs),
 
