@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -712,6 +712,18 @@ function registerIpc() {
   // Current branch for a worktree (reads .git/HEAD). Lets the sidebar refresh a
   // stale label after the user switches branch inside the worktree's terminal.
   ipcMain.handle('git:branch', (_e, cwd) => (isKnownDir(cwd) ? gitBranch(cwd) : null));
+
+  // Clipboard bridge. The preload runs sandboxed, where `require('electron')`
+  // does NOT expose the `clipboard` module (only ipcRenderer/contextBridge/etc),
+  // so the renderer can't touch the clipboard directly — it has to hop to main.
+  // Read is synchronous (sendSync) to keep the renderer's `readClipboard(): string`
+  // contract; write is fire-and-forget.
+  ipcMain.on('clipboard:read', (e) => {
+    e.returnValue = clipboard.readText();
+  });
+  ipcMain.on('clipboard:write', (_e, text) => {
+    if (typeof text === 'string') clipboard.writeText(text);
+  });
 
   // Open a terminal link in the user's default browser. Only http(s) — never
   // hand arbitrary schemes (file:, javascript:) to the OS shell.

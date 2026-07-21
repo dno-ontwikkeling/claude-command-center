@@ -22,14 +22,16 @@ function closeTermMenu() {
   document.getElementById('term-menu')?.remove();
 }
 
-function openTermMenu(x, y, term) {
+function openTermMenu(x, y, term, selection) {
   closeMenu(); // dismiss any open kebab menu
   closeTermMenu();
   const menu = document.createElement('div');
   menu.className = 'menu';
   menu.id = 'term-menu';
   const items = [
-    { label: 'Copy', disabled: !term.hasSelection(), action: () => window.api.writeClipboard(term.getSelection()) },
+    // `selection` is snapshotted by the caller before the right-click / a TUI
+    // repaint can clear it — reading term.getSelection() here would be too late.
+    { label: 'Copy', disabled: !selection, action: () => window.api.writeClipboard(selection) },
     {
       label: 'Paste',
       action: () => {
@@ -84,20 +86,26 @@ export function spawn(dir, cwd, branch, isMain, restore = null) {
   );
   term.open(el);
 
-  // Select-to-copy (Linux-terminal style). Mouse tracking eats plain
-  // drag-select while Claude is grabbing the mouse; hold Shift to force a
-  // local selection in any mode (xterm built-in). On mouseup, push whatever
-  // is selected to the clipboard so no Ctrl+C is needed.
-  el.addEventListener('mouseup', () => {
-    if (settings.copyOnSelect && term.hasSelection()) {
-      window.api.writeClipboard(term.getSelection());
-    }
+  // Claude's TUI repaints constantly (spinner/status line), and every repaint
+  // wipes the xterm selection. Waiting for mouseup / Ctrl+C / a right-click to
+  // read the selection therefore loses it. Instead, react the moment the
+  // selection changes — even mid-drag — so the text survives the next repaint:
+  // cache it for the copy paths, and (Linux-terminal style) push it straight to
+  // the clipboard when select-to-copy is on. Hold Shift to force a local
+  // selection while Claude is grabbing the mouse (xterm built-in).
+  let lastSelection = '';
+  term.onSelectionChange(() => {
+    const sel = term.getSelection();
+    if (!sel) return;
+    lastSelection = sel;
+    if (settings.copyOnSelect) window.api.writeClipboard(sel);
   });
 
-  // Right-click -> Copy/Paste menu at the cursor.
+  // Right-click -> Copy/Paste menu at the cursor. Prefer the live selection,
+  // but fall back to the cached one (a repaint may have already cleared it).
   el.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    openTermMenu(e.clientX, e.clientY, term);
+    openTermMenu(e.clientX, e.clientY, term, term.getSelection() || lastSelection);
   });
 
   // Custom key handling. xterm has no Edit-role menu wired (no Electron menu),
@@ -118,17 +126,26 @@ export function spawn(dir, cwd, branch, isMain, restore = null) {
       return false;
     }
 
-    // Ctrl+V -> paste from the system clipboard.
+    // Ctrl+V -> paste exactly once. We must preventDefault so Chromium's own
+    // native `paste` event does NOT also fire into xterm's textarea: returning
+    // false from this handler stops xterm, but does NOT cancel the DOM default,
+    // so without preventDefault the clipboard text lands twice (term.paste +
+    // native). Clipboard read hops through main (sandboxed preload).
     if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'v' || e.key === 'V')) {
+      e.preventDefault();
       const text = window.api.readClipboard();
       if (text) term.paste(text);
       return false;
     }
 
     // Ctrl+C -> copy when text is selected; otherwise let it through as SIGINT.
+    // A repaint may have cleared the live selection, so fall back to the cached
+    // one, then consume it so the next Ctrl+C still interrupts (SIGINT).
     if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'c' || e.key === 'C')) {
-      if (term.hasSelection()) {
-        window.api.writeClipboard(term.getSelection());
+      const sel = term.hasSelection() ? term.getSelection() : lastSelection;
+      if (sel) {
+        window.api.writeClipboard(sel);
+        lastSelection = '';
         return false;
       }
     }
@@ -143,6 +160,10 @@ export function spawn(dir, cwd, branch, isMain, restore = null) {
     if (data.includes('\x1b[<') || data.includes('\x1b[M')) {
       const a = agents.get(id);
       if (a) a.lastMouseInput = Date.now();
+    } else {
+      // Real typed input invalidates the cached selection, so a later Ctrl+C
+      // sends SIGINT instead of re-copying a stale selection.
+      lastSelection = '';
     }
     window.api.sendInput(id, data);
   });

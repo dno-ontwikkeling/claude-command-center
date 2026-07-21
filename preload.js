@@ -1,6 +1,6 @@
 'use strict';
 
-const { contextBridge, ipcRenderer, clipboard } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
 /**
  * The renderer-facing API. Shape is defined once in types/ipc.d.ts (as
@@ -44,9 +44,10 @@ const api = {
   openInVSCode: (cwd) => ipcRenderer.invoke('code:open', cwd),
   openInExplorer: (cwd) => ipcRenderer.invoke('explorer:open', cwd),
 
-  // clipboard
-  readClipboard: () => clipboard.readText(),
-  writeClipboard: (text) => clipboard.writeText(text),
+  // clipboard — bridged through main; the sandboxed preload has no `clipboard`
+  // module. Read stays synchronous (sendSync) to match the renderer's usage.
+  readClipboard: () => ipcRenderer.sendSync('clipboard:read'),
+  writeClipboard: (text) => ipcRenderer.send('clipboard:write', text),
 
   // logging (renderer -> main log file)
   log: (level, args) => ipcRenderer.send('log', { level, args }),
