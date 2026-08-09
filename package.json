@@ -12,8 +12,8 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8"
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3"
   },
   "dependencies": {
     "@lydell/node-pty": "^1.1.0",
