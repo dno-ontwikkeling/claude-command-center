@@ -223,10 +223,6 @@ body.resizing #terminals {
   color: var(--muted);
 }
 
-body.compact .section-head {
-  padding: calc(var(--space) / 2) var(--space);
-}
-
 .sidebar-footer {
   display: flex;
   padding: calc(var(--space) / 2);
@@ -289,7 +285,8 @@ body.compact .section-head {
   text-overflow: ellipsis;
 }
 
-.kebab {
+.kebab,
+.add-agent {
   flex: none;
   width: 20px;
   height: 20px;
@@ -305,12 +302,18 @@ body.compact .section-head {
   opacity: 0;
 }
 
+.add-agent {
+  font-size: 18px;
+}
+
 .project:hover .kebab,
+.project:hover .add-agent,
 .agent:hover .kebab {
   opacity: 1;
 }
 
-.kebab:hover {
+.kebab:hover,
+.add-agent:hover {
   background: var(--border);
   color: var(--fg);
 }
@@ -382,6 +385,9 @@ body.compact .section-head {
 }
 
 .menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   text-align: left;
   border: none;
   background: transparent;
@@ -390,6 +396,25 @@ body.compact .section-head {
   border-radius: 6px;
   font: inherit;
   cursor: pointer;
+}
+
+.menu button svg {
+  flex: none;
+  display: block;
+}
+
+/* "Set status" menu: colour each filled dot to match the row status indicator */
+.menu svg.st-dot.st-idle {
+  color: var(--idle);
+}
+.menu svg.st-dot.st-busy {
+  color: var(--busy);
+}
+.menu svg.st-dot.st-needs {
+  color: var(--needs-input);
+}
+.menu svg.st-dot.st-done {
+  color: var(--ok);
 }
 
 .menu button:hover {
@@ -700,30 +725,6 @@ body.compact .section-head {
 }
 .ptype-python {
   background: #3572a5;
-}
-
-/* toolbar toggle in the "on" state (compact mode) */
-.icon-btn.active {
-  background: var(--elevated);
-  color: var(--accent);
-}
-
-/* ---- compact mode: tighter density ---- */
-body.compact {
-  font-size: 12px;
-}
-body.compact .bar {
-  padding: var(--space);
-}
-body.compact .project {
-  padding: 4px calc(var(--space) * 1.25);
-}
-body.compact .agent {
-  padding: 2px calc(var(--space) * 1.25);
-}
-body.compact .ptype {
-  font-size: 8px;
-  padding: 1px 3px;
 }
 
 /* ---- manage prompts ---- */

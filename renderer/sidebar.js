@@ -19,6 +19,32 @@ import { newAgent } from './worktree.js';
 // Short badge per detected project type (see detectProjectType in main.js).
 const PTYPE_LABEL = { node: 'JS', dotnet: '.NET', go: 'GO', rust: 'RS', python: 'PY' };
 
+// Kebab-menu icons. Trusted, hardcoded SVG literals (never interpolate a label
+// into these — openMenu builds the icon and the label as separate DOM nodes).
+// Feather-style: 14×14, stroke=currentColor so they inherit the item colour
+// (incl. the red `.danger` variants).
+const svgIcon = (inner) =>
+  `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+const ICONS = {
+  branch: svgIcon('<line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>'),
+  plus: svgIcon('<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>'),
+  folder: svgIcon('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>'),
+  pencil: svgIcon('<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),
+  activity: svgIcon('<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>'),
+  play: svgIcon('<polygon points="5 3 19 12 5 21 5 3"/>'),
+  trash: svgIcon('<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>'),
+  close: svgIcon('<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'),
+  minusCircle: svgIcon('<circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/>'),
+  xCircle: svgIcon('<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'),
+};
+
+// A filled dot coloured per status (`st-idle`/`st-busy`/`st-needs`/`st-done`),
+// mirroring the row's own status dot so the "Set status" menu shows the exact
+// indicator each choice applies. Colour comes from CSS (theme-aware) via the
+// class, painted through fill="currentColor".
+const statusDot = (cls) =>
+  `<svg class="st-dot ${cls}" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><circle cx="12" cy="12" r="6" fill="currentColor"/></svg>`;
+
 // Collapsed items (by dir) — persisted so the tree state survives a restart.
 // Shared across projects and workspaces (dirs are unique).
 const COLLAPSED_KEY = 'collapsedProjects';
@@ -134,23 +160,24 @@ function buildAgentRow(id, a) {
   rowKebab.addEventListener('click', (e) => {
     e.stopPropagation();
     const items = [
-      { label: 'Rename', action: () => renameAgent(id) },
+      { label: 'Rename', icon: ICONS.pencil, action: () => renameAgent(id) },
       {
         label: 'Set status ▸',
+        icon: ICONS.activity,
         submenu: [
-          { label: 'Idle', action: () => forceStatus(id, 'idle') },
-          { label: 'Busy', action: () => forceStatus(id, 'busy') },
-          { label: 'Needs input', action: () => forceStatus(id, 'needs-input') },
-          { label: 'Done', action: () => forceStatus(id, 'done') },
+          { label: 'Idle', icon: statusDot('st-idle'), action: () => forceStatus(id, 'idle') },
+          { label: 'Busy', icon: statusDot('st-busy'), action: () => forceStatus(id, 'busy') },
+          { label: 'Needs input', icon: statusDot('st-needs'), action: () => forceStatus(id, 'needs-input') },
+          { label: 'Done', icon: statusDot('st-done'), action: () => forceStatus(id, 'done') },
         ],
       },
     ];
     // Only worktrees have a folder of their own to delete; the main worktree and
     // workspace agents (isMain) share the folder, so offer plain close only.
     if (!a.isMain) {
-      items.push({ label: 'Delete worktree', danger: true, action: () => deleteWorktree(id) });
+      items.push({ label: 'Delete worktree', icon: ICONS.trash, danger: true, action: () => deleteWorktree(id) });
     }
-    items.push({ label: 'Close', danger: true, action: () => removeAgent(id) });
+    items.push({ label: 'Close', icon: ICONS.close, danger: true, action: () => removeAgent(id) });
     openMenu(rowKebab, items);
   });
 
@@ -185,8 +212,8 @@ function buildDormantRow(id, d) {
   rowKebab.addEventListener('click', (e) => {
     e.stopPropagation();
     openMenu(rowKebab, [
-      { label: 'Resume', action: () => resume(id) },
-      { label: 'Forget session', danger: true, action: () => removeDormant(id) },
+      { label: 'Resume', icon: ICONS.play, action: () => resume(id) },
+      { label: 'Forget session', icon: ICONS.xCircle, danger: true, action: () => removeDormant(id) },
     ]);
   });
 
@@ -202,9 +229,10 @@ function buildAgentList(dir) {
   return sub;
 }
 
-// Common item header (chevron + type icon + name + collapse count + kebab).
-// `onOpen` fires on a plain header click; `menuItems` builds the kebab menu.
-function buildItemHeader(p, { dragType, onReorder, onOpen, menuItems }) {
+// Common item header (chevron + type icon + name + collapse count + add + kebab).
+// A plain header click toggles collapse; `onAddAgent` fires from the + button;
+// `menuItems` builds the kebab menu.
+function buildItemHeader(p, { dragType, onReorder, onAddAgent, menuItems }) {
   const item = document.createElement('li');
   item.className = 'project-item';
   // Stashed for applyFilter so it can toggle visibility without a rebuild.
@@ -227,6 +255,11 @@ function buildItemHeader(p, { dragType, onReorder, onOpen, menuItems }) {
   name.textContent = p.name;
   name.title = p.dir;
 
+  const addBtn = document.createElement('button');
+  addBtn.className = 'add-agent';
+  addBtn.textContent = '+';
+  addBtn.title = 'New agent';
+
   const kebab = document.createElement('button');
   kebab.className = 'kebab';
   kebab.textContent = '⋮';
@@ -246,13 +279,8 @@ function buildItemHeader(p, { dragType, onReorder, onOpen, menuItems }) {
     count.title = `${hiddenCount} hidden`;
     header.append(count);
   }
-  header.append(kebab);
+  header.append(addBtn, kebab);
   item.appendChild(header);
-
-  chevron.addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggleCollapse(p.dir);
-  });
 
   // Drag the header to reorder within its own section (distinct dataTransfer
   // type keeps projects, workspaces and agent rows from cross-dropping).
@@ -276,9 +304,13 @@ function buildItemHeader(p, { dragType, onReorder, onOpen, menuItems }) {
     onReorder(dragged, p.dir);
   });
 
-  header.addEventListener('click', (e) => {
-    if (e.target === kebab) return;
-    onOpen();
+  // Plain header click toggles collapse (no longer opens/spawns anything).
+  // The chevron falls through to here; addBtn/kebab stopPropagation in their
+  // own handlers, so this never fires for them.
+  header.addEventListener('click', () => toggleCollapse(p.dir));
+  addBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    onAddAgent();
   });
   kebab.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -332,17 +364,14 @@ function applyFilter() {
 function renderProjects() {
   els.list.innerHTML = '';
   for (const p of state.projectsData) {
+    const addAgent = () => newAgent(p);
     const item = buildItemHeader(p, {
       dragType: 'application/x-cc-project',
       onReorder: reorderProject,
-      onOpen: () => {
-        const list = agentsForDir(p.dir);
-        if (list.length) activate(list[0][0]);
-        else newAgent(p);
-      },
+      onAddAgent: addAgent,
       menuItems: () => [
-        { label: 'Open worktree', action: () => newAgent(p) },
-        { label: 'Remove project', danger: true, action: () => removeProject(p.dir) },
+        { label: 'Open worktree', icon: ICONS.branch, action: addAgent },
+        { label: 'Forget project', icon: ICONS.minusCircle, danger: true, action: () => removeProject(p.dir) },
       ],
     });
     item.appendChild(buildAgentList(p.dir));
@@ -353,18 +382,15 @@ function renderProjects() {
 function renderWorkspaces() {
   els.wsList.innerHTML = '';
   for (const w of state.workspacesData) {
+    const addAgent = () => spawn(w.dir, w.dir, null, true);
     const item = buildItemHeader(w, {
       dragType: 'application/x-cc-workspace',
       onReorder: reorderWorkspace,
-      onOpen: () => {
-        const list = agentsForDir(w.dir);
-        if (list.length) activate(list[0][0]);
-        else spawn(w.dir, w.dir, null, true);
-      },
+      onAddAgent: addAgent,
       menuItems: () => [
-        { label: 'New agent', action: () => spawn(w.dir, w.dir, null, true) },
-        { label: 'Open in Explorer', action: () => window.api.openInExplorer(w.dir) },
-        { label: 'Remove workspace', danger: true, action: () => removeWorkspace(w.dir) },
+        { label: 'New agent', icon: ICONS.plus, action: addAgent },
+        { label: 'Open in Explorer', icon: ICONS.folder, action: () => window.api.openInExplorer(w.dir) },
+        { label: 'Forget workspace', icon: ICONS.minusCircle, danger: true, action: () => removeWorkspace(w.dir) },
       ],
     });
     item.appendChild(buildAgentList(w.dir));
@@ -388,9 +414,9 @@ export async function refreshProjects() {
 
 async function removeProject(dir) {
   const ok = await confirmDialog(
-    'Remove project',
+    'Forget project',
     'This removes the project from Command Center. The folder on disk is left untouched.',
-    { okLabel: 'Remove', danger: true }
+    { okLabel: 'Forget', danger: true }
   );
   if (!ok) return;
   for (const [id] of agentsForDir(dir)) removeAgent(id, true);
@@ -402,9 +428,9 @@ async function removeProject(dir) {
 
 async function removeWorkspace(dir) {
   const ok = await confirmDialog(
-    'Remove workspace',
+    'Forget workspace',
     'This removes the workspace from Command Center. The folder on disk is left untouched.',
-    { okLabel: 'Remove', danger: true }
+    { okLabel: 'Forget', danger: true }
   );
   if (!ok) return;
   for (const [id] of agentsForDir(dir)) removeAgent(id, true);

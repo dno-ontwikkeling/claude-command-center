@@ -11,7 +11,6 @@ export const els = {
   addBtn: document.getElementById('add-project'),
   addWsBtn: document.getElementById('add-workspace'),
   themeBtn: document.getElementById('theme-toggle'),
-  compactBtn: document.getElementById('compact-toggle'),
   collapseAllBtn: document.getElementById('collapse-all'),
   sidebarFilter: document.getElementById('sidebar-filter'),
   settingsBtn: document.getElementById('settings-btn'),
