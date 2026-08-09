@@ -7,12 +7,13 @@
     "start": "electron .",
     "dist": "electron-builder",
     "test": "node --test",
-    "typecheck": "npx -y -p typescript@5 tsc -p tsconfig.typecheck.json"
+    "typecheck": "npx -y -p typescript@5 tsc -p tsconfig.typecheck.json",
+    "test:coverage": "c8 --reporter=cobertura node --test"
   },
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "c8": "^12.0.0",
+    "c8": "^10.1.3",
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8"
   },
