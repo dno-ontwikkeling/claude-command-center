@@ -12,6 +12,10 @@ name: Release
 # A push to main with no feat/fix/breaking commit produces no tag and no
 # release. When a bump happens the Windows job builds the installer and
 # attaches it to a GitHub pre-release; promote-release.yml flips it to stable.
+#
+# workflow_dispatch with `version` set skips the auto-bump and releases that
+# exact version — an escape hatch for when the computed tag name is unusable
+# (e.g. a version name burned by a prior immutable release).
 
 on:
   push:
@@ -23,6 +27,12 @@ on:
       - "reviews/**"
       - ".claude/**"
       - "test/**"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Explicit version, e.g. 1.1.1 (no leading v). Empty = auto-bump from commits."
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -31,21 +41,56 @@ jobs:
   tag:
     runs-on: ubuntu-latest
     outputs:
-      new_tag: ${{ steps.tag.outputs.new_tag }}
-      new_version: ${{ steps.tag.outputs.new_version }}
-      changelog: ${{ steps.tag.outputs.changelog }}
+      new_tag: ${{ steps.out.outputs.new_tag }}
+      new_version: ${{ steps.out.outputs.new_version }}
+      changelog: ${{ steps.out.outputs.changelog }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Bump version and create tag
-        id: tag
+      - name: Auto-bump version and create tag
+        id: auto
+        if: ${{ github.event_name == 'push' }}
         uses: mathieudutour/github-tag-action@v6.2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           default_bump: false
           release_branches: main
+
+      - name: Create explicit tag
+        id: manual
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.version != '' }}
+        env:
+          V: ${{ inputs.version }}
+        run: |
+          git tag "v$V"
+          git push origin "v$V"
+          echo "new_tag=v$V" >> "$GITHUB_OUTPUT"
+          echo "new_version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Consolidate outputs
+        id: out
+        env:
+          AUTO_TAG: ${{ steps.auto.outputs.new_tag }}
+          AUTO_VER: ${{ steps.auto.outputs.new_version }}
+          AUTO_LOG: ${{ steps.auto.outputs.changelog }}
+          MAN_TAG: ${{ steps.manual.outputs.new_tag }}
+          MAN_VER: ${{ steps.manual.outputs.new_version }}
+        run: |
+          if [ -n "$MAN_TAG" ]; then
+            echo "new_tag=$MAN_TAG" >> "$GITHUB_OUTPUT"
+            echo "new_version=$MAN_VER" >> "$GITHUB_OUTPUT"
+            echo "changelog=Manual release $MAN_TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "new_tag=$AUTO_TAG" >> "$GITHUB_OUTPUT"
+            echo "new_version=$AUTO_VER" >> "$GITHUB_OUTPUT"
+            {
+              echo "changelog<<CHANGELOG_EOF"
+              echo "$AUTO_LOG"
+              echo "CHANGELOG_EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
 
   build:
     needs: tag
@@ -75,11 +120,9 @@ jobs:
         # below is owned by action-gh-release, not electron-builder.
         run: npm run dist -- --publish never
 
-      # This repo has immutable releases enabled: publishing a release freezes
-      # its assets, and prereleases publish on creation — so uploading straight
-      # to a pre-release fails. Upload to a DRAFT first (drafts stay mutable),
-      # then publish the draft as an immutable pre-release with the assets
-      # already attached.
+      # Upload to a DRAFT first (drafts stay mutable), then publish it. This is
+      # required when immutable releases is on (prereleases publish on creation,
+      # freezing assets before they upload) and is harmless when it is off.
       - name: Upload installer to a draft release
         uses: softprops/action-gh-release@v2
         with:
