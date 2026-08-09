@@ -15,6 +15,7 @@
   --error: #e0574e;
   --dead: #3a3a40;
   --ok: #5cc98c;
+  --term-bg: #0c0c0c; /* Campbell terminal bg, fills the gutter */
 }
 
 [data-theme='light'] {
@@ -32,6 +33,7 @@
   --error: #d63b30;
   --dead: #d4d4d8;
   --ok: #16a34a;
+  --term-bg: #fafafa; /* One Half Light terminal bg */
 }
 
 :root {
@@ -521,7 +523,7 @@ body.resizing #terminals {
    compute too many rows and clip the bottom line. */
 #terminals {
   top: 32px; /* leave room for the stage toolbar */
-  background: #0c0c0c; /* Campbell bg, fills the gutter */
+  background: var(--term-bg); /* matches terminal bg, fills the gutter */
 }
 
 .term {

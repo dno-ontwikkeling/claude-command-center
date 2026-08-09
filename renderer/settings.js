@@ -33,6 +33,38 @@ const CAMPBELL = {
   brightWhite: '#F2F2F2',
 };
 
+// Light-mode terminal — mirrors Windows Terminal "One Half Light": light
+// paper background, dark ink, same 16-color roles darkened for contrast on
+// white so ANSI output stays legible.
+const CAMPBELL_LIGHT = {
+  background: '#FAFAFA',
+  foreground: '#383A42',
+  cursor: '#4F525E',
+  cursorAccent: '#FAFAFA',
+  selectionBackground: '#0037DA33',
+  black: '#383A42',
+  red: '#E45649',
+  green: '#50A14F',
+  yellow: '#C18401',
+  blue: '#0184BC',
+  magenta: '#A626A4',
+  cyan: '#0997B3',
+  white: '#FAFAFA',
+  brightBlack: '#4F525E',
+  brightRed: '#E45649',
+  brightGreen: '#50A14F',
+  brightYellow: '#C18401',
+  brightBlue: '#0184BC',
+  brightMagenta: '#A626A4',
+  brightCyan: '#0997B3',
+  brightWhite: '#FFFFFF',
+};
+
+// Terminal palette follows the app chrome theme.
+function termTheme() {
+  return settings.theme === 'light' ? CAMPBELL_LIGHT : CAMPBELL;
+}
+
 const DEFAULT_SETTINGS = {
   theme: null, // resolved from OS on first run
   fontSize: 12,
@@ -61,7 +93,7 @@ function saveSettings() {
 
 export function termOpts() {
   return {
-    theme: CAMPBELL,
+    theme: termTheme(),
     fontFamily: settings.fontFamily,
     fontSize: settings.fontSize,
     cursorStyle: settings.cursorStyle,
@@ -78,7 +110,9 @@ function applyTheme(theme) {
   settings.theme = theme;
   document.documentElement.setAttribute('data-theme', theme);
   saveSettings();
-  // Terminal keeps the Campbell scheme regardless of app chrome theme.
+  // Retint every live terminal to match the new chrome theme.
+  const t = termTheme();
+  for (const a of agents.values()) a.term.options.theme = t;
 }
 
 export function initTheme() {
