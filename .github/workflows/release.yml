@@ -75,11 +75,22 @@ jobs:
         # below is owned by action-gh-release, not electron-builder.
         run: npm run dist -- --publish never
 
-      - name: Create GitHub pre-release
+      # This repo has immutable releases enabled: publishing a release freezes
+      # its assets, and prereleases publish on creation — so uploading straight
+      # to a pre-release fails. Upload to a DRAFT first (drafts stay mutable),
+      # then publish the draft as an immutable pre-release with the assets
+      # already attached.
+      - name: Upload installer to a draft release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.tag.outputs.new_tag }}
           name: ${{ needs.tag.outputs.new_tag }}
           body: ${{ needs.tag.outputs.changelog }}
           prerelease: true
+          draft: true
           files: dist/*.exe
+
+      - name: Publish the draft as a pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ needs.tag.outputs.new_tag }}" --draft=false --prerelease
