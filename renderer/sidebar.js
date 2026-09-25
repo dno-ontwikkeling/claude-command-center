@@ -4,7 +4,7 @@ import { els } from './dom.js';
 import { state, agents, agentsForDir, dormantForDir, displayLabel, readLocalJson } from './state.js';
 import { openMenu, promptText, confirmDialog } from './modals.js';
 import { fmtDiff, refreshAgentGit } from './agent-git.mjs';
-import { activate, removeAgent, renameAgent, deleteWorktree, resume, removeDormant, pruneDormantForDir, reorderAgent, forceStatus, spawn } from './agents.js';
+import { activate, killAndWait, removeAgent, renameAgent, deleteWorktree, resume, removeDormant, pruneDormantForDir, reorderAgent, forceStatus, spawn } from './agents.js';
 import { newAgent } from './worktree.js';
 
 // ---------------------------------------------------------------------------
@@ -427,17 +427,22 @@ async function removeProject(dir) {
 }
 
 async function removeWorkspace(dir) {
-  const ok = await confirmDialog(
+  const { ok, checked: deleteFolder } = await confirmDialog(
     'Forget workspace',
-    'This removes the workspace from Command Center. The folder on disk is left untouched.',
-    { okLabel: 'Forget', danger: true }
+    'This removes the workspace from Command Center. The folder on disk is left untouched unless you choose to delete it below.',
+    { okLabel: 'Forget', danger: true, checkbox: `Also delete ${dir} and all its contents (cannot be undone)` }
   );
   if (!ok) return;
-  for (const [id] of agentsForDir(dir)) removeAgent(id, true);
+  const ids = [...agentsForDir(dir)].map(([id]) => id);
+  // Agents hold the folder as cwd; on Windows it can't be deleted until they exit.
+  if (deleteFolder) await Promise.all(ids.map(killAndWait));
+  for (const id of ids) removeAgent(id, true);
   pruneDormantForDir(dir, true);
-  state.workspacesData = await window.api.removeWorkspace(dir);
+  const res = await window.api.removeWorkspace(dir, { deleteFolder });
+  state.workspacesData = res.workspaces;
   if (collapsed.delete(dir)) saveCollapsed(); // don't leak a stale entry into localStorage forever
   renderSidebar();
+  if (res.error) confirmDialog('Delete folder', res.error, { alert: true });
 }
 
 async function createWorkspace() {

@@ -555,11 +555,25 @@ function registerIpc() {
     return enrich({ dir, name });
   });
 
-  ipcMain.handle('workspaces:remove', (_e, dir) => {
-    const list = loadWorkspaces().filter((w) => w.dir !== dir);
+  // `deleteFolder` also wipes the folder from disk. Only a registered workspace
+  // dir is ever deleted (never an arbitrary renderer-supplied path), and never a
+  // drive root or the home dir — `useParent` lets either be registered as-is.
+  // The workspace is forgotten even if deletion fails; `error` reports it.
+  ipcMain.handle('workspaces:remove', async (_e, dir, { deleteFolder } = {}) => {
+    const all = loadWorkspaces();
+    let error;
+    if (deleteFolder && all.some((w) => w.dir === dir)) {
+      const resolved = path.resolve(dir);
+      if (resolved === path.parse(resolved).root || normPath(resolved) === normPath(os.homedir())) {
+        error = `Refusing to delete ${resolved}.`;
+      } else if (!(await rmDirRetry(resolved))) {
+        error = `Could not fully delete ${resolved} — a file may still be in use.`;
+      }
+    }
+    const list = all.filter((w) => w.dir !== dir);
     invalidateProjectType(dir);
     saveWorkspaces(list);
-    return list.map(enrich);
+    return { workspaces: list.map(enrich), error };
   });
 
   ipcMain.handle('workspaces:reorder', (_e, dirs) => {

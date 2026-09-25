@@ -311,7 +311,7 @@ export async function deleteWorktree(id) {
 
 // Kill the agent's pty and resolve once it has actually exited (with a short
 // grace period for the OS to release the cwd handle). Falls back on timeout.
-function killAndWait(id) {
+export function killAndWait(id) {
   return new Promise((resolve) => {
     const a = agents.get(id);
     if (!a) {
