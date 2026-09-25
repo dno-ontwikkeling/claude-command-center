@@ -26,7 +26,7 @@ const api = {
   listWorkspaces: () => ipcRenderer.invoke('workspaces:list'),
   pickWorkspaceFolder: () => ipcRenderer.invoke('workspaces:pickFolder'),
   createWorkspace: (opts) => ipcRenderer.invoke('workspaces:create', opts),
-  removeWorkspace: (dir) => ipcRenderer.invoke('workspaces:remove', dir),
+  removeWorkspace: (dir, opts) => ipcRenderer.invoke('workspaces:remove', dir, opts),
   reorderWorkspaces: (dirs) => ipcRenderer.invoke('workspaces:reorder', dirs),
 
   // worktrees

@@ -104,7 +104,7 @@ export interface Api {
     name?: string;
     useParent?: boolean;
   }): Promise<{ dir?: string; canceled?: boolean; error?: string }>;
-  removeWorkspace(dir: string): Promise<Project[]>;
+  removeWorkspace(dir: string, opts?: { deleteFolder?: boolean }): Promise<{ workspaces: Project[]; error?: string }>;
   reorderWorkspaces(dirs: string[]): Promise<Project[]>;
 
   // worktrees
