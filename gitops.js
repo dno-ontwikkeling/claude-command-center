@@ -9,6 +9,7 @@
 // ---------------------------------------------------------------------------
 
 const { execFile } = require('child_process');
+const path = require('path');
 const log = require('./logger');
 const {
   parseStatusPorcelain,
@@ -71,6 +72,21 @@ async function listWorktrees(dir) {
   return worktrees;
 }
 
+// Whether `wtPath` is still a registered worktree of `dir`. git reports paths
+// with forward slashes; compare normalized (and case-insensitively on Windows).
+// On a failed `worktree list` assume still registered — the caller then keeps
+// treating the removal as failed instead of wiping a live worktree.
+async function isWorktreeRegistered(dir, wtPath) {
+  const { ok, stdout } = await execGit(dir, ['worktree', 'list', '--porcelain']);
+  if (!ok) return true;
+  const norm = (p) => {
+    const r = path.resolve(p);
+    return process.platform === 'win32' ? r.toLowerCase() : r;
+  };
+  const target = norm(wtPath);
+  return parseWorktreePorcelain(stdout).some((w) => norm(w.path) === target);
+}
+
 function listBranches(dir) {
   return execGit(dir, ['branch', '--format=%(refname:short)']).then(({ ok, stdout }) =>
     ok ? parseBranchList(stdout) : []
@@ -113,6 +129,7 @@ module.exports = {
   runGit,
   worktreeStatus,
   listWorktrees,
+  isWorktreeRegistered,
   listBranches,
   listRemoteBranches,
   resolveDiffBase,

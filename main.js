@@ -21,6 +21,7 @@ const {
   runGit,
   worktreeStatus,
   listWorktrees,
+  isWorktreeRegistered,
   listBranches,
   listRemoteBranches,
   resolveDiffBase,
@@ -352,16 +353,25 @@ function spawnAgent(id, cwd, opts = {}) {
 function killAgent(id) {
   const term = agents.get(id);
   if (!term) return;
+  const killPty = () => {
+    try {
+      term.kill();
+    } catch {
+      /* already exiting */
+    }
+  };
   if (process.platform === 'win32') {
+    // taskkill /T walks the tree from the root pid, so the pty must stay alive
+    // until it finishes — killing it first orphans the children, which keep
+    // the worktree locked. The pty exit (and so killAndWait) then follows the
+    // tree kill instead of racing it.
     execFile('taskkill', ['/F', '/T', '/PID', String(term.pid)], (err) => {
       if (err) log.warn('pty', `taskkill failed for agent ${id} (pid ${term.pid})`, err);
+      killPty();
     });
+    return;
   }
-  try {
-    term.kill();
-  } catch {
-    /* already exiting */
-  }
+  killPty();
 }
 
 // Force-remove a directory, retrying briefly while handles are released.
@@ -639,11 +649,13 @@ function registerIpc() {
     const args = ['worktree', 'remove'];
     if (force) args.push('--force');
     args.push('--', wtPath);
-    try {
-      const r = await execGit(dir, args);
-      if (!r.ok) throw new Error(r.stderr || r.error.message);
-    } catch (err) {
-      return { error: errMsg(err).trim() };
+    const r = await execGit(dir, args);
+    // git unregisters the worktree even when deleting its folder fails
+    // ("failed to delete ...: Permission denied"), so a non-zero exit doesn't
+    // mean the worktree survived. Only a still-registered worktree is a real
+    // refusal; otherwise fall through and clean up the leftover folder.
+    if (!r.ok && (await isWorktreeRegistered(dir, wtPath))) {
+      return { error: (r.stderr || errMsg(r.error)).trim() };
     }
     // git can unregister the worktree yet leave the directory behind if a file
     // was still locked. Force-clean the leftovers and prune the admin entry.
