@@ -3,7 +3,8 @@
 /* global Terminal, FitAddon, SearchAddon, WebLinksAddon */
 
 import { els } from './dom.js';
-import { agents, agentSeq, pendingExit, dormant, state, persistAgents, agentsForDir, dormantForDir, notifyAgentsChanged, record, displayLabel } from './state.js';
+import { agents, agentSeq, pendingExit, dormant, state, persistAgents, agentsForDir, dormantForDir, notifyAgentsChanged, record, displayLabel, onAgentsChanged, onStatusChanged } from './state.js';
+import { buildRemoteSnapshot, createSnapshotPusher } from './remote-sync.mjs';
 import { settings, termOpts } from './settings.js';
 import { confirmDialog, promptText, closeMenu } from './modals.js';
 import { updateStageBar, openSearch } from './stage.js';
@@ -59,7 +60,10 @@ document.addEventListener('mousedown', (e) => {
 
 // `restore` resumes a dormant agent: it reuses the old id/label and passes the
 // stored session id so Claude reopens the same conversation (`claude --resume`).
-export function spawn(dir, cwd, branch, isMain, restore = null) {
+// `opts` comes from a phone-initiated spawn: `background` adds the agent
+// without switching the desktop's visible terminal; `cols`/`rows` size the pty
+// for the phone from the start. Returns the agent id.
+export function spawn(dir, cwd, branch, isMain, restore = null, opts = {}) {
   let id, label;
   if (restore) {
     id = restore.id;
@@ -154,6 +158,13 @@ export function spawn(dir, cwd, branch, isMain, restore = null) {
   });
 
   term.onData((data) => {
+    // The phone sized this pty; typing here takes it back once (refit sends the
+    // desktop size, main flips ownership) — not on every keystroke.
+    const owner = agents.get(id);
+    if (owner && owner.sizeOwner === 'remote') {
+      owner.sizeOwner = 'desktop';
+      owner.refit();
+    }
     // Mouse/scroll events the TUI repaints in response (SGR `ESC [ <` or legacy
     // `ESC [ M`). Remember when one happened so the activity tracker can ignore
     // the repaint it triggers, instead of flickering idle -> busy on scroll.
@@ -203,24 +214,39 @@ export function spawn(dir, cwd, branch, isMain, restore = null) {
     dotEl: null,
   });
 
-  window.api.spawn(id, cwd, { bypass: settings.bypass, resume: restore?.sessionId || null });
+  window.api.spawn(id, cwd, {
+    bypass: settings.bypass,
+    resume: restore?.sessionId || null,
+    cols: opts.cols,
+    rows: opts.rows,
+  });
+  if (opts.cols && opts.rows) agents.get(id).sizeOwner = 'remote';
   persistAgents();
   notifyAgentsChanged();
-  activate(id);
+  if (!opts.background) activate(id);
+  return id;
 }
 
 // Resume a dormant agent into a live one, reopening its Claude session.
-export function resume(id) {
+// `opts` as for spawn (phone-initiated resume). Returns the id, or null.
+export function resume(id, opts = {}) {
   const d = dormant.get(id);
-  if (!d) return;
+  if (!d) return null;
   dormant.delete(id);
-  spawn(d.dir, d.cwd, d.branch, d.isMain, {
-    id: d.id,
-    sessionId: d.sessionId,
-    label: d.label,
-    customLabel: d.customLabel,
-    order: d.order,
-  });
+  return spawn(
+    d.dir,
+    d.cwd,
+    d.branch,
+    d.isMain,
+    {
+      id: d.id,
+      sessionId: d.sessionId,
+      label: d.label,
+      customLabel: d.customLabel,
+      order: d.order,
+    },
+    opts
+  );
 }
 
 // Forget a dormant agent for good (its session stays on disk but we stop
@@ -484,3 +510,59 @@ window.api.onExit(({ id, exitCode, error }) => {
 // Status transitions and sound/notification side effects live in
 // agent-status.mjs (handleAgentEvent); this just wires the IPC event to it.
 window.api.onEvent(handleAgentEvent);
+
+// ---------------------------------------------------------------------------
+// Remote access (phone app) — this renderer is the source of truth for agents,
+// so main mirrors the list from here and asks us to run phone actions.
+// ---------------------------------------------------------------------------
+
+const remotePusher = createSnapshotPusher({
+  build: () => buildRemoteSnapshot(agents, dormant, displayLabel),
+  push: (snapshot) => window.api.pushRemoteAgents(snapshot),
+});
+onAgentsChanged(remotePusher.schedule);
+onStatusChanged(remotePusher.schedule);
+
+/** Push the first snapshot once startup state (dormant rows) is loaded. */
+export function startRemoteSync() {
+  remotePusher.schedule();
+}
+
+// Main tells us when the phone took (or we took back) a pty's size; a desktop
+// activate or keystroke then re-fits once to reclaim it.
+window.api.onSizeOwner(({ id, owner }) => {
+  const a = agents.get(id);
+  if (a) a.sizeOwner = owner;
+});
+
+const remoteCommands = {
+  // Phone spawns follow the desktop's bypass setting (spawn() reads it), and
+  // never steal the desktop's visible terminal.
+  async spawn({ dir, cwd, cols, rows }) {
+    const workspace = state.workspacesData.some((w) => w.dir === dir);
+    const branch = workspace ? null : await window.api.gitBranch(cwd);
+    const id = spawn(dir, cwd, branch, cwd === dir, null, { background: true, cols, rows });
+    return { id };
+  },
+  resume({ id, cols, rows }) {
+    if (!dormant.has(id)) throw new Error('Not a dormant agent.');
+    return { id: resume(id, { background: true, cols, rows }) };
+  },
+  // Same as the desktop's Close: a used session stays resumable as dormant.
+  kill({ id }) {
+    if (!agents.has(id)) throw new Error('Agent is not running.');
+    removeAgent(id);
+    return { id };
+  },
+};
+
+window.api.onRemoteCommand(async ({ reqId, op, args }) => {
+  try {
+    const fn = remoteCommands[op];
+    if (!fn) throw new Error(`Unknown command: ${op}`);
+    const result = await fn(args);
+    window.api.sendRemoteCommandResult({ reqId, ok: true, result });
+  } catch (err) {
+    window.api.sendRemoteCommandResult({ reqId, ok: false, error: (err && err.message) || String(err) });
+  }
+});

@@ -1,0 +1,58 @@
+{
+  "description": "Snapshot sequence for needs-input notification logic. Steps apply in order within one service lifetime. 'connected' marks the first snapshot after a (re)connect: it notifies needs-input agents not already notified in this lifetime. Otherwise notify on transition into needs-input; dismiss when an agent leaves needs-input or disappears.",
+  "steps": [
+    {
+      "connected": true,
+      "snapshot": [
+        { "id": "a1", "status": "busy", "dormant": false },
+        { "id": "a2", "status": "needs-input", "dormant": false }
+      ],
+      "expect": { "notify": ["a2"], "dismiss": [] }
+    },
+    {
+      "connected": false,
+      "snapshot": [
+        { "id": "a1", "status": "needs-input", "dormant": false },
+        { "id": "a2", "status": "needs-input", "dormant": false }
+      ],
+      "expect": { "notify": ["a1"], "dismiss": [] }
+    },
+    {
+      "connected": false,
+      "snapshot": [
+        { "id": "a1", "status": "busy", "dormant": false },
+        { "id": "a2", "status": "needs-input", "dormant": false }
+      ],
+      "expect": { "notify": [], "dismiss": ["a1"] }
+    },
+    {
+      "connected": true,
+      "snapshot": [
+        { "id": "a1", "status": "busy", "dormant": false },
+        { "id": "a2", "status": "needs-input", "dormant": false }
+      ],
+      "expect": { "notify": [], "dismiss": [] }
+    },
+    {
+      "connected": false,
+      "snapshot": [
+        { "id": "a1", "status": "busy", "dormant": false }
+      ],
+      "expect": { "notify": [], "dismiss": ["a2"] }
+    },
+    {
+      "connected": false,
+      "snapshot": [
+        { "id": "a1", "status": "needs-input", "dormant": false }
+      ],
+      "expect": { "notify": ["a1"], "dismiss": [] }
+    },
+    {
+      "connected": false,
+      "snapshot": [
+        { "id": "a1", "status": "dead", "dormant": true }
+      ],
+      "expect": { "notify": [], "dismiss": ["a1"] }
+    }
+  ]
+}

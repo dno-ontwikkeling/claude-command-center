@@ -1,11 +1,23 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, clipboard } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  shell,
+  Menu,
+  clipboard,
+  safeStorage,
+  powerMonitor,
+} = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const net = require('net');
 const http = require('http');
 const crypto = require('crypto');
+const { EventEmitter } = require('events');
 const { execFile } = require('child_process');
 const pty = require('@lydell/node-pty');
 const log = require('./logger');
@@ -26,6 +38,12 @@ const {
   listRemoteBranches,
   resolveDiffBase,
 } = require('./gitops');
+const { createRingBuffer } = require('./ringbuffer');
+const { createConnectionHandler, createSizeTracker } = require('./remoteproto');
+const { createRemoteServer } = require('./remoteserver');
+const { loadOrCreateCert, regenerateCert } = require('./remotecert');
+const remoteAuth = require('./remoteauth');
+const QRCode = require('qrcode');
 
 // Last-resort handlers so a stray throw/rejection is recorded instead of dying
 // silently (or crashing the whole process with no trace).
@@ -46,6 +64,16 @@ let serverPort = 0;
 // can't forge events for a different agentId — closing agent-to-agent spoofing.
 const HOOK_SECRET = crypto.randomBytes(32).toString('hex');
 const agentSecret = (id) => hookAuth.agentSecret(HOOK_SECRET, id);
+
+// Remote access (phone app). Every pty chunk is appended to that agent's
+// scrollback ring buffer and published on remoteHub as ('data', id, seq, data);
+// exits as ('exit', id, info); agent-list snapshots as ('agents', frame). Each
+// remote connection (remoteproto.js) subscribes to the hub.
+const scrollback = new Map(); // agentId -> ring buffer
+const remoteHub = new EventEmitter();
+remoteHub.setMaxListeners(0); // one listener set per connected phone
+// One pty has one size: the last-active client (desktop or remote) owns it.
+const ptySizes = createSizeTracker();
 
 // Safe IPC to the renderer. A pty can emit data after the window is closed or
 // reloaded; `mainWindow?` is still truthy then but its webContents is destroyed,
@@ -323,12 +351,19 @@ function spawnAgent(id, cwd, opts = {}) {
   if (opts.resume) args.push('--resume', opts.resume);
   if (opts.bypass) args.push('--dangerously-skip-permissions');
 
+  // A phone-initiated spawn passes its own size so the first output is drawn
+  // at the phone's width instead of 80 cols until the first resize lands.
+  const isDim = (v) => Number.isInteger(v) && v >= 2 && v <= 500;
+  const sized = isDim(opts.cols) && isDim(opts.rows);
+  const cols = sized ? opts.cols : 80;
+  const rows = sized ? opts.rows : 30;
+
   let term;
   try {
     term = pty.spawn(shell, args, {
       name: 'xterm-color',
-      cols: 80,
-      rows: 30,
+      cols,
+      rows,
       cwd,
       env: { ...process.env, CC_PORT: String(serverPort), CC_AGENT_ID: id, CC_SECRET: agentSecret(id) },
     });
@@ -336,16 +371,44 @@ function spawnAgent(id, cwd, opts = {}) {
     // cwd gone (e.g. a removed worktree) or claude not found — report as an
     // immediate exit so the renderer can surface it rather than hang.
     sendToRenderer('agent:exit', { id, error: errMsg(err) });
+    remoteHub.emit('exit', id, { exitCode: null, error: errMsg(err) });
     return;
   }
 
-  term.onData((data) => sendToRenderer('agent:data', { id, data }));
+  const buf = createRingBuffer();
+  scrollback.set(id, buf);
+  ptySizes.request(id, sized ? 'remote' : 'desktop', cols, rows);
+
+  term.onData((data) => {
+    sendToRenderer('agent:data', { id, data });
+    remoteHub.emit('data', id, buf.append(data), data);
+  });
   term.onExit(({ exitCode } = {}) => {
     agents.delete(id);
+    scrollback.delete(id);
+    ptySizes.forget(id);
     sendToRenderer('agent:exit', { id, exitCode });
+    remoteHub.emit('exit', id, { exitCode });
   });
 
   agents.set(id, term);
+}
+
+// Resize through the size tracker: an unchanged size never touches the pty (so
+// no needless app redraw), and the renderer is told when ownership flips so the
+// desktop knows to reclaim the size on its next activate/keystroke.
+function resizeAgent(id, cols, rows, owner) {
+  const term = agents.get(id);
+  if (!term) return;
+  const prevOwner = ptySizes.owner(id);
+  if (ptySizes.request(id, owner, cols, rows)) {
+    try {
+      term.resize(cols, rows);
+    } catch {
+      /* ignore resize on dead pty */
+    }
+  }
+  if (owner !== prevOwner) sendToRenderer('agent:sizeOwner', { id, owner });
 }
 
 // Kill the agent and its child processes. claude spawns children that keep a
@@ -458,8 +521,6 @@ function watchGitDirs(dirs) {
 
 function registerIpc() {
   ipcMain.on('watch:set', (_e, dirs) => watchGitDirs(dirs));
-
-  const enrich = (p) => ({ ...p, isGit: isGitRepo(p.dir), type: detectProjectTypeCached(p.dir) });
 
   // Renderer-forwarded log lines land in the same file as main-process logs.
   const rendererLog = log.make('renderer');
@@ -704,23 +765,15 @@ function registerIpc() {
   });
 
   ipcMain.on('agent:resize', (_e, { id, cols, rows }) => {
-    try {
-      agents.get(id)?.resize(cols, rows);
-    } catch {
-      /* ignore resize on dead pty */
+    if (Number.isInteger(cols) && Number.isInteger(rows) && cols > 0 && rows > 0) {
+      resizeAgent(id, cols, rows, 'desktop');
     }
   });
 
   ipcMain.on('agent:kill', (_e, { id }) => killAgent(id));
 
-  // Git fetch / pull for the active worktree. pull is --ff-only so a button
-  // press can never spawn a merge commit or drop the user into a conflict.
-  ipcMain.handle('git:fetch', (_e, cwd) =>
-    isKnownDir(cwd) ? runGit(cwd, ['fetch', '--prune']) : { ok: false, error: 'Unknown directory.' }
-  );
-  ipcMain.handle('git:pull', (_e, cwd) =>
-    isKnownDir(cwd) ? runGit(cwd, ['pull', '--ff-only']) : { ok: false, error: 'Unknown directory.' }
-  );
+  ipcMain.handle('git:fetch', (_e, cwd) => gitFetch(cwd));
+  ipcMain.handle('git:pull', (_e, cwd) => gitPull(cwd));
   // Delete a local branch (used after its worktree is removed). Try the safe
   // `-d` first — git refuses if the branch has commits not merged into its
   // upstream/HEAD, which `-D` would orphan. Only on that refusal do we surface a
@@ -793,42 +846,421 @@ function registerIpc() {
     return err ? { error: err } : { ok: true };
   });
 
-  // Added + removed line counts for a worktree vs HEAD (staged + unstaged),
-  // shown as a "+N/-M" badge in the sidebar.
-  ipcMain.handle('git:diffstat', async (_e, cwd) => {
-    if (!isKnownDir(cwd)) return { added: 0, removed: 0 };
-    const { ok, stdout } = await execGit(cwd, ['diff', '--numstat', 'HEAD']);
-    if (!ok) return { added: 0, removed: 0 };
-    let added = 0;
-    let removed = 0;
-    for (const line of stdout.split(/\r?\n/)) {
-      const m = line.match(/^(\d+|-)\t(\d+|-)\t/);
-      if (m) {
-        if (m[1] !== '-') added += +m[1];
-        if (m[2] !== '-') removed += +m[2];
-      }
+  ipcMain.handle('git:diffstat', (_e, cwd) => gitDiffStat(cwd));
+  ipcMain.handle('git:diff', (_e, { cwd, mode }) => gitDiff(cwd, mode));
+
+  registerRemoteIpc();
+}
+
+// ---------------------------------------------------------------------------
+// Shared handlers — used by both the desktop IPC above and the remote rpc table
+// below, so the phone gets exactly the same guards and result shapes.
+// ---------------------------------------------------------------------------
+
+const enrich = (p) => ({ ...p, isGit: isGitRepo(p.dir), type: detectProjectTypeCached(p.dir) });
+
+// Git fetch / pull for the active worktree. pull is --ff-only so a button
+// press can never spawn a merge commit or drop the user into a conflict.
+function gitFetch(cwd) {
+  return isKnownDir(cwd) ? runGit(cwd, ['fetch', '--prune']) : { ok: false, error: 'Unknown directory.' };
+}
+
+function gitPull(cwd) {
+  return isKnownDir(cwd) ? runGit(cwd, ['pull', '--ff-only']) : { ok: false, error: 'Unknown directory.' };
+}
+
+// Added + removed line counts for a worktree vs HEAD (staged + unstaged),
+// shown as a "+N/-M" badge in the sidebar.
+async function gitDiffStat(cwd) {
+  if (!isKnownDir(cwd)) return { added: 0, removed: 0 };
+  const { ok, stdout } = await execGit(cwd, ['diff', '--numstat', 'HEAD']);
+  if (!ok) return { added: 0, removed: 0 };
+  let added = 0;
+  let removed = 0;
+  for (const line of stdout.split(/\r?\n/)) {
+    const m = line.match(/^(\d+|-)\t(\d+|-)\t/);
+    if (m) {
+      if (m[1] !== '-') added += +m[1];
+      if (m[2] !== '-') removed += +m[2];
     }
-    return { added, removed };
+  }
+  return { added, removed };
+}
+
+// Full unified diff for the diff viewer. `mode`:
+//   wip    -> uncommitted working tree vs HEAD (staged + unstaged)
+//   branch -> this branch vs its base (origin/main …), i.e. the PR-style diff
+// Returns { ok, diff, base? } or { ok:false, error }. maxBuffer is bumped so a
+// large diff isn't truncated into a spawn error.
+async function gitDiff(cwd, mode) {
+  if (!isKnownDir(cwd)) return { ok: false, error: 'Unknown directory.' };
+  if (mode === 'branch') {
+    const base = await resolveDiffBase(cwd);
+    if (!base) return { ok: false, error: 'No base branch (origin/main, main, master…) found.' };
+    const r = await execGit(cwd, ['diff', `${base}...HEAD`]);
+    if (!r.ok) return { ok: false, error: r.stderr.trim() || String(r.error.message) };
+    return { ok: true, diff: r.stdout, base };
+  }
+
+  const r = await execGit(cwd, ['diff', 'HEAD']);
+  if (!r.ok) return { ok: false, error: r.stderr.trim() || String(r.error.message) };
+  return { ok: true, diff: r.stdout };
+}
+
+// ---------------------------------------------------------------------------
+// Remote access (phone app) — opt-in WSS server. Protocol, auth, cert and the
+// server itself live in electron-free modules (remoteproto/remoteauth/
+// remotecert/remoteserver.js); this section is the main-process glue.
+//
+// The renderer stays the source of truth for agents: it pushes snapshots here
+// ('remote:agents') and executes spawn/resume/kill on request
+// ('remote:command'), so the desktop sidebar and the phone never disagree.
+// ---------------------------------------------------------------------------
+
+const REMOTE_FILE = path.join(app.getPath('userData'), 'remote.json');
+const REMOTE_CERT_DIR = path.join(app.getPath('userData'), 'remote');
+const REMOTE_DEFAULTS = { enabled: false, port: 47820, bindHost: '0.0.0.0', advertisedHost: '', tokenEnc: '' };
+const RENDERER_COMMAND_TIMEOUT_MS = 5000;
+// Close codes the phone treats as terminal (no auto-reconnect).
+const CLOSE_REVOKED = 4001; // token/cert regenerated: re-pair needed
+const CLOSE_KICKED = 4003; // "Disconnect all" from the desktop
+
+const remote = {
+  server: null,
+  status: 'off', // off | starting | listening | error
+  error: null,
+  fingerprint: null,
+  lockout: remoteAuth.createLockout(), // in-memory: an app restart resets it
+};
+// Snapshot forwarded to phones. `seq` is main's own counter (monotonic across
+// renderer reloads); `rendererSeq` drops out-of-order pushes within one
+// renderer lifetime.
+let remoteAgents = { seq: 0, desktopUi: false, list: [] };
+let rendererSeq = 0;
+const pendingCommands = new Map(); // reqId -> { resolve, reject, timer }
+let commandSeq = 0;
+
+function loadRemoteConfig() {
+  try {
+    return { ...REMOTE_DEFAULTS, ...readJsonSafe(REMOTE_FILE, {}) };
+  } catch (err) {
+    // Corrupt file (already backed up by readJsonSafe): fall back to defaults,
+    // i.e. remote access off. Never block startup on it.
+    log.warn('remote', 'remote.json unreadable — remote access disabled', err);
+    return { ...REMOTE_DEFAULTS };
+  }
+}
+
+function saveRemoteConfig(cfg) {
+  writeJsonAtomic(REMOTE_FILE, cfg);
+}
+
+// The pairing token, encrypted at rest with the OS keystore (DPAPI on
+// Windows). Created on first use. Never logged.
+function remoteToken(cfg) {
+  if (cfg.tokenEnc) {
+    try {
+      return safeStorage.decryptString(Buffer.from(cfg.tokenEnc, 'base64'));
+    } catch (err) {
+      log.warn('remote', 'stored remote token could not be decrypted — generating a new one', err);
+    }
+  }
+  return rotateRemoteToken(cfg);
+}
+
+function rotateRemoteToken(cfg) {
+  const token = remoteAuth.generateToken();
+  cfg.tokenEnc = safeStorage.encryptString(token).toString('base64');
+  saveRemoteConfig(cfg);
+  return token;
+}
+
+// Candidate addresses for the pairing QR: non-internal IPv4, Tailscale's
+// CGNAT range (100.64.0.0/10) first since it is stable and private.
+function remoteHostOptions() {
+  const out = [];
+  for (const [iface, addrs] of Object.entries(os.networkInterfaces())) {
+    for (const a of addrs || []) {
+      if (a.internal || a.family !== 'IPv4') continue;
+      const [o1, o2] = a.address.split('.').map(Number);
+      out.push({ address: a.address, iface, tailscale: o1 === 100 && o2 >= 64 && o2 <= 127 });
+    }
+  }
+  return out.sort((x, y) => Number(y.tailscale) - Number(x.tailscale));
+}
+
+function effectiveAdvertisedHost(cfg) {
+  return cfg.advertisedHost || remoteHostOptions()[0]?.address || '127.0.0.1';
+}
+
+// Decrypted token while the server runs (read per upgrade attempt, so a
+// Regenerate applies to the very next connection).
+let activeRemoteToken = null;
+
+async function startRemote() {
+  await stopRemote();
+  const cfg = loadRemoteConfig();
+  if (!cfg.enabled) return;
+  if (!safeStorage.isEncryptionAvailable()) {
+    remote.status = 'error';
+    remote.error = 'OS encryption is unavailable, so the pairing token cannot be stored safely.';
+    return;
+  }
+  remote.status = 'starting';
+  remote.error = null;
+  try {
+    activeRemoteToken = remoteToken(cfg);
+    const pems = await loadOrCreateCert(REMOTE_CERT_DIR, { hosts: [effectiveAdvertisedHost(cfg)] });
+    remote.fingerprint = pems.fingerprint;
+    const server = createRemoteServer({
+      cert: pems.cert,
+      key: pems.key,
+      getToken: () => activeRemoteToken,
+      lockout: remote.lockout,
+      log,
+      createHandler: ({ send, close }) =>
+        createConnectionHandler({
+          send,
+          close,
+          hub: remoteHub,
+          hasPty: (id) => agents.has(id),
+          getBuffer: (id) => scrollback.get(id) || null,
+          writeInput: (id, data) => {
+            try {
+              agents.get(id)?.write(data);
+            } catch {
+              /* pty exiting */
+            }
+          },
+          resize: resizeAgent,
+          sizeOwner: (id) => ptySizes.owner(id),
+          getAgents: () => remoteAgents,
+          rpc: remoteRpc,
+          log,
+        }),
+    });
+    await server.listen(cfg.port, cfg.bindHost);
+    remote.server = server;
+    remote.status = 'listening';
+    log.info('remote', `remote access listening on ${cfg.bindHost}:${cfg.port}`);
+  } catch (err) {
+    remote.status = 'error';
+    remote.error =
+      err && err.code === 'EADDRINUSE'
+        ? `Port ${cfg.port} is already in use.`
+        : err && err.code === 'EADDRNOTAVAIL'
+          ? `${cfg.bindHost} is not an address of this PC.`
+          : errMsg(err);
+    log.error('remote', 'could not start remote access', err);
+  }
+}
+
+async function stopRemote() {
+  const server = remote.server;
+  remote.server = null;
+  remote.status = 'off';
+  activeRemoteToken = null;
+  if (server) await server.close();
+}
+
+// Mark the desktop UI as gone (reload / crash) so phones show a banner instead
+// of a stale list; the next renderer push restores it.
+function markDesktopUiGone() {
+  rendererSeq = 0;
+  publishAgents({ desktopUi: false, list: remoteAgents.list });
+  for (const [reqId, p] of pendingCommands) {
+    clearTimeout(p.timer);
+    p.reject(new Error('Desktop window reloaded.'));
+    pendingCommands.delete(reqId);
+  }
+}
+
+function publishAgents({ desktopUi, list }) {
+  remoteAgents = { seq: remoteAgents.seq + 1, desktopUi, list };
+  remoteHub.emit('agents', remoteAgents);
+}
+
+// Only the fields the phone needs, coerced to the documented types — the
+// renderer is trusted, but a malformed entry must not reach the wire.
+function sanitizeAgent(a) {
+  const str = (v) => (typeof v === 'string' ? v : '');
+  return {
+    id: str(a && a.id),
+    label: str(a && a.label),
+    dir: str(a && a.dir),
+    cwd: str(a && a.cwd),
+    branch: a && typeof a.branch === 'string' ? a.branch : null,
+    status: str(a && a.status),
+    dormant: !!(a && a.dormant),
+  };
+}
+
+// Invoke-style round trip to the renderer: it runs spawn/resume/kill and
+// answers on 'remote:command-result'.
+function rendererCommand(op, args) {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+    return Promise.reject(new Error('Desktop window is not available.'));
+  }
+  const reqId = ++commandSeq;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingCommands.delete(reqId);
+      reject(new Error('Desktop did not respond.'));
+    }, RENDERER_COMMAND_TIMEOUT_MS);
+    pendingCommands.set(reqId, { resolve, reject, timer });
+    sendToRenderer('remote:command', { reqId, op, args });
+  });
+}
+
+// A remote spawn may only target a saved project/workspace root (never just
+// any dir this process once spawned into), and for a project only that root or
+// one of its registered worktrees.
+async function validateRemoteSpawn(dir, cwd) {
+  const d = normPath(dir);
+  const c = normPath(cwd);
+  if (loadWorkspaces().some((w) => normPath(w.dir) === d)) {
+    if (c !== d) throw new Error('A workspace agent must run in the workspace folder.');
+    return;
+  }
+  if (!loadProjects().some((p) => normPath(p.dir) === d)) throw new Error('Unknown project.');
+  if (c === d) return;
+  const worktrees = await listWorktrees(dir);
+  if (!worktrees.some((w) => normPath(w.path) === c)) throw new Error('Not a worktree of this project.');
+}
+
+const REMOTE_RPC = {
+  'projects.list': () => loadProjects().map(enrich),
+  'workspaces.list': () => loadWorkspaces().map(enrich),
+  'worktrees.list': ({ dir }) => (isKnownDir(dir) ? listWorktrees(dir) : []),
+  spawn: async ({ dir, cwd, cols, rows }) => {
+    await validateRemoteSpawn(dir, cwd);
+    return rendererCommand('spawn', { dir, cwd, cols, rows });
+  },
+  resume: ({ id, cols, rows }) => rendererCommand('resume', { id, cols, rows }),
+  kill: ({ id }) => rendererCommand('kill', { id }),
+  'git.diffstat': ({ cwd }) => gitDiffStat(cwd),
+  'git.diff': ({ cwd, mode }) => gitDiff(cwd, mode),
+  'git.fetch': ({ cwd }) => gitFetch(cwd),
+  'git.pull': ({ cwd }) => gitPull(cwd),
+};
+
+// Methods and args were already validated by remoteproto.parseClientFrame.
+async function remoteRpc(method, args) {
+  return REMOTE_RPC[method](args);
+}
+
+function remoteConfigView() {
+  const cfg = loadRemoteConfig();
+  return {
+    enabled: cfg.enabled,
+    port: cfg.port,
+    bindHost: cfg.bindHost,
+    advertisedHost: cfg.advertisedHost,
+    effectiveHost: effectiveAdvertisedHost(cfg),
+    hostOptions: remoteHostOptions(),
+    status: remote.status,
+    error: remote.error,
+    fingerprint: remote.fingerprint,
+    clients: remote.server ? remote.server.clients() : [],
+  };
+}
+
+function validateRemotePatch(patch) {
+  const out = {};
+  if ('enabled' in patch) out.enabled = !!patch.enabled;
+  if ('port' in patch) {
+    if (!Number.isInteger(patch.port) || patch.port < 1024 || patch.port > 65535) {
+      throw new Error('Port must be a whole number between 1024 and 65535.');
+    }
+    out.port = patch.port;
+  }
+  if ('bindHost' in patch) {
+    if (!net.isIP(String(patch.bindHost))) throw new Error('Bind address must be an IP address (e.g. 0.0.0.0).');
+    out.bindHost = String(patch.bindHost);
+  }
+  if ('advertisedHost' in patch) {
+    const h = String(patch.advertisedHost || '').trim();
+    if (h && !/^[A-Za-z0-9.-]{1,253}$/.test(h) && !net.isIP(h)) {
+      throw new Error('Advertised host must be an IP address or host name.');
+    }
+    out.advertisedHost = h;
+  }
+  return out;
+}
+
+function registerRemoteIpc() {
+  ipcMain.on('remote:agents', (_e, snap) => {
+    if (!snap || !Number.isInteger(snap.seq) || !Array.isArray(snap.list)) return;
+    if (snap.seq <= rendererSeq) return; // out of order within this renderer lifetime
+    rendererSeq = snap.seq;
+    publishAgents({ desktopUi: true, list: snap.list.map(sanitizeAgent).filter((a) => a.id) });
   });
 
-  // Full unified diff for the diff viewer. `mode`:
-  //   wip    -> uncommitted working tree vs HEAD (staged + unstaged)
-  //   branch -> this branch vs its base (origin/main …), i.e. the PR-style diff
-  // Returns { ok, diff, base? } or { ok:false, error }. maxBuffer is bumped so a
-  // large diff isn't truncated into a spawn error.
-  ipcMain.handle('git:diff', async (_e, { cwd, mode }) => {
-    if (!isKnownDir(cwd)) return { ok: false, error: 'Unknown directory.' };
-    if (mode === 'branch') {
-      const base = await resolveDiffBase(cwd);
-      if (!base) return { ok: false, error: 'No base branch (origin/main, main, master…) found.' };
-      const r = await execGit(cwd, ['diff', `${base}...HEAD`]);
-      if (!r.ok) return { ok: false, error: r.stderr.trim() || String(r.error.message) };
-      return { ok: true, diff: r.stdout, base };
-    }
+  ipcMain.on('remote:command-result', (_e, { reqId, ok, result, error } = {}) => {
+    const p = pendingCommands.get(reqId);
+    if (!p) return;
+    pendingCommands.delete(reqId);
+    clearTimeout(p.timer);
+    if (ok) p.resolve(result ?? null);
+    else p.reject(new Error(typeof error === 'string' && error ? error : 'Command failed.'));
+  });
 
-    const r = await execGit(cwd, ['diff', 'HEAD']);
-    if (!r.ok) return { ok: false, error: r.stderr.trim() || String(r.error.message) };
-    return { ok: true, diff: r.stdout };
+  ipcMain.handle('remote:getConfig', () => remoteConfigView());
+
+  ipcMain.handle('remote:setConfig', async (_e, patch = {}) => {
+    let changes;
+    try {
+      changes = validateRemotePatch(patch);
+    } catch (err) {
+      return { ...remoteConfigView(), error: err.message };
+    }
+    saveRemoteConfig({ ...loadRemoteConfig(), ...changes });
+    if (loadRemoteConfig().enabled) await startRemote();
+    else await stopRemote();
+    return remoteConfigView();
+  });
+
+  // Rotate token + cert: every paired phone must re-pair. Connected clients are
+  // closed with CLOSE_REVOKED first so they stop retrying with the old token.
+  ipcMain.handle('remote:regenerate', async () => {
+    if (!safeStorage.isEncryptionAvailable()) {
+      return { ...remoteConfigView(), error: 'OS encryption is unavailable.' };
+    }
+    const cfg = loadRemoteConfig();
+    if (remote.server) remote.server.closeAll(CLOSE_REVOKED, 'pairing revoked');
+    const token = rotateRemoteToken(cfg);
+    const pems = await regenerateCert(REMOTE_CERT_DIR, { hosts: [effectiveAdvertisedHost(cfg)] });
+    remote.fingerprint = pems.fingerprint;
+    if (remote.server) {
+      activeRemoteToken = token;
+      remote.server.setSecureContext({ cert: pems.cert, key: pems.key });
+    }
+    log.info('remote', 'pairing token and certificate regenerated');
+    return remoteConfigView();
+  });
+
+  ipcMain.handle('remote:disconnectAll', () => {
+    if (remote.server) remote.server.closeAll(CLOSE_KICKED, 'disconnected by desktop');
+    return remoteConfigView();
+  });
+
+  // The pairing code and its QR image (rendered here so the renderer CSP can
+  // stay script-src 'self'). Only while listening, when the fingerprint and
+  // token are known to match what the server presents.
+  ipcMain.handle('remote:getPairing', async () => {
+    if (remote.status !== 'listening' || !activeRemoteToken || !remote.fingerprint) {
+      return { error: 'Remote access is not running.' };
+    }
+    const cfg = loadRemoteConfig();
+    const host = effectiveAdvertisedHost(cfg);
+    const url = `wss://${net.isIPv6(host) ? `[${host}]` : host}:${cfg.port}`;
+    try {
+      const code = remoteAuth.encodePairing({ v: 1, url, token: activeRemoteToken, certSha256: remote.fingerprint });
+      const qr = await QRCode.toDataURL(code, { errorCorrectionLevel: 'M', margin: 1, width: 220 });
+      return { code, qr, url };
+    } catch (err) {
+      return { error: err.message };
+    }
   });
 }
 
@@ -841,6 +1273,7 @@ function createWindow() {
     width: 1100,
     height: 720,
     backgroundColor: '#0e0e10',
+    icon: path.join(__dirname, 'build', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -859,6 +1292,9 @@ function createWindow() {
   mainWindow.webContents.on('will-navigate', (event) => {
     event.preventDefault();
   });
+  // A reload or renderer crash drops the agent registry the phone mirrors.
+  mainWindow.webContents.on('did-start-loading', markDesktopUiGone);
+  mainWindow.webContents.on('render-process-gone', markDesktopUiGone);
   mainWindow.loadFile(path.join('renderer', 'index.html'));
 }
 
@@ -886,6 +1322,11 @@ if (!gotSingleInstanceLock) {
     await startServer();
     createWindow();
     log.info('main', `app ready — logging to ${log.logFilePath()}`);
+    // safeStorage (the token at rest) is only usable after ready.
+    await startRemote();
+    // Sleep leaves established phone sockets half-open; ping them right away
+    // on wake instead of waiting for the next heartbeat tick.
+    powerMonitor.on('resume', () => remote.server?.heartbeat());
     await ensureHooksInstalled();
 
     app.on('activate', () => {
@@ -895,6 +1336,7 @@ if (!gotSingleInstanceLock) {
 }
 
 app.on('window-all-closed', () => {
+  stopRemote();
   for (const term of agents.values()) term.kill();
   if (process.platform !== 'darwin') app.quit();
 });

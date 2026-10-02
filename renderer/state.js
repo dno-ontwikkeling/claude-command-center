@@ -81,6 +81,22 @@ export function notifyAgentsChanged() {
   for (const cb of changeSubs) cb();
 }
 
+// Status changes (busy/idle/needs-input/...) are far more frequent than
+// lifecycle changes and only repaint a dot, so they get their own channel
+// rather than triggering a full sidebar re-render. The phone mirror listens.
+const statusSubs = new Set();
+
+/** Register a listener fired after an agent's status changes. Returns an
+ *  unsubscribe function. */
+export function onStatusChanged(cb) {
+  statusSubs.add(cb);
+  return () => statusSubs.delete(cb);
+}
+
+export function notifyStatusChanged() {
+  for (const cb of statusSubs) cb();
+}
+
 // ---------------------------------------------------------------------------
 // Persistence — only session-bearing agents survive a restart, as dormant rows
 // ---------------------------------------------------------------------------

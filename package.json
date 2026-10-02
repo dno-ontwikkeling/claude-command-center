@@ -6,7 +6,7 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder",
-    "test": "node --test",
+    "test": "node --test \"test/**/*.test.{js,mjs}\"",
     "typecheck": "npx -y -p typescript@5 tsc -p tsconfig.typecheck.json"
   },
   "author": "",
@@ -20,7 +20,10 @@
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.15.0",
     "@xterm/addon-web-links": "^0.11.0",
-    "@xterm/xterm": "^5.5.0"
+    "@xterm/xterm": "^5.5.0",
+    "qrcode": "^1.5.4",
+    "selfsigned": "^5.5.0",
+    "ws": "^8.22.0"
   },
   "build": {
     "appId": "com.olivier.commandcenter",
@@ -37,6 +40,12 @@
       "hooksmerge.js",
       "editors.js",
       "util.js",
+      "ringbuffer.js",
+      "remoteauth.js",
+      "remoteproto.js",
+      "remotecert.js",
+      "remoteserver.js",
+      "build/icon.png",
       "renderer/**",
       "hooks/**",
       "node_modules/**"
