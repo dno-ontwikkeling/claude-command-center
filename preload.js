@@ -60,6 +60,8 @@ const api = {
 
   // agents
   spawn: (id, cwd, opts) => ipcRenderer.invoke('agent:spawn', { id, cwd, opts }),
+  // Restart in place (same id) with new opts; resolves true once running.
+  restart: (id, cwd, opts) => ipcRenderer.invoke('agent:restart', { id, cwd, opts }),
   sendInput: (id, data) => ipcRenderer.send('agent:input', { id, data }),
   resize: (id, cols, rows) => ipcRenderer.send('agent:resize', { id, cols, rows }),
   kill: (id) => ipcRenderer.send('agent:kill', { id }),

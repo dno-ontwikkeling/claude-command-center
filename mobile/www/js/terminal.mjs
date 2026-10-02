@@ -9,6 +9,7 @@ import { EXTRA_KEYS, keySequence, applyCtrl } from './keys.mjs';
 import { touchDistance, fontSizeFromPinch } from './pinch.mjs';
 import { createLineAccumulator, wheelSequence, createVelocityTracker, momentumStep, stackVelocity, WHEEL_LINES } from './touch-scroll.mjs';
 import { h } from './dom.mjs';
+import { createControlTracker } from './control.mjs';
 
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
@@ -16,6 +17,14 @@ screens.terminal = (el, { id }) => {
   const agent = ctx.agents.get(id);
   const title = h('h1', { class: 'term-title' }, agent ? agent.label : id);
   const ended = h('div', { class: 'term-ended', hidden: true });
+  // Shown instead of the terminal when the desktop takes over.
+  const yieldedBox = h(
+    'div',
+    { class: 'term-yielded', hidden: true },
+    h('div', { class: 'term-yielded-title' }, 'Controlled from the desktop'),
+    h('p', { class: 'muted' }, 'Take over to continue here. The session restarts at this screen size.'),
+    h('button', { class: 'primary', onclick: () => takeOver() }, 'Take over'),
+  );
   const host = h('div', { class: 'term-host' });
   const ctrlBtn = h('button', { class: 'key' }, 'Ctrl');
   const keys = h(
@@ -41,6 +50,7 @@ screens.terminal = (el, { id }) => {
       ),
       ended,
       host,
+      yieldedBox,
       keys,
     ),
   );
@@ -52,6 +62,36 @@ screens.terminal = (el, { id }) => {
 
   let stream = createStream();
   let attached = false;
+  const control = createControlTracker();
+  let yielded = false; // the desktop took over; wait for "Take over"
+
+  function showYielded(on) {
+    yielded = on;
+    yieldedBox.hidden = !on;
+    host.hidden = on;
+    keys.hidden = on;
+  }
+
+  let hadControl = false; // the phone had control when it last streamed
+
+  // Back from the background or a reconnect: re-attach, unless the desktop
+  // took over meanwhile (then offer Take over instead of grabbing it back).
+  function resumeView() {
+    const a = ctx.agents.get(id);
+    if (hadControl && a && a.remote === false) {
+      hadControl = false;
+      showYielded(true);
+      return;
+    }
+    attach();
+  }
+
+  function takeOver() {
+    showYielded(false);
+    control.reset();
+    attach(); // attaching hands the session to the phone (restart at this size)
+    term.focus();
+  }
   let sent = { cols: 0, rows: 0 };
   let ctrl = false;
 
@@ -73,7 +113,7 @@ screens.terminal = (el, { id }) => {
   }
 
   function attach() {
-    if (attached || ctx.linkState !== 'connected') return;
+    if (attached || yielded || ctx.linkState !== 'connected') return;
     fit.fit();
     stream = createStream();
     sent = { cols: term.cols, rows: term.rows };
@@ -141,13 +181,25 @@ screens.terminal = (el, { id }) => {
   const offChanged = onChanged(() => {
     const a = ctx.agents.get(id);
     if (a) title.textContent = a.label;
+    // The desktop took over while we were attached: stop streaming its
+    // desktop-width output and offer Take over instead.
+    if (a && attached) {
+      const c = control.update(a.remote);
+      if (c === 'have') hadControl = true;
+      if (c === 'lost') {
+        hadControl = false;
+        detach();
+        showYielded(true);
+        return;
+      }
+    }
     if (ctx.linkState !== 'connected') attached = false;
-    else if (!document.hidden) attach();
+    else if (!document.hidden && !attached) resumeView();
   });
 
   // Backgrounded: stop streaming pty output over the network (only agents
   // snapshots keep flowing for notifications); replay on return.
-  const onVisibility = () => (document.hidden ? detach() : attach());
+  const onVisibility = () => (document.hidden ? detach() : resumeView());
   document.addEventListener('visibilitychange', onVisibility);
 
   const ro = new ResizeObserver(() => requestAnimationFrame(refit));

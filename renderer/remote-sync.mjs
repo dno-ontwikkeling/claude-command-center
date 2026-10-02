@@ -21,6 +21,8 @@ export function buildRemoteSnapshot(agents, dormant, displayLabel) {
       isMain: a.isMain !== false,
       status: a.status || 'busy',
       dormant: false,
+      // The phone has control (the desktop shows "Working remotely").
+      remote: a.sizeOwner === 'remote',
     });
   }
   for (const [id, d] of dormant) {
@@ -33,6 +35,7 @@ export function buildRemoteSnapshot(agents, dormant, displayLabel) {
       isMain: d.isMain !== false,
       status: 'dead',
       dormant: true,
+      remote: false,
     });
   }
   return out;
@@ -64,12 +67,10 @@ export function createSnapshotPusher({ build, push, delayMs = 150, setTimer = se
   };
 }
 
-// Terminal reports xterm sends on its own while a TUI tracks the mouse (?1000/
-// ?1002/?1003, SGR or legacy) or focus (?1004): hovering or switching windows
-// produces them. Only real keys mean "the user is working here now".
-const AUTO_REPORTS = /\x1b\[<\d+;\d+;\d+[Mm]|\x1b\[M[\s\S]{3}|\x1b\[[IO]/g;
-
-/** True when terminal input data contains something the user typed. */
-export function isUserInput(data) {
-  return String(data).replace(AUTO_REPORTS, '').length > 0;
+/**
+ * A session restarted mid-turn (working, or waiting on a question) lost that
+ * turn: the app types "continue" once the resumed session is ready.
+ */
+export function shouldContinueAfterRestart(status) {
+  return status === 'busy' || status === 'needs-input';
 }

@@ -56,7 +56,7 @@ test('size tracker resizes only when the size changes, and tracks the owner', ()
 
 // ---- connection handler ---------------------------------------------------
 
-function setup({ agents = { seq: 1, desktopUi: true, list: [] }, rpc, modePrefix } = {}) {
+function setup({ agents = { seq: 1, desktopUi: true, list: [] }, rpc, modePrefix, takeover } = {}) {
   const hub = new EventEmitter();
   const buffers = new Map();
   const sent = [];
@@ -64,7 +64,7 @@ function setup({ agents = { seq: 1, desktopUi: true, list: [] }, rpc, modePrefix
   const writes = [];
   const resizes = [];
   const owners = new Map();
-  const released = [];
+  const takeovers = [];
   const ptys = new Set();
   const addPty = (id) => {
     ptys.add(id);
@@ -84,13 +84,17 @@ function setup({ agents = { seq: 1, desktopUi: true, list: [] }, rpc, modePrefix
       resizes.push({ id, cols, rows, owner, ...opts });
     },
     sizeOwner: (id) => owners.get(id) || null,
-    releaseSize: (id) => released.push(id),
+    // Default: no resumable session, so no restart (sync false).
+    takeover: (id, cols, rows) => {
+      takeovers.push({ id, cols, rows });
+      return takeover ? takeover(id, cols, rows, { owners, buffers }) : false;
+    },
     modePrefix: modePrefix || (() => ''),
     getAgents: () => agents,
     rpc: rpc || (async () => ({})),
     log: { warn: () => {}, info: () => {} },
   });
-  return { h, hub, sent, closed, writes, resizes, owners, released, addPty, emitData };
+  return { h, hub, sent, closed, writes, resizes, owners, takeovers, addPty, emitData };
 }
 
 const tick = () => new Promise((r) => setImmediate(r));
@@ -122,10 +126,10 @@ test('frames after close are ignored', () => {
   assert.equal(writes.length, 0);
 });
 
-test('attach resizes with a forced repaint, replays only a reset, then streams only newer data', () => {
+test('attach without a resumable session: forced repaint, replays only a reset, then newer data', () => {
   // Old output was drawn at the desktop's width: replaying it into the phone's
-  // narrower terminal fills its scrollback with garbage. The app repaints at
-  // the phone's size instead.
+  // narrower terminal fills its scrollback with garbage. With no session to
+  // restart, the app repaints at the phone's size instead.
   const { h, sent, resizes, addPty, emitData } = setup();
   addPty('a1');
   emitData('a1', 'old1');
@@ -180,26 +184,52 @@ test('input reaches the pty only for attached agents', () => {
   assert.deepEqual(writes, [{ id: 'a1', data: 'hi' }]);
 });
 
-test('typing reclaims the pty size when the desktop took it back', () => {
-  const { h, resizes, owners, addPty } = setup();
+test('typing is ignored while the desktop has control (the phone shows Take over)', () => {
+  const { h, writes, owners, addPty } = setup();
   addPty('a1');
   h.onMessage(JSON.stringify({ t: 'attach', id: 'a1', cols: 60, rows: 30 }));
-  owners.set('a1', 'desktop'); // desktop re-fit in the meantime
+  owners.set('a1', 'desktop'); // the desktop took over
   h.onMessage(JSON.stringify({ t: 'input', id: 'a1', data: 'x' }));
-  assert.deepEqual(resizes.at(-1), { id: 'a1', cols: 60, rows: 30, owner: 'remote' });
-  const n = resizes.length;
-  h.onMessage(JSON.stringify({ t: 'input', id: 'a1', data: 'y' }));
-  assert.equal(resizes.length, n, 'no resize while still the owner');
+  assert.deepEqual(writes, []);
+});
+
+test('attach while the desktop has control hands over (restart) and replays the fresh buffer', async () => {
+  const { h, sent, resizes, takeovers, addPty, emitData } = setup({
+    // The restart: a new pty (fresh buffer) at the phone's size, phone owns it.
+    takeover: async (id, cols, rows, { owners, buffers }) => {
+      buffers.set(id, createRingBuffer({ cap: 1000 }));
+      owners.set(id, 'remote');
+      emitData(id, 'conversation at 60 cols');
+      return true;
+    },
+  });
+  addPty('a1');
+  emitData('a1', 'old desktop-width output');
+  h.onMessage(JSON.stringify({ t: 'attach', id: 'a1', cols: 60, rows: 30 }));
+  await tick();
+  assert.deepEqual(takeovers, [{ id: 'a1', cols: 60, rows: 30 }]);
+  assert.deepEqual(resizes, [], 'the restart already started at the phone size');
+  const replay = sent.find((m) => m.t === 'replay');
+  assert.deepEqual(replay, { t: 'replay', id: 'a1', lastSeq: 1, data: '\x1bcconversation at 60 cols' });
+  emitData('a1', 'live');
+  assert.deepEqual(sent.at(-1), { t: 'data', id: 'a1', seq: 2, data: 'live' });
+});
+
+test('attach while the phone already has control replays its buffer without a restart', () => {
+  const { h, sent, takeovers, owners, addPty, emitData } = setup();
+  addPty('a1');
+  owners.set('a1', 'remote');
+  emitData('a1', 'drawn at phone width');
+  h.onMessage(JSON.stringify({ t: 'attach', id: 'a1', cols: 60, rows: 30 }));
+  assert.deepEqual(takeovers, []);
+  assert.equal(sent.find((m) => m.t === 'replay').data, '\x1bcdrawn at phone width');
 });
 
 test('resize updates the remembered phone size and resizes', () => {
-  const { h, resizes, owners, addPty } = setup();
+  const { h, resizes, addPty } = setup();
   addPty('a1');
   h.onMessage(JSON.stringify({ t: 'attach', id: 'a1', cols: 60, rows: 30 }));
   h.onMessage(JSON.stringify({ t: 'resize', id: 'a1', cols: 40, rows: 20 }));
-  assert.deepEqual(resizes.at(-1), { id: 'a1', cols: 40, rows: 20, owner: 'remote' });
-  owners.set('a1', 'desktop');
-  h.onMessage(JSON.stringify({ t: 'input', id: 'a1', data: 'x' }));
   assert.deepEqual(resizes.at(-1), { id: 'a1', cols: 40, rows: 20, owner: 'remote' });
 });
 
@@ -244,26 +274,6 @@ test('onClose unsubscribes from the hub', () => {
   const { h, hub } = setup();
   h.onClose();
   assert.equal(hub.listenerCount('data') + hub.listenerCount('exit') + hub.listenerCount('agents'), 0);
-});
-
-test('detach hands the pty size back', () => {
-  const { h, released, addPty } = setup();
-  addPty('a1');
-  h.onMessage(JSON.stringify({ t: 'attach', id: 'a1', cols: 60, rows: 30 }));
-  h.onMessage(JSON.stringify({ t: 'detach', id: 'a1' }));
-  assert.deepEqual(released, ['a1']);
-  h.onMessage(JSON.stringify({ t: 'detach', id: 'a1' }));
-  assert.deepEqual(released, ['a1'], 'not attached any more: nothing to release');
-});
-
-test('closing the connection hands back the size of every attached pty', () => {
-  const { h, released, addPty } = setup();
-  addPty('a1');
-  addPty('a2');
-  h.onMessage(JSON.stringify({ t: 'attach', id: 'a1', cols: 60, rows: 30 }));
-  h.onMessage(JSON.stringify({ t: 'attach', id: 'a2', cols: 60, rows: 30 }));
-  h.onClose();
-  assert.deepEqual(released.sort(), ['a1', 'a2']);
 });
 
 test('transcript rpc needs an agent id', () => {

@@ -613,3 +613,26 @@ ul.pick button.danger {
 li.pick-extra {
   margin-top: 16px;
 }
+
+/* ---- desktop has control of this terminal ---- */
+.term-yielded {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+}
+
+.term-yielded[hidden],
+.term-host[hidden],
+.keys[hidden] {
+  display: none;
+}
+
+.term-yielded-title {
+  font-size: 18px;
+  font-weight: 600;
+}

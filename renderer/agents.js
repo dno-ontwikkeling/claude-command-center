@@ -4,7 +4,7 @@
 
 import { els } from './dom.js';
 import { agents, agentSeq, pendingExit, dormant, state, persistAgents, agentsForDir, dormantForDir, notifyAgentsChanged, record, displayLabel, onAgentsChanged, onStatusChanged } from './state.js';
-import { buildRemoteSnapshot, createSnapshotPusher, isUserInput } from './remote-sync.mjs';
+import { buildRemoteSnapshot, createSnapshotPusher, shouldContinueAfterRestart } from './remote-sync.mjs';
 import { settings, termOpts } from './settings.js';
 import { confirmDialog, promptText, closeMenu } from './modals.js';
 import { updateStageBar, openSearch } from './stage.js';
@@ -79,6 +79,16 @@ export function spawn(dir, cwd, branch, isMain, restore = null, opts = {}) {
   el.className = 'term';
   els.terminals.appendChild(el);
 
+  // Shown instead of the terminal while the phone has control of this agent.
+  const remoteOverlay = document.createElement('div');
+  remoteOverlay.className = 'remote-overlay';
+  remoteOverlay.hidden = true;
+  remoteOverlay.innerHTML =
+    '<div class="remote-box"><div class="remote-title">Working remotely</div>' +
+    '<p>This agent is being used from your phone.</p>' +
+    '<button class="btn-primary">Take over</button></div>';
+  remoteOverlay.querySelector('button').addEventListener('click', () => takeOver(id));
+
   const term = new Terminal(termOpts());
   const fit = new FitAddon.FitAddon();
   const search = new SearchAddon.SearchAddon();
@@ -89,6 +99,7 @@ export function spawn(dir, cwd, branch, isMain, restore = null, opts = {}) {
     new WebLinksAddon.WebLinksAddon((_e, uri) => window.api.openExternal(uri))
   );
   term.open(el);
+  el.appendChild(remoteOverlay);
 
   // Claude's TUI repaints constantly (spinner/status line), and every repaint
   // wipes the xterm selection. Waiting for mouseup / Ctrl+C / a right-click to
@@ -158,14 +169,6 @@ export function spawn(dir, cwd, branch, isMain, restore = null, opts = {}) {
   });
 
   term.onData((data) => {
-    // The phone sized this pty; typing here takes it back once (refit sends the
-    // desktop size, main flips ownership) — not on every keystroke. Mouse and
-    // focus reports (hovering, switching windows) don't count as typing.
-    const owner = agents.get(id);
-    if (owner && owner.sizeOwner === 'remote' && isUserInput(data)) {
-      owner.sizeOwner = 'desktop';
-      owner.refit();
-    }
     // Mouse/scroll events the TUI repaints in response (SGR `ESC [ <` or legacy
     // `ESC [ M`). Remember when one happened so the activity tracker can ignore
     // the repaint it triggers, instead of flickering idle -> busy on scroll.
@@ -213,6 +216,7 @@ export function spawn(dir, cwd, branch, isMain, restore = null, opts = {}) {
     el,
     ro,
     refit,
+    remoteOverlay,
     order: restore?.order ?? Date.now(),
     status: 'busy',
     dotEl: null,
@@ -224,7 +228,10 @@ export function spawn(dir, cwd, branch, isMain, restore = null, opts = {}) {
     cols: opts.cols,
     rows: opts.rows,
   });
-  if (opts.cols && opts.rows) agents.get(id).sizeOwner = 'remote';
+  if (opts.cols && opts.rows) {
+    agents.get(id).sizeOwner = 'remote';
+    syncRemoteOverlay(id);
+  }
   persistAgents();
   notifyAgentsChanged();
   if (!opts.background) activate(id);
@@ -442,8 +449,8 @@ export function activate(id) {
     // Viewing an agent that finished while unfocused clears the "unseen" flag;
     // it stays as plain "done".
     if (a.status === 'unseen') setStatus(id, 'done');
-    // Opening an agent here is using it here: take the pty size back.
-    if (a.sizeOwner === 'remote') a.sizeOwner = 'desktop';
+    // While the phone has control this shows "Working remotely" (Take over
+    // restarts it here); opening the agent alone doesn't take it back.
     requestAnimationFrame(() => {
       a.refit();
       a.term.focus();
@@ -460,6 +467,7 @@ window.api.onData(({ id, data }) => {
   const a = agents.get(id);
   if (!a) return;
   a.term.write(data);
+  a.lastDataAt = Date.now();
   detectPrompts(id, data);
   markActivity(id);
 });
@@ -523,16 +531,76 @@ export function startRemoteSync() {
   remotePusher.schedule();
 }
 
-// Main tells us when the phone took (or we took back) a pty's size; a desktop
-// activate or keystroke then re-fits once to reclaim it.
+// Main tells us when the pty size changes hands without a restart (an agent
+// with no session to resume).
 window.api.onSizeOwner(({ id, owner }) => {
   const a = agents.get(id);
   if (!a) return;
-  const handedBack = a.sizeOwner === 'remote' && owner === 'desktop';
   a.sizeOwner = owner;
-  // The phone left this terminal: resize the pty back to the desktop panel.
-  if (handedBack) a.refit();
+  syncRemoteOverlay(id);
+  remotePusher.schedule();
 });
+
+function syncRemoteOverlay(id) {
+  const a = agents.get(id);
+  if (a) a.remoteOverlay.hidden = a.sizeOwner !== 'remote';
+}
+
+// Hand an agent to a device by restarting its session there (--resume at that
+// device's size): the app reprints the conversation at the new width, so the
+// terminal on that device has a clean, complete scrollback. Interrupted work or
+// a pending question gets a "continue" once the session is back. Returns false
+// when there is no session to resume yet (nothing was sent): callers fall back
+// to a plain resize.
+export async function restartFor(id, { owner, cols, rows }) {
+  const a = agents.get(id);
+  if (!a || !a.sessionId || !a.used || a.restarting) return false;
+  const resumeTurn = shouldContinueAfterRestart(a.status);
+  a.restarting = true;
+  a.sizeOwner = owner;
+  syncRemoteOverlay(id);
+  a.term.reset();
+  try {
+    const ok = await window.api.restart(id, a.cwd, { bypass: settings.bypass, resume: a.sessionId, cols, rows, owner });
+    if (ok && resumeTurn) continueWhenReady(id);
+    return ok;
+  } finally {
+    a.restarting = false;
+    remotePusher.schedule();
+  }
+}
+
+// Type "continue" once the resumed session has finished drawing (no output for
+// a moment); give up after 30s.
+function continueWhenReady(id) {
+  const started = Date.now();
+  const check = () => {
+    const a = agents.get(id);
+    if (!a || Date.now() - started > 30000) return;
+    const quiet = a.lastDataAt && a.lastDataAt > started && Date.now() - a.lastDataAt > 1500;
+    if (!quiet) return void setTimeout(check, 300);
+    window.api.sendInput(id, 'continue');
+    // Separate Enter, so the TUI doesn't take the text + Enter as one paste.
+    setTimeout(() => window.api.sendInput(id, '\r'), 150);
+  };
+  setTimeout(check, 1000);
+}
+
+// "Take over" on the desktop's "Working remotely" page.
+async function takeOver(id) {
+  const a = agents.get(id);
+  if (!a) return;
+  const dims = a.fit.proposeDimensions() || { cols: a.term.cols, rows: a.term.rows };
+  const restarted = await restartFor(id, { owner: 'desktop', cols: dims.cols, rows: dims.rows });
+  if (!restarted) {
+    // No session to resume: just take the size back.
+    a.sizeOwner = 'desktop';
+    syncRemoteOverlay(id);
+    a.refit();
+    remotePusher.schedule();
+  }
+  a.term.focus();
+}
 
 const remoteCommands = {
   // Phone spawns follow the desktop's bypass setting (spawn() reads it), and
@@ -565,6 +633,11 @@ const remoteCommands = {
   // Same as the desktop menu's Forget (the phone confirms first).
   forget({ id, deleteWorktree, deleteBranch, force }) {
     return forgetAgent(id, { deleteWorktree, deleteBranch, force });
+  },
+  // The phone opens a terminal the desktop controls: restart it at the
+  // phone's size ({ restarted: false } = no session yet, main falls back).
+  async takeover({ id, owner, cols, rows }) {
+    return { restarted: await restartFor(id, { owner, cols, rows }) };
   },
   // Same as the desktop menu's Sleep: a used session stays tracked (sleeping).
   kill({ id }) {

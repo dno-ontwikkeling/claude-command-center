@@ -147,7 +147,9 @@ function createSizeTracker() {
 //   resize(id, cols, rows, owner, {repaint}) - resize via the size tracker;
 //                              repaint forces a redraw even at an unchanged size
 //   sizeOwner(id)            - current size owner ('desktop' | 'remote' | null)
-//   releaseSize(id)          - this client stopped viewing the pty: hand its size back
+//   takeover(id, cols, rows) - the desktop has control: restart the session at the
+//                              phone's size so it redraws there. true (or a Promise
+//                              of true) when restarted; false = no resumable session
 //   modePrefix(id)           - escape sequences re-enabling the app's terminal modes
 //   getAgents()              - current { seq, desktopUi, list }
 //   rpc(method, args)        - Promise of the result; rejects with an Error to report
@@ -181,22 +183,55 @@ function createConnectionHandler(deps) {
   hub.on('exit', onExit);
   hub.on('agents', onAgents);
 
+  // Open a terminal on the phone. While the desktop has control, the session is
+  // restarted (resumed) at the phone's size: the app reprints the conversation
+  // at this width, so the phone gets a clean scrollback. When the phone already
+  // has control, its buffer was drawn at phone width and is replayed as-is.
   function attach({ id, cols, rows }) {
     if (!deps.hasPty(id)) {
       safeSend({ t: 'exit', id, exitCode: null, error: 'Agent is not running.' });
       return;
     }
-    // Old output was drawn at the desktop's width; replayed into the phone's
-    // terminal it fills the scrollback with garbage. Instead resize with a
-    // forced repaint, so the app (and ConPTY) redraw the screen at the phone's
-    // size, and send only a reset plus the app's terminal modes. Subscribing in
-    // this same synchronous tick means the repaint arrives as live data after
-    // lastSeq. The phone's History screen covers older conversation.
+    if (deps.sizeOwner(id) === 'remote') {
+      deps.resize(id, cols, rows, 'remote');
+      return subscribe(id, cols, rows, true);
+    }
+    const restarted = deps.takeover(id, cols, rows);
+    if (restarted && typeof restarted.then === 'function') {
+      restarted.then(
+        (ok) => !closed && finishTakeover(id, cols, rows, ok),
+        (err) => {
+          log.warn('remote', `takeover failed: ${(err && err.message) || err}`);
+          if (!closed) finishTakeover(id, cols, rows, false);
+        },
+      );
+    } else {
+      finishTakeover(id, cols, rows, restarted);
+    }
+  }
+
+  function finishTakeover(id, cols, rows, restarted) {
+    if (restarted) {
+      if (!deps.hasPty(id)) {
+        safeSend({ t: 'exit', id, exitCode: null, error: 'Agent did not restart.' });
+        return;
+      }
+      return subscribe(id, cols, rows, true);
+    }
+    // No session to resume (nothing sent yet): old output was drawn at the
+    // desktop's width and would fill the phone's scrollback with garbage, so
+    // force a repaint at the phone's size and replay only a reset.
     deps.resize(id, cols, rows, 'remote', { repaint: true });
+    subscribe(id, cols, rows, false);
+  }
+
+  // Snapshot + subscribe in one synchronous tick: nothing can be appended in
+  // between, so live data continues exactly after lastSeq.
+  function subscribe(id, cols, rows, withBuffer) {
     const buf = deps.getBuffer(id);
-    const lastSeq = buf ? buf.snapshot().lastSeq : 0;
+    const { data, lastSeq } = buf ? buf.snapshot() : { data: '', lastSeq: 0 };
     attached.set(id, { lastSeq, cols, rows });
-    safeSend({ t: 'replay', id, lastSeq, data: RESET + deps.modePrefix(id) });
+    safeSend({ t: 'replay', id, lastSeq, data: RESET + deps.modePrefix(id) + (withBuffer ? data : '') });
   }
 
   async function rpc({ reqId, method, args }) {
@@ -210,14 +245,13 @@ function createConnectionHandler(deps) {
 
   const handlers = {
     attach,
-    detach: ({ id }) => {
-      if (attached.delete(id)) deps.releaseSize(id);
-    },
+    detach: ({ id }) => attached.delete(id),
     input: ({ id, data }) => {
       const a = attached.get(id);
       if (!a) return;
-      // Typing on the phone takes the size back if the desktop re-fit meanwhile.
-      if (deps.sizeOwner(id) !== 'remote') deps.resize(id, a.cols, a.rows, 'remote');
+      // The desktop took over: the phone shows "Take over" instead of the
+      // terminal, so anything still typed is dropped.
+      if (deps.sizeOwner(id) !== 'remote') return;
       deps.writeInput(id, data);
     },
     resize: ({ id, cols, rows }) => {
@@ -247,7 +281,6 @@ function createConnectionHandler(deps) {
     onClose() {
       if (closed) return;
       closed = true;
-      for (const id of attached.keys()) deps.releaseSize(id);
       attached.clear();
       hub.off('data', onData);
       hub.off('exit', onExit);

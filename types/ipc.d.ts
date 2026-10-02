@@ -86,6 +86,8 @@ export interface SpawnOpts {
   resume?: string | null;
   cols?: number;
   rows?: number;
+  /** which device the pty size belongs to (default: 'remote' when sized) */
+  owner?: 'desktop' | 'remote';
 }
 
 /** One agent as mirrored to the phone (renderer -> main -> phone). */
@@ -99,6 +101,8 @@ export interface RemoteAgent {
   isMain: boolean;
   status: string;
   dormant: boolean;
+  /** the phone has control of this agent */
+  remote: boolean;
 }
 
 /** `remote:agents` — renderer snapshot; `seq` increments per push within a renderer lifetime. */
@@ -196,6 +200,7 @@ export interface Api {
 
   // agents
   spawn(id: string, cwd: string, opts: SpawnOpts): Promise<void>;
+  restart(id: string, cwd: string, opts: SpawnOpts): Promise<boolean>;
   sendInput(id: string, data: string): void;
   resize(id: string, cols: number, rows: number): void;
   kill(id: string): void;

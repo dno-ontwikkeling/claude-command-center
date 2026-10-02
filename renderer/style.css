@@ -1830,3 +1830,34 @@ body.resizing #terminals {
   background: var(--accent, #6e8efb);
   border-color: var(--accent, #6e8efb);
 }
+
+/* "Working remotely": covers an agent's terminal (absolutely positioned
+   already) while the phone has control. */
+.remote-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg, #0e0e10);
+}
+
+.remote-overlay[hidden] {
+  display: none;
+}
+
+.remote-box {
+  text-align: center;
+}
+
+.remote-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.remote-box p {
+  margin: 0 0 16px;
+  color: var(--muted, #8a8a92);
+}

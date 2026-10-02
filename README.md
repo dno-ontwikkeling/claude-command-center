@@ -81,6 +81,23 @@ networks** (and public only if you really need it).
 - The pairing survives restarts of both apps. If the PC's address changes (LAN
   IP, no Tailscale), re-scan the QR.
 
+### Phone or desktop: one has control
+
+An agent's terminal is drawn for one screen size at a time, so one device has
+control of it:
+
+- **Opening an agent on the phone takes control.** Command Center restarts the
+  session (`claude --resume`) at the phone's size, so Claude reprints the
+  conversation at that width and the phone can scroll through it cleanly.
+- The desktop then shows **Working remotely** instead of the terminal, with a
+  **Take over** button that restarts the session at the desktop's size. The
+  phone in turn shows **Controlled from the desktop** with its own Take over.
+- A restart in the middle of a turn interrupts it; the app then types
+  `continue` for you once the session is back. A pending permission question
+  is asked again.
+- An agent you haven't sent a prompt to has no session to resume yet: it is
+  just resized and repainted.
+
 ### Security model
 
 - **TLS with a pinned self-signed certificate.** The QR carries the

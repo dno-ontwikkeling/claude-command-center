@@ -382,7 +382,8 @@ function spawnAgent(id, cwd, opts = {}) {
   scrollback.set(id, buf);
   const modes = createModeTracker();
   termModes.set(id, modes);
-  ptySizes.request(id, sized ? 'remote' : 'desktop', cols, rows);
+  // `owner`: which device the size belongs to (a restart passes it on).
+  ptySizes.request(id, opts.owner || (sized ? 'remote' : 'desktop'), cols, rows);
 
   term.onData((data) => {
     sendToRenderer('agent:data', { id, data });
@@ -390,10 +391,14 @@ function spawnAgent(id, cwd, opts = {}) {
     remoteHub.emit('data', id, buf.append(data), data);
   });
   term.onExit(({ exitCode } = {}) => {
+    // A restart may already have put a new pty under this id.
+    if (agents.get(id) !== term) return;
     agents.delete(id);
     scrollback.delete(id);
     termModes.delete(id);
     ptySizes.forget(id);
+    // Restarting: the old process ending is not the agent ending.
+    if (restarting.delete(id)) return;
     sendToRenderer('agent:exit', { id, exitCode });
     remoteHub.emit('exit', id, { exitCode });
   });
@@ -424,10 +429,34 @@ function resizeAgent(id, cols, rows, owner, { repaint = false } = {}) {
   if (owner !== prevOwner) sendToRenderer('agent:sizeOwner', { id, owner });
 }
 
-// The phone stopped viewing this pty: let the desktop take its size back. The
-// renderer refits on the owner change, which resizes via resizeAgent.
-function releaseSize(id) {
-  if (ptySizes.owner(id) === 'remote') sendToRenderer('agent:sizeOwner', { id, owner: 'desktop' });
+// Restart an agent's pty in place (same id): stop the old process tree, wait
+// for it to exit, then spawn `opts` (a --resume at the new size). The old exit
+// is not reported to the renderer or the phone. Resolves true once the new pty
+// runs. Used when the phone or the desktop takes control of an agent.
+const restarting = new Set();
+function restartAgent(id, cwd, opts) {
+  return new Promise((resolve) => {
+    const old = agents.get(id);
+    let started = false;
+    const start = () => {
+      if (started) return;
+      started = true;
+      clearTimeout(fallback);
+      if (agents.get(id) === old) {
+        // The old pty never reported its exit: drop it and its state by hand.
+        agents.delete(id);
+        restarting.delete(id);
+      }
+      spawnAgent(id, cwd, opts);
+      resolve(agents.has(id));
+    };
+    if (!old) return start();
+    restarting.add(id);
+    // Grace for the OS to release the old process's handles (cwd lock).
+    old.onExit(() => setTimeout(start, 250));
+    const fallback = setTimeout(start, 5000);
+    killAgent(id);
+  });
 }
 
 // Kill the agent and its child processes. claude spawns children that keep a
@@ -785,6 +814,8 @@ function registerIpc() {
     spawnAgent(id, cwd, opts);
   });
 
+  ipcMain.handle('agent:restart', (_e, { id, cwd, opts }) => restartAgent(id, cwd, opts));
+
   ipcMain.on('agent:input', (_e, { id, data }) => {
     try {
       agents.get(id)?.write(data);
@@ -1066,7 +1097,12 @@ async function startRemote() {
           },
           resize: resizeAgent,
           sizeOwner: (id) => ptySizes.owner(id),
-          releaseSize,
+          // The phone opens a terminal the desktop controls: the renderer
+          // restarts the session at the phone's size (false = no session).
+          takeover: (id, cols, rows) =>
+            rendererCommand('takeover', { id, owner: 'remote', cols, rows }, { timeoutMs: 20000 }).then(
+              (r) => !!(r && r.restarted),
+            ),
           modePrefix: (id) => termModes.get(id)?.prefix() ?? '',
           getAgents: () => remoteAgents,
           rpc: remoteRpc,
@@ -1125,6 +1161,7 @@ function sanitizeAgent(a) {
     cwd: str(a && a.cwd),
     branch: a && typeof a.branch === 'string' ? a.branch : null,
     isMain: !(a && a.isMain === false),
+    remote: !!(a && a.remote),
     status: str(a && a.status),
     dormant: !!(a && a.dormant),
   };
