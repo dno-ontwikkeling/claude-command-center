@@ -3,6 +3,7 @@
 import { els } from './dom.js';
 import { agents, readLocalJson } from './state.js';
 import { beep, SOUNDS } from './sound.js';
+import { confirmDialog } from './modals.js';
 
 // ---------------------------------------------------------------------------
 // Terminal look — mirrors the user's Windows Terminal "Claude code" profile:
@@ -243,4 +244,128 @@ els.setVolume.addEventListener('change', () => {
 });
 els.setSoundTest.addEventListener('click', () => {
   beep('needs-input', settings.soundType, settings.volume);
+});
+
+// ---------------------------------------------------------------------------
+// Remote access tab — config + live server state come from main
+// (remote:getConfig); the pairing QR is rendered there too.
+// ---------------------------------------------------------------------------
+
+let remotePoll = null;
+
+function renderRemote(cfg) {
+  els.setRemoteEnabled.checked = cfg.enabled;
+  // Don't clobber a field the user is typing in.
+  if (document.activeElement !== els.setRemotePort) els.setRemotePort.value = cfg.port;
+  if (document.activeElement !== els.setRemoteBind) els.setRemoteBind.value = cfg.bindHost;
+  if (document.activeElement !== els.setRemoteHost) els.setRemoteHost.value = cfg.advertisedHost;
+  els.setRemoteHost.placeholder = `auto: ${cfg.effectiveHost}`;
+  els.setRemoteHosts.innerHTML = '';
+  for (const h of cfg.hostOptions) {
+    const opt = document.createElement('option');
+    opt.value = h.address;
+    opt.label = `${h.iface}${h.tailscale ? ' (Tailscale)' : ''}`;
+    els.setRemoteHosts.appendChild(opt);
+  }
+
+  const status = els.setRemoteStatus;
+  status.classList.toggle('is-error', cfg.status === 'error');
+  status.textContent =
+    cfg.status === 'listening'
+      ? `Listening on ${cfg.bindHost}:${cfg.port} — phone connects to ${cfg.effectiveHost}:${cfg.port}`
+      : cfg.status === 'starting'
+        ? 'Starting…'
+        : cfg.status === 'error'
+          ? `${cfg.error} If Windows Firewall prompted, allow access for private networks.`
+          : 'Off';
+  if (cfg.error && cfg.status !== 'error') {
+    status.classList.add('is-error');
+    status.textContent = cfg.error; // a rejected setting
+  }
+
+  els.setRemoteBypass.hidden = !(cfg.enabled && settings.bypass);
+  const listening = cfg.status === 'listening';
+  els.setRemotePair.disabled = !listening;
+  els.setRemoteKick.disabled = !cfg.clients.length;
+  if (!listening) els.setRemoteQr.hidden = true;
+
+  els.setRemoteClients.innerHTML = '';
+  if (!cfg.clients.length) {
+    const li = document.createElement('li');
+    li.className = 'is-empty';
+    li.textContent = 'None';
+    els.setRemoteClients.appendChild(li);
+  }
+  for (const c of cfg.clients) {
+    const li = document.createElement('li');
+    li.textContent = `${c.ip.replace(/^::ffff:/, '')} — since ${new Date(c.since).toLocaleTimeString()}`;
+    els.setRemoteClients.appendChild(li);
+  }
+}
+
+async function refreshRemote() {
+  renderRemote(await window.api.getRemoteConfig());
+}
+
+async function setRemote(patch) {
+  renderRemote(await window.api.setRemoteConfig(patch));
+}
+
+// Poll only while the Remote tab is visible (connected-devices list).
+function setRemotePolling(on) {
+  clearInterval(remotePoll);
+  remotePoll = on ? setInterval(refreshRemote, 3000) : null;
+}
+
+for (const t of setTabs) {
+  t.addEventListener('click', () => {
+    const remoteTab = t.dataset.tab === 'remote';
+    setRemotePolling(remoteTab);
+    if (remoteTab) refreshRemote();
+  });
+}
+els.settingsClose.addEventListener('click', () => setRemotePolling(false));
+els.overlay.addEventListener('click', (e) => {
+  if (e.target === els.overlay) setRemotePolling(false);
+});
+
+els.setRemoteEnabled.addEventListener('change', () => setRemote({ enabled: els.setRemoteEnabled.checked }));
+els.setRemotePort.addEventListener('change', () => setRemote({ port: Number(els.setRemotePort.value) }));
+els.setRemoteBind.addEventListener('change', () => setRemote({ bindHost: els.setRemoteBind.value.trim() }));
+els.setRemoteHost.addEventListener('change', () => setRemote({ advertisedHost: els.setRemoteHost.value.trim() }));
+
+els.setRemotePair.addEventListener('click', async () => {
+  if (!els.setRemoteQr.hidden) {
+    els.setRemoteQr.hidden = true;
+    els.setRemotePair.textContent = 'Show pairing QR';
+    return;
+  }
+  const res = await window.api.getRemotePairing();
+  if (res.error || !res.qr) {
+    await confirmDialog('Pairing unavailable', res.error || 'Could not create the pairing code.', { alert: true });
+    return;
+  }
+  els.setRemoteQrImg.src = res.qr;
+  els.setRemoteQrUrl.textContent = res.url || '';
+  els.setRemoteQr.hidden = false;
+  els.setRemotePair.textContent = 'Hide pairing QR';
+});
+
+els.setRemoteKick.addEventListener('click', async () => {
+  renderRemote(await window.api.disconnectRemoteClients());
+});
+
+els.setRemoteRegen.addEventListener('click', async () => {
+  const ok = await confirmDialog(
+    'Regenerate pairing',
+    'This creates a new pairing code and certificate. Every paired phone is disconnected and must scan the new QR code.',
+    { okLabel: 'Regenerate', danger: true }
+  );
+  if (!ok) return;
+  const cfg = await window.api.regenerateRemote();
+  renderRemote(cfg);
+  if (!els.setRemoteQr.hidden) {
+    const res = await window.api.getRemotePairing();
+    if (res.qr) els.setRemoteQrImg.src = res.qr;
+  }
 });

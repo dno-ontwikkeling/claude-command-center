@@ -11,6 +11,7 @@ import type {
   DiffStat,
   OpResult,
   Project,
+  RemoteConfig,
   RemoveWorktreeResult,
   Worktree,
 } from './ipc';
@@ -48,6 +49,11 @@ interface InvokeChannelMap {
   'code:open': OpResult;
   'explorer:open': OpResult;
   'agent:spawn': void;
+  'remote:getConfig': RemoteConfig;
+  'remote:setConfig': RemoteConfig;
+  'remote:regenerate': RemoteConfig;
+  'remote:disconnectAll': RemoteConfig;
+  'remote:getPairing': { code?: string; qr?: string; url?: string; error?: string };
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */

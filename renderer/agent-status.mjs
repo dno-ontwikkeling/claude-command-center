@@ -9,7 +9,7 @@
 // renderer/tui-signals.mjs are split out.
 // ---------------------------------------------------------------------------
 
-import { agents, state, displayLabel, persistAgents } from './state.js';
+import { agents, state, displayLabel, persistAgents, notifyStatusChanged } from './state.js';
 import { settings } from './settings.js';
 import { beep } from './sound.js';
 import { classifyOutput } from './tui-signals.mjs';
@@ -17,8 +17,10 @@ import { classifyOutput } from './tui-signals.mjs';
 export function setStatus(id, status) {
   const a = agents.get(id);
   if (!a) return;
+  const changed = a.status !== status;
   a.status = status;
   if (a.dotEl) a.dotEl.className = `dot ${status}`;
+  if (changed) notifyStatusChanged();
 }
 
 // Manual override from the sidebar menu. A one-shot reset: clears the flags

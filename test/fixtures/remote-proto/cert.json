@@ -1,0 +1,5 @@
+{
+  "description": "Pin for cert.pem as the desktop computes it (normalized fingerprint256) and as raw Node output.",
+  "fingerprint": "db3dfb89c309e2358ab269973cbbc3fd995faa0bbf77d5aa0c3d8e2629985aa0",
+  "fingerprint256": "DB:3D:FB:89:C3:09:E2:35:8A:B2:69:97:3C:BB:C3:FD:99:5F:AA:0B:BF:77:D5:AA:0C:3D:8E:26:29:98:5A:A0"
+}

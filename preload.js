@@ -67,6 +67,17 @@ const api = {
   onData: (cb) => ipcRenderer.on('agent:data', (_e, p) => cb(p)),
   onExit: (cb) => ipcRenderer.on('agent:exit', (_e, p) => cb(p)),
   onEvent: (cb) => ipcRenderer.on('agent:event', (_e, p) => cb(p)),
+  onSizeOwner: (cb) => ipcRenderer.on('agent:sizeOwner', (_e, p) => cb(p)),
+
+  // remote access (phone app)
+  getRemoteConfig: () => ipcRenderer.invoke('remote:getConfig'),
+  setRemoteConfig: (patch) => ipcRenderer.invoke('remote:setConfig', patch),
+  regenerateRemote: () => ipcRenderer.invoke('remote:regenerate'),
+  disconnectRemoteClients: () => ipcRenderer.invoke('remote:disconnectAll'),
+  getRemotePairing: () => ipcRenderer.invoke('remote:getPairing'),
+  pushRemoteAgents: (snapshot) => ipcRenderer.send('remote:agents', snapshot),
+  onRemoteCommand: (cb) => ipcRenderer.on('remote:command', (_e, p) => cb(p)),
+  sendRemoteCommandResult: (result) => ipcRenderer.send('remote:command-result', result),
 };
 
 contextBridge.exposeInMainWorld('api', api);

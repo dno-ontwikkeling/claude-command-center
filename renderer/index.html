@@ -2,7 +2,7 @@
 <html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:" />
     <title>Command Center</title>
     <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css" />
     <link rel="stylesheet" href="style.css" />
@@ -97,6 +97,7 @@
           <button class="set-tab is-active" data-tab="general">General</button>
           <button class="set-tab" data-tab="terminal">Terminal</button>
           <button class="set-tab" data-tab="notify">Notifications</button>
+          <button class="set-tab" data-tab="remote">Remote</button>
         </nav>
 
         <section class="set-panel is-active" data-panel="general">
@@ -174,6 +175,45 @@
             <button id="set-sound-test" class="btn-ghost">Test</button>
           </label>
           <p class="hint">Alerts when a worktree needs input or finishes while unfocused.</p>
+        </section>
+
+        <section class="set-panel" data-panel="remote">
+          <div class="set-row">
+            <div class="set-txt">
+              <span>Remote access</span>
+              <small>Lets the paired phone app control your agents.</small>
+            </div>
+            <label class="switch"><input id="set-remote-enabled" type="checkbox" /><span class="slider"></span></label>
+          </div>
+          <p id="set-remote-status" class="remote-status"></p>
+          <p id="set-remote-bypass" class="remote-warn" hidden>
+            Bypass permissions is on: agents started from the phone skip permission prompts too.
+          </p>
+          <label>Port
+            <input id="set-remote-port" type="number" min="1024" max="65535" step="1" />
+          </label>
+          <label>Listen on
+            <input id="set-remote-bind" type="text" spellcheck="false" placeholder="0.0.0.0" />
+          </label>
+          <label>Phone connects to
+            <input id="set-remote-host" type="text" spellcheck="false" list="set-remote-hosts" />
+            <datalist id="set-remote-hosts"></datalist>
+          </label>
+          <p class="hint">Leave empty for auto (Tailscale address first). Use your DDNS name for port forwarding.</p>
+          <div class="remote-actions">
+            <button id="set-remote-pair" class="btn-ghost">Show pairing QR</button>
+            <button id="set-remote-kick" class="btn-ghost">Disconnect all</button>
+            <button id="set-remote-regen" class="btn-ghost danger">Regenerate</button>
+          </div>
+          <div id="set-remote-qr" class="remote-qr" hidden>
+            <img id="set-remote-qr-img" alt="Pairing QR code" />
+            <small id="set-remote-qr-url"></small>
+            <small class="remote-warn">Anyone who scans this can control your agents. Regenerate if it leaks.</small>
+          </div>
+          <div class="set-txt">
+            <span>Connected devices</span>
+            <ul id="set-remote-clients" class="remote-clients"></ul>
+          </div>
         </section>
       </div>
     </div>

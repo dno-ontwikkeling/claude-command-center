@@ -1,0 +1,69 @@
+{
+  "protocolVersion": 1,
+  "limits": { "maxInputChars": 16384, "minDim": 2, "maxDim": 500 },
+  "clientToServer": {
+    "valid": [
+      { "t": "attach", "id": "a1", "cols": 60, "rows": 30 },
+      { "t": "detach", "id": "a1" },
+      { "t": "input", "id": "a1", "data": "hello\r" },
+      { "t": "input", "id": "a1", "data": "\u001b[A" },
+      { "t": "resize", "id": "a1", "cols": 2, "rows": 500 },
+      { "t": "rpc", "reqId": 1, "method": "projects.list", "args": {} },
+      { "t": "rpc", "reqId": 2, "method": "workspaces.list", "args": {} },
+      { "t": "rpc", "reqId": 3, "method": "worktrees.list", "args": { "dir": "C:\\proj" } },
+      { "t": "rpc", "reqId": 4, "method": "spawn", "args": { "dir": "C:\\proj", "cwd": "C:\\proj", "cols": 60, "rows": 30 } },
+      { "t": "rpc", "reqId": 5, "method": "resume", "args": { "id": "a2", "cols": 60, "rows": 30 } },
+      { "t": "rpc", "reqId": 6, "method": "resume", "args": { "id": "a2" } },
+      { "t": "rpc", "reqId": 7, "method": "kill", "args": { "id": "a1" } },
+      { "t": "rpc", "reqId": 8, "method": "git.diffstat", "args": { "cwd": "C:\\proj" } },
+      { "t": "rpc", "reqId": 9, "method": "git.diff", "args": { "cwd": "C:\\proj", "mode": "wip" } },
+      { "t": "rpc", "reqId": 10, "method": "git.diff", "args": { "cwd": "C:\\proj", "mode": "branch" } },
+      { "t": "rpc", "reqId": 11, "method": "git.fetch", "args": { "cwd": "C:\\proj" } },
+      { "t": "rpc", "reqId": 12, "method": "git.pull", "args": { "cwd": "C:\\proj" } }
+    ],
+    "invalid": [
+      { "why": "not JSON", "raw": "{nope" },
+      { "why": "not an object", "raw": "[1,2]" },
+      { "why": "unknown type", "frame": { "t": "shell", "cmd": "rm -rf /" } },
+      { "why": "missing type", "frame": { "id": "a1" } },
+      { "why": "attach without id", "frame": { "t": "attach", "cols": 60, "rows": 30 } },
+      { "why": "empty id", "frame": { "t": "detach", "id": "" } },
+      { "why": "non-string id", "frame": { "t": "detach", "id": 5 } },
+      { "why": "attach without size", "frame": { "t": "attach", "id": "a1" } },
+      { "why": "cols below min", "frame": { "t": "resize", "id": "a1", "cols": 1, "rows": 30 } },
+      { "why": "rows above max", "frame": { "t": "resize", "id": "a1", "cols": 60, "rows": 501 } },
+      { "why": "fractional cols", "frame": { "t": "resize", "id": "a1", "cols": 60.5, "rows": 30 } },
+      { "why": "string cols", "frame": { "t": "resize", "id": "a1", "cols": "60", "rows": 30 } },
+      { "why": "non-string input", "frame": { "t": "input", "id": "a1", "data": 42 } },
+      { "why": "input over limit", "frame": { "t": "input", "id": "a1" }, "dataLength": 16385 },
+      { "why": "rpc unknown method", "frame": { "t": "rpc", "reqId": 1, "method": "vs.open", "args": {} } },
+      { "why": "rpc missing reqId", "frame": { "t": "rpc", "method": "projects.list", "args": {} } },
+      { "why": "rpc string reqId", "frame": { "t": "rpc", "reqId": "1", "method": "projects.list", "args": {} } },
+      { "why": "rpc args not object", "frame": { "t": "rpc", "reqId": 1, "method": "projects.list", "args": "x" } },
+      { "why": "spawn without cwd", "frame": { "t": "rpc", "reqId": 1, "method": "spawn", "args": { "dir": "C:\\proj", "cols": 60, "rows": 30 } } },
+      { "why": "spawn bad size", "frame": { "t": "rpc", "reqId": 1, "method": "spawn", "args": { "dir": "C:\\proj", "cwd": "C:\\proj", "cols": 0, "rows": 30 } } },
+      { "why": "git.diff bad mode", "frame": { "t": "rpc", "reqId": 1, "method": "git.diff", "args": { "cwd": "C:\\proj", "mode": "all" } } },
+      { "why": "git.fetch without cwd", "frame": { "t": "rpc", "reqId": 1, "method": "git.fetch", "args": {} } }
+    ]
+  },
+  "serverToClient": {
+    "valid": [
+      {
+        "t": "agents",
+        "seq": 1,
+        "desktopUi": true,
+        "list": [
+          { "id": "a1", "label": "proj", "dir": "C:\\proj", "cwd": "C:\\proj", "branch": "main", "status": "busy", "dormant": false },
+          { "id": "a2", "label": "proj (old)", "dir": "C:\\proj", "cwd": "C:\\proj", "branch": "main", "status": "dead", "dormant": true }
+        ]
+      },
+      { "t": "agents", "seq": 2, "desktopUi": false, "list": [] },
+      { "t": "replay", "id": "a1", "lastSeq": 41, "data": "\u001bcprompt> " },
+      { "t": "data", "id": "a1", "seq": 42, "data": "output\r\n" },
+      { "t": "exit", "id": "a1", "exitCode": 0 },
+      { "t": "exit", "id": "a1", "exitCode": null, "error": "spawn failed" },
+      { "t": "rpc-result", "reqId": 4, "ok": true, "result": { "id": "a3" } },
+      { "t": "rpc-result", "reqId": 7, "ok": false, "error": "Unknown agent." }
+    ]
+  }
+}

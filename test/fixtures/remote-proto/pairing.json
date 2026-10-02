@@ -1,0 +1,69 @@
+{
+  "description": "QR pairing payload. encoded = \"ccr1:\" + base64url(JSON). url must be wss:// with an explicit port. token = 64 hex chars. certSha256 = 64 lowercase hex chars, no colons (normalized X509Certificate.fingerprint256).",
+  "valid": [
+    {
+      "payload": {
+        "v": 1,
+        "url": "wss://100.101.102.103:47820",
+        "token": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "certSha256": "a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4"
+      },
+      "encoded": "ccr1:eyJ2IjoxLCJ1cmwiOiJ3c3M6Ly8xMDAuMTAxLjEwMi4xMDM6NDc4MjAiLCJ0b2tlbiI6IjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YiLCJjZXJ0U2hhMjU2IjoiYTFiMmMzZDRhMWIyYzNkNGExYjJjM2Q0YTFiMmMzZDRhMWIyYzNkNGExYjJjM2Q0YTFiMmMzZDRhMWIyYzNkNCJ9"
+    },
+    {
+      "payload": {
+        "v": 1,
+        "url": "wss://myhome.duckdns.org:47820",
+        "token": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "certSha256": "a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4"
+      },
+      "encoded": "ccr1:eyJ2IjoxLCJ1cmwiOiJ3c3M6Ly9teWhvbWUuZHVja2Rucy5vcmc6NDc4MjAiLCJ0b2tlbiI6IjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YiLCJjZXJ0U2hhMjU2IjoiYTFiMmMzZDRhMWIyYzNkNGExYjJjM2Q0YTFiMmMzZDRhMWIyYzNkNGExYjJjM2Q0YTFiMmMzZDRhMWIyYzNkNCJ9"
+    }
+  ],
+  "invalid": [
+    {
+      "why": "wrong prefix",
+      "encoded": "ccr2:eyJ2IjoxLCJ1cmwiOiJ3c3M6Ly8xMDAuMTAxLjEwMi4xMDM6NDc4MjAiLCJ0b2tlbiI6IjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YiLCJjZXJ0U2hhMjU2IjoiYTFiMmMzZDRhMWIyYzNkNGExYjJjM2Q0YTFiMmMzZDRhMWIyYzNkNGExYjJjM2Q0YTFiMmMzZDRhMWIyYzNkNCJ9"
+    },
+    {
+      "why": "not base64 JSON",
+      "encoded": "ccr1:!!!"
+    },
+    {
+      "why": "unsupported version",
+      "encoded": "ccr1:eyJ2IjoyLCJ1cmwiOiJ3c3M6Ly8xMDAuMTAxLjEwMi4xMDM6NDc4MjAiLCJ0b2tlbiI6IjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YiLCJjZXJ0U2hhMjU2IjoiYTFiMmMzZDRhMWIyYzNkNGExYjJjM2Q0YTFiMmMzZDRhMWIyYzNkNGExYjJjM2Q0YTFiMmMzZDRhMWIyYzNkNCJ9"
+    },
+    {
+      "why": "plain ws url",
+      "encoded": "ccr1:eyJ2IjoxLCJ1cmwiOiJ3czovLzEwMC4xMDEuMTAyLjEwMzo0NzgyMCIsInRva2VuIjoiM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZiIsImNlcnRTaGEyNTYiOiJhMWIyYzNkNGExYjJjM2Q0YTFiMmMzZDRhMWIyYzNkNGExYjJjM2Q0YTFiMmMzZDRhMWIyYzNkNGExYjJjM2Q0In0"
+    },
+    {
+      "why": "https url",
+      "encoded": "ccr1:eyJ2IjoxLCJ1cmwiOiJodHRwczovLzEwMC4xMDEuMTAyLjEwMzo0NzgyMCIsInRva2VuIjoiM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZiIsImNlcnRTaGEyNTYiOiJhMWIyYzNkNGExYjJjM2Q0YTFiMmMzZDRhMWIyYzNkNGExYjJjM2Q0YTFiMmMzZDRhMWIyYzNkNGExYjJjM2Q0In0"
+    },
+    {
+      "why": "url without port",
+      "encoded": "ccr1:eyJ2IjoxLCJ1cmwiOiJ3c3M6Ly8xMDAuMTAxLjEwMi4xMDMiLCJ0b2tlbiI6IjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YiLCJjZXJ0U2hhMjU2IjoiYTFiMmMzZDRhMWIyYzNkNGExYjJjM2Q0YTFiMmMzZDRhMWIyYzNkNGExYjJjM2Q0YTFiMmMzZDRhMWIyYzNkNCJ9"
+    },
+    {
+      "why": "short token",
+      "encoded": "ccr1:eyJ2IjoxLCJ1cmwiOiJ3c3M6Ly8xMDAuMTAxLjEwMi4xMDM6NDc4MjAiLCJ0b2tlbiI6ImFiYyIsImNlcnRTaGEyNTYiOiJhMWIyYzNkNGExYjJjM2Q0YTFiMmMzZDRhMWIyYzNkNGExYjJjM2Q0YTFiMmMzZDRhMWIyYzNkNGExYjJjM2Q0In0"
+    },
+    {
+      "why": "non-hex token",
+      "encoded": "ccr1:eyJ2IjoxLCJ1cmwiOiJ3c3M6Ly8xMDAuMTAxLjEwMi4xMDM6NDc4MjAiLCJ0b2tlbiI6Inp6enp6enp6enp6enp6enp6enp6enp6enp6enp6enp6enp6enp6enp6enp6enp6enp6enp6enp6enp6enp6enoiLCJjZXJ0U2hhMjU2IjoiYTFiMmMzZDRhMWIyYzNkNGExYjJjM2Q0YTFiMmMzZDRhMWIyYzNkNGExYjJjM2Q0YTFiMmMzZDRhMWIyYzNkNCJ9"
+    },
+    {
+      "why": "fingerprint with colons",
+      "encoded": "ccr1:eyJ2IjoxLCJ1cmwiOiJ3c3M6Ly8xMDAuMTAxLjEwMi4xMDM6NDc4MjAiLCJ0b2tlbiI6IjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YiLCJjZXJ0U2hhMjU2IjoiQTE6QjIifQ"
+    },
+    {
+      "why": "short fingerprint",
+      "encoded": "ccr1:eyJ2IjoxLCJ1cmwiOiJ3c3M6Ly8xMDAuMTAxLjEwMi4xMDM6NDc4MjAiLCJ0b2tlbiI6IjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YzZjNmM2YiLCJjZXJ0U2hhMjU2IjoiYTFiMiJ9"
+    },
+    {
+      "why": "missing token",
+      "encoded": "ccr1:eyJ2IjoxLCJ1cmwiOiJ3c3M6Ly8xMDAuMTAxLjEwMi4xMDM6NDc4MjAiLCJjZXJ0U2hhMjU2IjoiYTFiMmMzZDRhMWIyYzNkNGExYjJjM2Q0YTFiMmMzZDRhMWIyYzNkNGExYjJjM2Q0YTFiMmMzZDRhMWIyYzNkNCJ9"
+    }
+  ]
+}
