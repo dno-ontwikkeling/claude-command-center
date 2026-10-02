@@ -14,6 +14,7 @@ const ARROWS = { up: 'A', down: 'B', right: 'C', left: 'D' };
 
 /** Bar layout; `ctrl` is a latch applied to the next typed character. */
 export const EXTRA_KEYS = [
+  { id: 'newline', label: '↵ line' },
   { id: 'esc', label: 'Esc' },
   { id: 'ctrl', label: 'Ctrl' },
   { id: 'tab', label: 'Tab' },
@@ -22,7 +23,6 @@ export const EXTRA_KEYS = [
   { id: 'down', label: '↓' },
   { id: 'left', label: '←' },
   { id: 'right', label: '→' },
-  { id: 'newline', label: '↵ line' },
   { id: 'enter', label: 'Enter' },
 ];
 

@@ -14,6 +14,7 @@ import {
 } from './list-model.mjs';
 import { browseFolders } from './folders.mjs';
 import { h, fill } from './dom.mjs';
+import { alertDialog, confirmDialog, promptDialog } from './dialog.mjs';
 
 const FILTER_KEY = 'cc.listFilter';
 function loadFilter() {
@@ -47,7 +48,7 @@ async function run(btn, fn) {
   try {
     await fn();
   } catch (err) {
-    alert((err && err.message) || String(err));
+    alertDialog(errText(err));
   } finally {
     btn.disabled = false;
   }
@@ -76,7 +77,7 @@ function agentRow(a) {
     try {
       await openAgent(a);
     } catch (err) {
-      alert(errText(err));
+      alertDialog(errText(err));
     } finally {
       busy = false;
     }
@@ -105,21 +106,36 @@ const errText = (err) => (err && err.message) || String(err);
 // the PC stops the session and waits for it to exit before deleting anything.
 async function forgetFlow(a) {
   const worktree = a.isMain === false;
-  if (!confirm(`Forget "${a.label}"?\n\nThis stops the session and removes it from Command Center.`)) return;
-  const deleteWorktree = worktree ? confirm(`Also delete the worktree folder?\n\n${a.cwd}`) : false;
-  const deleteBranch = deleteWorktree && a.branch ? confirm(`Also delete the local branch "${a.branch}"?`) : false;
+  const ok = await confirmDialog('This stops the session and removes it from Command Center.', {
+    title: `Forget "${a.label}"?`,
+    confirmLabel: 'Forget',
+    danger: true,
+  });
+  if (!ok) return;
+  const deleteWorktree = worktree
+    ? await confirmDialog(a.cwd, { title: 'Also delete the worktree folder?', confirmLabel: 'Delete', danger: true })
+    : false;
+  const deleteBranch =
+    deleteWorktree && a.branch
+      ? await confirmDialog(a.branch, { title: 'Also delete the local branch?', confirmLabel: 'Delete', danger: true })
+      : false;
   let res = await ctx.rpc.call('agent.forget', { id: a.id, deleteWorktree, deleteBranch, force: false });
   if (res.needsForce) {
-    if (!confirm(`git refused:\n\n${res.error}\n\nForce remove? This discards uncommitted changes.`)) return;
+    const force = await confirmDialog(`${res.error}\n\nForce remove? This discards uncommitted changes.`, {
+      title: 'git refused',
+      confirmLabel: 'Force remove',
+      danger: true,
+    });
+    if (!force) return;
     res = await ctx.rpc.call('agent.forget', { id: a.id, deleteWorktree, deleteBranch, force: true });
   }
   const notes = [res.error, res.cleanupError, res.branchError].filter(Boolean);
-  if (notes.length) alert(notes.join('\n\n'));
+  if (notes.length) await alertDialog(notes.join('\n\n'));
 }
 
 const ACTIONS = {
   rename: async (a) => {
-    const name = prompt('Rename agent', a.label);
+    const name = await promptDialog('Rename agent', a.label, { confirmLabel: 'Rename' });
     if (name === null || !name.trim()) return;
     await ctx.rpc.call('agent.rename', { id: a.id, name: name.trim().slice(0, 80) });
   },
@@ -151,7 +167,7 @@ function openActionsSheet(el, a) {
                 try {
                   await ACTIONS[act.id](a);
                 } catch (err) {
-                  alert(errText(err));
+                  alertDialog(errText(err));
                 }
               },
             },
@@ -210,7 +226,7 @@ async function openNewAgentSheet(el) {
         backdrop.remove();
         openNewAgentSheet(el); // the new project is in the list now
       } catch (err) {
-        alert(errText(err));
+        alertDialog(errText(err));
       }
     };
 
