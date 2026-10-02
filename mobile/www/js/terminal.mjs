@@ -7,7 +7,7 @@ import { termSettings } from './settings-screen.mjs';
 import { xtermOptions } from './term-settings.mjs';
 import { EXTRA_KEYS, keySequence, applyCtrl } from './keys.mjs';
 import { touchDistance, fontSizeFromPinch } from './pinch.mjs';
-import { createLineAccumulator, wheelSequence, createVelocityTracker, momentumStep, WHEEL_LINES } from './touch-scroll.mjs';
+import { createLineAccumulator, wheelSequence, createVelocityTracker, momentumStep, stackVelocity, WHEEL_LINES } from './touch-scroll.mjs';
 import { h } from './dom.mjs';
 
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -172,6 +172,8 @@ screens.terminal = (el, { id }) => {
   let pinch = null;
   let swipe = null;
   let fling = 0; // requestAnimationFrame id
+  let flingV = 0; // current fling speed (px/ms), 0 when still
+  let carried = 0; // speed of the fling a new touch interrupted
   const screenEl = () => host.querySelector('.xterm-screen') || host;
   const lineHeight = () => screenEl().clientHeight / term.rows;
 
@@ -208,6 +210,7 @@ screens.terminal = (el, { id }) => {
   function stopFling() {
     cancelAnimationFrame(fling);
     fling = 0;
+    flingV = 0;
   }
 
   function startFling(s, v) {
@@ -217,15 +220,20 @@ screens.terminal = (el, { id }) => {
       last = now;
       if (!step) return stopFling();
       v = step.v;
+      flingV = v;
       scrollPx(s, step.dy);
       fling = requestAnimationFrame(frame);
     };
+    flingV = v;
     fling = requestAnimationFrame(frame);
   }
 
   host.addEventListener(
     'touchstart',
     (e) => {
+      // Touching a rolling terminal stops it (like native scrolling); a
+      // flick that follows in the same direction picks the speed back up.
+      carried = flingV;
       stopFling();
       if (e.touches.length === 2) {
         swipe = null;
@@ -264,10 +272,11 @@ screens.terminal = (el, { id }) => {
     (e) => {
       if (e.touches.length) return;
       if (swipe) {
-        const v = swipe.vel.velocity(e.timeStamp);
+        const v = stackVelocity(carried, swipe.vel.velocity(e.timeStamp));
         if (v) startFling(swipe, v);
         swipe = null;
       }
+      carried = 0;
       if (!pinch) return;
       pinch = null;
       termSettings.update({ fontSize: term.options.fontSize });

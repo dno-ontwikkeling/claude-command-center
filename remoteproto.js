@@ -72,6 +72,43 @@ function parseClientFrame(raw) {
 // Who last sized each pty, and at what size. One pty has one size, so the
 // last-active client (desktop or remote) owns it. request() says whether the
 // pty actually needs resizing, so an unchanged size never triggers a redraw.
+// DEC private modes a phone must know to show and drive the app correctly.
+// Apps switch them on once at startup, long before what the ring buffer still
+// holds, so replay re-sends the ones that are on: alternate screen, mouse
+// tracking + encoding, bracketed paste, focus reports.
+const REPLAY_MODES = [1049, 1047, 47, 1000, 1002, 1003, 1005, 1006, 1015, 2004, 1004];
+const MODE_SEQ = /\x1b\[\?([\d;]+)([hl])/g;
+
+function createModeTracker() {
+  const on = new Set();
+  let carry = '';
+  return {
+    feed(data) {
+      const text = carry + data;
+      MODE_SEQ.lastIndex = 0;
+      let m;
+      let end = 0;
+      while ((m = MODE_SEQ.exec(text))) {
+        for (const p of m[1].split(';')) {
+          const mode = Number(p);
+          if (!REPLAY_MODES.includes(mode)) continue;
+          if (m[2] === 'h') on.add(mode);
+          else on.delete(mode);
+        }
+        end = MODE_SEQ.lastIndex;
+      }
+      // Keep a possibly incomplete sequence at the end for the next chunk.
+      const esc = text.lastIndexOf('\x1b');
+      carry = esc >= end && text.length - esc < 32 ? text.slice(esc) : '';
+    },
+    prefix() {
+      return REPLAY_MODES.filter((mode) => on.has(mode))
+        .map((mode) => `\x1b[?${mode}h`)
+        .join('');
+    },
+  };
+}
+
 function createSizeTracker() {
   const sizes = new Map(); // id -> { owner, cols, rows }
   return {
@@ -100,6 +137,7 @@ function createSizeTracker() {
 //   resize(id, cols, rows, owner) - resize via the size tracker
 //   sizeOwner(id)            - current size owner ('desktop' | 'remote' | null)
 //   releaseSize(id)          - this client stopped viewing the pty: hand its size back
+//   modePrefix(id)           - escape sequences re-enabling the app's terminal modes
 //   getAgents()              - current { seq, desktopUi, list }
 //   rpc(method, args)        - Promise of the result; rejects with an Error to report
 //   log                      - { warn, info }
@@ -144,7 +182,7 @@ function createConnectionHandler(deps) {
     const buf = deps.getBuffer(id);
     const { data, lastSeq } = buf ? buf.snapshot() : { data: '', lastSeq: 0 };
     attached.set(id, { lastSeq, cols, rows });
-    safeSend({ t: 'replay', id, lastSeq, data: RESET + data });
+    safeSend({ t: 'replay', id, lastSeq, data: RESET + deps.modePrefix(id) + data });
   }
 
   async function rpc({ reqId, method, args }) {
@@ -208,6 +246,7 @@ module.exports = {
   parseClientFrame,
   createConnectionHandler,
   createSizeTracker,
+  createModeTracker,
   RPC_METHODS: Object.keys(RPC_ARGS),
   MAX_INPUT_CHARS,
 };

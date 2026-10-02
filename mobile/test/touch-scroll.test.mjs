@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createLineAccumulator, wheelSequence, createVelocityTracker, momentumStep, WHEEL_LINES } from '../www/js/touch-scroll.mjs';
+import { createLineAccumulator, wheelSequence, createVelocityTracker, momentumStep, stackVelocity, MAX_VELOCITY, WHEEL_LINES } from '../www/js/touch-scroll.mjs';
 
 test('finger moving up scrolls forward by whole lines, keeps the remainder', () => {
   const acc = createLineAccumulator(20);
@@ -80,4 +80,20 @@ test('momentum decays and stops', () => {
 
 test('momentum ignores slow releases', () => {
   assert.equal(momentumStep(0.01, 16), null);
+});
+
+test('a second flick in the same direction while rolling adds speed', () => {
+  assert.equal(stackVelocity(1.5, 2), 3.5);
+  assert.equal(stackVelocity(-1, -2), -3);
+});
+
+test('a flick the other way, or a tap, does not inherit the old speed', () => {
+  assert.equal(stackVelocity(2, -1), -1);
+  assert.equal(stackVelocity(2, 0), 0); // tap stops the roll
+  assert.equal(stackVelocity(0, 2), 2);
+});
+
+test('stacked speed is capped', () => {
+  assert.equal(stackVelocity(MAX_VELOCITY, MAX_VELOCITY), MAX_VELOCITY);
+  assert.equal(stackVelocity(-MAX_VELOCITY, -1), -MAX_VELOCITY);
 });

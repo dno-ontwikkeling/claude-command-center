@@ -39,7 +39,7 @@ const {
   resolveDiffBase,
 } = require('./gitops');
 const { createRingBuffer } = require('./ringbuffer');
-const { createConnectionHandler, createSizeTracker } = require('./remoteproto');
+const { createConnectionHandler, createSizeTracker, createModeTracker } = require('./remoteproto');
 const transcript = require('./transcript');
 const { createRemoteServer } = require('./remoteserver');
 const { loadOrCreateCert, regenerateCert } = require('./remotecert');
@@ -71,6 +71,7 @@ const agentSecret = (id) => hookAuth.agentSecret(HOOK_SECRET, id);
 // exits as ('exit', id, info); agent-list snapshots as ('agents', frame). Each
 // remote connection (remoteproto.js) subscribes to the hub.
 const scrollback = new Map(); // agentId -> ring buffer
+const termModes = new Map(); // agentId -> mode tracker (replayed to the phone)
 const remoteHub = new EventEmitter();
 remoteHub.setMaxListeners(0); // one listener set per connected phone
 // One pty has one size: the last-active client (desktop or remote) owns it.
@@ -378,15 +379,19 @@ function spawnAgent(id, cwd, opts = {}) {
 
   const buf = createRingBuffer();
   scrollback.set(id, buf);
+  const modes = createModeTracker();
+  termModes.set(id, modes);
   ptySizes.request(id, sized ? 'remote' : 'desktop', cols, rows);
 
   term.onData((data) => {
     sendToRenderer('agent:data', { id, data });
+    modes.feed(data);
     remoteHub.emit('data', id, buf.append(data), data);
   });
   term.onExit(({ exitCode } = {}) => {
     agents.delete(id);
     scrollback.delete(id);
+    termModes.delete(id);
     ptySizes.forget(id);
     sendToRenderer('agent:exit', { id, exitCode });
     remoteHub.emit('exit', id, { exitCode });
@@ -1042,6 +1047,7 @@ async function startRemote() {
           resize: resizeAgent,
           sizeOwner: (id) => ptySizes.owner(id),
           releaseSize,
+          modePrefix: (id) => termModes.get(id)?.prefix() ?? '',
           getAgents: () => remoteAgents,
           rpc: remoteRpc,
           log,

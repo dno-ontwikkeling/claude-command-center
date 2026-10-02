@@ -4,7 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const { EventEmitter } = require('events');
-const { parseClientFrame, createConnectionHandler, createSizeTracker } = require('../remoteproto');
+const { parseClientFrame, createConnectionHandler, createSizeTracker, createModeTracker } = require('../remoteproto');
 const { createRingBuffer } = require('../ringbuffer');
 
 const frames = require(path.join(__dirname, 'fixtures', 'remote-proto', 'frames.json'));
@@ -56,7 +56,7 @@ test('size tracker resizes only when the size changes, and tracks the owner', ()
 
 // ---- connection handler ---------------------------------------------------
 
-function setup({ agents = { seq: 1, desktopUi: true, list: [] }, rpc } = {}) {
+function setup({ agents = { seq: 1, desktopUi: true, list: [] }, rpc, modePrefix } = {}) {
   const hub = new EventEmitter();
   const buffers = new Map();
   const sent = [];
@@ -85,6 +85,7 @@ function setup({ agents = { seq: 1, desktopUi: true, list: [] }, rpc } = {}) {
     },
     sizeOwner: (id) => owners.get(id) || null,
     releaseSize: (id) => released.push(id),
+    modePrefix: modePrefix || (() => ''),
     getAgents: () => agents,
     rpc: rpc || (async () => ({})),
     log: { warn: () => {}, info: () => {} },
@@ -265,4 +266,33 @@ test('closing the connection hands back the size of every attached pty', () => {
 test('transcript rpc needs an agent id', () => {
   assert.equal(parseClientFrame(JSON.stringify({ t: 'rpc', reqId: 1, method: 'transcript', args: { id: 'a1' } })).ok, true);
   assert.equal(parseClientFrame(JSON.stringify({ t: 'rpc', reqId: 1, method: 'transcript', args: {} })).ok, false);
+});
+
+test('mode tracker remembers DEC private modes the app switched on', () => {
+  const m = createModeTracker();
+  m.feed('\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h\x1b[?2004h');
+  m.feed('\x1b[?1002l'); // switched off again
+  assert.equal(m.prefix(), '\x1b[?1049h\x1b[?1000h\x1b[?1003h\x1b[?1006h\x1b[?2004h');
+});
+
+test('mode tracker handles combined params and sequences split across chunks', () => {
+  const m = createModeTracker();
+  m.feed('text\x1b[?10');
+  m.feed('49;1006h more');
+  assert.equal(m.prefix(), '\x1b[?1049h\x1b[?1006h');
+});
+
+test('mode tracker ignores modes outside the replay list (cursor, etc.)', () => {
+  const m = createModeTracker();
+  m.feed('\x1b[?25l\x1b[?12h');
+  assert.equal(m.prefix(), '');
+});
+
+test('attach replays the tracked modes right after the reset', () => {
+  const { h, sent, addPty, emitData } = setup({ modePrefix: () => '\x1b[?1049h\x1b[?1003h' });
+  addPty('a1');
+  emitData('a1', 'screen');
+  h.onMessage(JSON.stringify({ t: 'attach', id: 'a1', cols: 60, rows: 30 }));
+  const replay = sent.find((m) => m.t === 'replay');
+  assert.equal(replay.data, '\x1bc\x1b[?1049h\x1b[?1003hscreen');
 });

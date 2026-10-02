@@ -67,3 +67,15 @@ export function momentumStep(v, dtMs) {
   if (!Number.isFinite(v) || Math.abs(v) < MIN_VELOCITY) return null;
   return { dy: v * dtMs, v: v * Math.exp(-dtMs / FRICTION_MS) };
 }
+
+// Fastest fling (px/ms), so stacked flicks can't spin the pty into a flood.
+export const MAX_VELOCITY = 8;
+
+// Native fling feel: flicking again in the same direction while the content
+// is still rolling adds to its speed; a flick the other way or a tap (0)
+// starts fresh.
+export function stackVelocity(rolling, flick) {
+  const same = rolling && flick && Math.sign(rolling) === Math.sign(flick);
+  const v = same ? rolling + flick : flick;
+  return Math.max(-MAX_VELOCITY, Math.min(MAX_VELOCITY, v));
+}

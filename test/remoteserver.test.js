@@ -89,6 +89,7 @@ async function startServer(overrides = {}) {
         resize: () => {},
         sizeOwner: () => 'remote',
         releaseSize: () => {},
+        modePrefix: () => '',
         getAgents: () => ({ seq: 1, desktopUi: true, list: [] }),
         rpc: async () => ({}),
         log: quietLog,
