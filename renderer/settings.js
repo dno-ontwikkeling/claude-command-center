@@ -351,6 +351,18 @@ els.setRemotePair.addEventListener('click', async () => {
   els.setRemotePair.textContent = 'Hide pairing QR';
 });
 
+// Same secret as the QR, as text: for pairing an emulator or pasting on the phone.
+els.setRemoteCopy.addEventListener('click', async () => {
+  const res = await window.api.getRemotePairing();
+  if (res.error || !res.code) {
+    await confirmDialog('Pairing unavailable', res.error || 'Could not create the pairing code.', { alert: true });
+    return;
+  }
+  window.api.writeClipboard(res.code);
+  els.setRemoteCopy.textContent = 'Copied';
+  setTimeout(() => (els.setRemoteCopy.textContent = 'Copy linking code'), 1500);
+});
+
 els.setRemoteKick.addEventListener('click', async () => {
   renderRemote(await window.api.disconnectRemoteClients());
 });

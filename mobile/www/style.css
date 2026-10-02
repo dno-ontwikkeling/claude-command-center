@@ -496,3 +496,14 @@ button.file {
 .term-host {
   touch-action: none;
 }
+
+textarea.link-code {
+  width: 100%;
+  font: 13px/1.4 monospace;
+  color: var(--fg);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  word-break: break-all;
+}

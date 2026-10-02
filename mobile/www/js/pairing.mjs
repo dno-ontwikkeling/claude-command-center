@@ -14,7 +14,8 @@ function base64UrlToText(s) {
 }
 
 export function decodePairing(code) {
-  const s = String(code ?? '').trim();
+  // Strip all whitespace: a pasted linking code may be wrapped over lines.
+  const s = String(code ?? '').replace(/\s+/g, '');
   if (!s.startsWith(PREFIX)) throw new Error('Not a Command Center pairing code.');
   let p;
   try {

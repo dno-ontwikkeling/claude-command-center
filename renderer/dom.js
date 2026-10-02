@@ -43,6 +43,7 @@ export const els = {
   setRemoteQr: document.getElementById('set-remote-qr'),
   setRemoteQrImg: document.getElementById('set-remote-qr-img'),
   setRemoteQrUrl: document.getElementById('set-remote-qr-url'),
+  setRemoteCopy: document.getElementById('set-remote-copy'),
   setRemoteClients: document.getElementById('set-remote-clients'),
   promptsBtn: document.getElementById('prompts-btn'),
   promptsMgr: document.getElementById('prompts-mgr'),

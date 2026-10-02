@@ -46,16 +46,11 @@ link.onNotificationTap((agentId) => {
 
 // ---- pairing ----------------------------------------------------------------
 
-async function scanAndPair(status) {
+// `getCode` returns the pairing code: from the QR scanner, or typed/pasted.
+async function pair(status, getCode) {
   status.textContent = '';
   try {
-    const { ScanResult } = await Scanner.scanBarcode({
-      hint: QR_CODE,
-      scanInstructions: 'Scan the QR code in Command Center → Settings → Remote',
-      scanButton: false,
-      android: { scanningLibrary: 'zxing' }, // works without Google Play services
-    });
-    const pairing = decodePairing(ScanResult);
+    const pairing = decodePairing(await getCode());
     status.textContent = `${describePairing(pairing)}…`;
     await link.requestNotificationPermission();
     await link.connect(pairing);
@@ -68,8 +63,26 @@ async function scanAndPair(status) {
   }
 }
 
+async function scanCode() {
+  const { ScanResult } = await Scanner.scanBarcode({
+    hint: QR_CODE,
+    scanInstructions: 'Scan the QR code in Command Center → Settings → Remote',
+    scanButton: false,
+    android: { scanningLibrary: 'zxing' }, // works without Google Play services
+  });
+  return ScanResult;
+}
+
 screens.pairing = (el, { reason } = {}) => {
   const status = h('p', { class: 'status error' });
+  const codeInput = h('textarea', {
+    class: 'link-code',
+    rows: 3,
+    placeholder: 'ccr1:…',
+    autocapitalize: 'off',
+    autocomplete: 'off',
+    spellcheck: false,
+  });
   el.append(
     h(
       'section',
@@ -78,7 +91,10 @@ screens.pairing = (el, { reason } = {}) => {
       reason === 'auth-failed'
         ? h('p', { class: 'warn' }, 'Your PC no longer accepts this phone (pairing regenerated). Scan the new QR code.')
         : h('p', {}, 'Open Command Center on your PC → Settings → Remote, turn on remote access and show the pairing QR.'),
-      h('button', { class: 'primary', onclick: () => scanAndPair(status) }, 'Scan pairing QR'),
+      h('button', { class: 'primary', onclick: () => pair(status, scanCode) }, 'Scan pairing QR'),
+      h('p', { class: 'muted' }, 'Or paste the linking code (PC: Copy linking code):'),
+      codeInput,
+      h('button', { onclick: () => pair(status, () => codeInput.value) }, 'Link with code'),
       status,
     ),
   );

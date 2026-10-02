@@ -33,3 +33,9 @@ test('describePairing shows where the phone will connect, never the token', () =
   assert.match(text, /100\.101\.102\.103:47820/);
   assert.ok(!text.includes(payload.token));
 });
+
+test('tolerates a pasted code wrapped over several lines', () => {
+  const { payload, encoded } = pairing.valid[0];
+  const wrapped = encoded.match(/.{1,20}/g).join('\n  ');
+  assert.deepEqual(decodePairing(` ${wrapped}\n`), payload);
+});
