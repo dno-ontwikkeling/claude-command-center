@@ -491,3 +491,8 @@ button.file {
 .toast.error {
   border-color: var(--danger);
 }
+
+/* Touch scrolling and pinch are handled in terminal.mjs. */
+.term-host {
+  touch-action: none;
+}

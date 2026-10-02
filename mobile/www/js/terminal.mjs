@@ -7,6 +7,7 @@ import { termSettings } from './settings-screen.mjs';
 import { xtermOptions } from './term-settings.mjs';
 import { EXTRA_KEYS, keySequence, applyCtrl } from './keys.mjs';
 import { touchDistance, fontSizeFromPinch } from './pinch.mjs';
+import { createLineAccumulator, wheelSequence } from './touch-scroll.mjs';
 import { h } from './dom.mjs';
 
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -163,34 +164,68 @@ screens.terminal = (el, { id }) => {
   const offSettings = termSettings.subscribe(applySettings);
   darkQuery.addEventListener('change', applySettings);
 
-  // Pinch to zoom: live preview while pinching, persisted on release.
+  // Touch: one finger scrolls, two fingers pinch-zoom (live preview,
+  // persisted on release). Capture phase + preventDefault so neither the
+  // WebView nor xterm's own (unreliable) touch handling also reacts.
   let pinch = null;
+  let swipe = null;
+  const lineHeight = () => (host.querySelector('.xterm-screen')?.clientHeight || host.clientHeight) / term.rows;
+
+  function scrollBy(lines) {
+    if (!lines) return;
+    // Full-screen apps that track the mouse get wheel events; otherwise
+    // scroll our own scrollback.
+    if (term.buffer.active.type === 'alternate' && term.modes.mouseTrackingMode !== 'none') {
+      if (attached) send(inputFrame(id, wheelSequence(lines)));
+    } else {
+      term.scrollLines(lines);
+    }
+  }
+
   host.addEventListener(
     'touchstart',
     (e) => {
       if (e.touches.length === 2) {
+        swipe = null;
         pinch = { dist: touchDistance(e.touches[0], e.touches[1]), size: term.options.fontSize };
+      } else if (e.touches.length === 1 && !pinch) {
+        swipe = { y: e.touches[0].clientY, acc: createLineAccumulator(lineHeight()) };
       }
     },
-    { passive: true },
+    { capture: true, passive: true },
   );
   host.addEventListener(
     'touchmove',
     (e) => {
-      if (!pinch || e.touches.length !== 2) return;
-      const size = fontSizeFromPinch(pinch.size, touchDistance(e.touches[0], e.touches[1]) / pinch.dist);
-      if (size !== term.options.fontSize) {
-        term.options.fontSize = size;
-        refit();
+      if (pinch && e.touches.length === 2) {
+        e.preventDefault();
+        e.stopPropagation();
+        const size = fontSizeFromPinch(pinch.size, touchDistance(e.touches[0], e.touches[1]) / pinch.dist);
+        if (size !== term.options.fontSize) {
+          term.options.fontSize = size;
+          refit();
+        }
+      } else if (swipe && e.touches.length === 1) {
+        e.preventDefault();
+        e.stopPropagation();
+        const y = e.touches[0].clientY;
+        scrollBy(swipe.acc.move(y - swipe.y));
+        swipe.y = y;
       }
     },
-    { passive: true },
+    { capture: true, passive: false },
   );
-  host.addEventListener('touchend', () => {
-    if (!pinch) return;
-    pinch = null;
-    termSettings.update({ fontSize: term.options.fontSize });
-  });
+  host.addEventListener(
+    'touchend',
+    (e) => {
+      if (e.touches.length) return;
+      swipe = null;
+      if (!pinch) return;
+      pinch = null;
+      termSettings.update({ fontSize: term.options.fontSize });
+    },
+    { capture: true },
+  );
 
   host.addEventListener('click', () => term.focus());
   requestAnimationFrame(() => {
