@@ -39,7 +39,8 @@ const api = {
   gitDiffStat: (cwd) => ipcRenderer.invoke('git:diffstat', cwd),
   gitDiff: (cwd, mode) => ipcRenderer.invoke('git:diff', { cwd, mode }),
   gitBranch: (cwd) => ipcRenderer.invoke('git:branch', cwd),
-  gitDeleteBranch: (dir, branch) => ipcRenderer.invoke('git:delete-branch', { dir, branch }),
+  gitDeleteBranch: (dir, branch, { noPrompt = false } = {}) =>
+    ipcRenderer.invoke('git:delete-branch', { dir, branch, noPrompt }),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   openInVS: (cwd) => ipcRenderer.invoke('vs:open', cwd),
   openInVSCode: (cwd) => ipcRenderer.invoke('code:open', cwd),
@@ -68,6 +69,8 @@ const api = {
   onExit: (cb) => ipcRenderer.on('agent:exit', (_e, p) => cb(p)),
   onEvent: (cb) => ipcRenderer.on('agent:event', (_e, p) => cb(p)),
   onSizeOwner: (cb) => ipcRenderer.on('agent:sizeOwner', (_e, p) => cb(p)),
+  // A project or workspace was added from the phone: re-read the lists.
+  onProjectsChanged: (cb) => ipcRenderer.on('projects:changed', () => cb()),
 
   // remote access (phone app)
   getRemoteConfig: () => ipcRenderer.invoke('remote:getConfig'),

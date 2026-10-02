@@ -18,6 +18,7 @@ export function buildRemoteSnapshot(agents, dormant, displayLabel) {
       dir: a.dir,
       cwd: a.cwd,
       branch: a.branch ?? null,
+      isMain: a.isMain !== false,
       status: a.status || 'busy',
       dormant: false,
     });
@@ -29,6 +30,7 @@ export function buildRemoteSnapshot(agents, dormant, displayLabel) {
       dir: d.dir,
       cwd: d.cwd,
       branch: d.branch ?? null,
+      isMain: d.isMain !== false,
       status: 'dead',
       dormant: true,
     });

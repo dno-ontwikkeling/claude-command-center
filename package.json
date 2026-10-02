@@ -46,6 +46,7 @@
       "remotecert.js",
       "remoteserver.js",
       "transcript.js",
+      "remotefs.js",
       "build/icon.png",
       "renderer/**",
       "hooks/**",

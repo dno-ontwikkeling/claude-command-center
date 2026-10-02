@@ -41,6 +41,7 @@ onAgentsChanged(() => {
 loadDormant(); // resumable sessions from the previous run, shown as dormant rows
 startRemoteSync(); // first agents snapshot for the phone app, dormant rows included
 refreshProjects().then(syncWatch);
+window.api.onProjectsChanged(() => refreshProjects());
 
 // A git change in a watched repo (branch switch, commit, staging) pushes here.
 // `payload.dir` is the single dir that fired (main coalesces bursts within its

@@ -64,3 +64,32 @@ export function estimateTermSize(width, height, fontSize) {
   const clamp = (n) => Math.min(500, Math.max(2, Math.floor(n)));
   return { cols: clamp(width / (fontSize * 0.6)), rows: clamp(height / (fontSize * 1.2)) };
 }
+
+export const FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'active', label: 'Active' },
+  { id: 'closed', label: 'Closed' },
+];
+
+/** 'active' = running agents, 'closed' = resumable sessions; anything else = all. */
+export function filterAgents(list, filter) {
+  if (filter === 'active') return list.filter((a) => !a.dormant);
+  if (filter === 'closed') return list.filter((a) => a.dormant);
+  return list;
+}
+
+/** The row menu, same entries as the desktop sidebar's kebab menus. */
+export function agentActions(a) {
+  if (a.dormant) {
+    return [
+      { id: 'resume', label: 'Resume' },
+      { id: 'forget', label: 'Forget session', danger: true },
+    ];
+  }
+  return [
+    { id: 'rename', label: 'Rename' },
+    // Only a separate worktree has a folder of its own to delete.
+    ...(a.isMain === false ? [{ id: 'deleteWorktree', label: 'Delete worktree', danger: true }] : []),
+    { id: 'close', label: 'Close', danger: true },
+  ];
+}

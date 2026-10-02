@@ -575,3 +575,41 @@ textarea.link-code {
   color: var(--fg);
   font-weight: 600;
 }
+
+/* ---- list filter + row menu + folder browser ---- */
+.filters {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0 2px;
+}
+
+button.chip {
+  min-height: 34px;
+  padding: 4px 14px;
+  border-radius: 17px;
+  font-size: 13px;
+}
+
+button.chip.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+li.agent button.more {
+  min-width: 36px;
+  padding: 6px 8px;
+}
+
+.folder-path {
+  font: 12px/1.4 monospace;
+  overflow-wrap: anywhere;
+}
+
+ul.pick button.danger {
+  color: var(--danger);
+}
+
+li.pick-extra {
+  margin-top: 16px;
+}

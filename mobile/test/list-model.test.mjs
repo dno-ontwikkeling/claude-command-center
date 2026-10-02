@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
+import { filterAgents, agentActions,
   groupAgents,
   bannerFor,
   statusText,
@@ -76,4 +76,23 @@ test('estimateTermSize gives protocol-valid cols/rows for a phone viewport', () 
   assert.ok(Number.isInteger(rows) && rows >= 30 && rows <= 70, `rows ${rows}`);
   const tiny = estimateTermSize(1, 1, 24);
   assert.ok(tiny.cols >= 2 && tiny.rows >= 2);
+});
+
+test('filterAgents: all, active (running) or closed (resumable)', () => {
+  const list = [
+    { id: 'a', dormant: false },
+    { id: 'b', dormant: true },
+    { id: 'c', dormant: false },
+  ];
+  assert.deepEqual(filterAgents(list, 'all').map((a) => a.id), ['a', 'b', 'c']);
+  assert.deepEqual(filterAgents(list, 'active').map((a) => a.id), ['a', 'c']);
+  assert.deepEqual(filterAgents(list, 'closed').map((a) => a.id), ['b']);
+  assert.deepEqual(filterAgents(list, 'bogus').map((a) => a.id), ['a', 'b', 'c']);
+});
+
+test('agentActions mirror the desktop menus', () => {
+  const ids = (a) => agentActions(a).map((x) => x.id);
+  assert.deepEqual(ids({ dormant: false, isMain: true }), ['rename', 'close']);
+  assert.deepEqual(ids({ dormant: false, isMain: false }), ['rename', 'deleteWorktree', 'close']);
+  assert.deepEqual(ids({ dormant: true, isMain: false }), ['resume', 'forget']);
 });

@@ -24,6 +24,9 @@ const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const isId = (v) => typeof v === 'string' && v.length > 0 && v.length <= MAX_ID;
 const isPath = (v) => typeof v === 'string' && v.length > 0 && v.length <= MAX_PATH;
 const isDim = (v) => Number.isInteger(v) && v >= MIN_DIM && v <= MAX_DIM;
+const isBool = (v) => typeof v === 'boolean';
+// A display name: 1-80 chars, no control characters.
+const isName = (v) => typeof v === 'string' && v.trim().length > 0 && v.length <= 80 && !/[\x00-\x1f\x7f]/.test(v);
 
 // Per-method argument validators. A method missing here is not callable.
 const RPC_ARGS = {
@@ -39,6 +42,12 @@ const RPC_ARGS = {
   'git.fetch': (a) => isPath(a.cwd),
   'git.pull': (a) => isPath(a.cwd),
   transcript: (a) => isId(a.id),
+  'agent.rename': (a) => isId(a.id) && isName(a.name),
+  'agent.forget': (a) => isId(a.id),
+  'worktree.delete': (a) => isId(a.id) && isBool(a.deleteBranch) && isBool(a.force),
+  'fs.list': (a) => a.path === undefined || isPath(a.path),
+  'project.add': (a) => isPath(a.dir),
+  'workspace.create': (a) => isPath(a.parent) && isBool(a.useParent) && (a.name === undefined || isName(a.name)),
 };
 
 const FRAME_RULES = {

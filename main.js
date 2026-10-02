@@ -41,6 +41,7 @@ const {
 const { createRingBuffer } = require('./ringbuffer');
 const { createConnectionHandler, createSizeTracker, createModeTracker } = require('./remoteproto');
 const transcript = require('./transcript');
+const remotefs = require('./remotefs');
 const { createRemoteServer } = require('./remoteserver');
 const { loadOrCreateCert, regenerateCert } = require('./remotecert');
 const remoteAuth = require('./remoteauth');
@@ -537,6 +538,48 @@ function watchGitDirs(dirs) {
 // IPC
 // ---------------------------------------------------------------------------
 
+// Register a folder as a project (desktop picker or phone). Idempotent.
+function addProjectDir(dir) {
+  const projects = loadProjects();
+  if (!projects.some((p) => normPath(p.dir) === normPath(dir))) {
+    invalidateProjectType(dir); // re-scan a (possibly re-added) dir fresh
+    projects.push({ dir, name: path.basename(dir) });
+    saveProjects(projects);
+  }
+  return projects;
+}
+
+// Register a workspace. `useParent` uses `parent` as-is (an existing folder
+// becomes the workspace); otherwise `name` is created as a subfolder
+// `parent/name`. Returns the enriched record, or { canceled } / { error }.
+function createWorkspace({ parent, name, useParent } = {}) {
+  if (!parent) return { canceled: true };
+  name = (typeof name === 'string' ? name : '').trim() || path.basename(parent);
+  let dir;
+  if (useParent) {
+    dir = parent;
+  } else {
+    // name becomes a path segment here, so reject shell metacharacters that
+    // could leak through when the dir is later used as a cwd.
+    if (hasShellMeta(name)) {
+      return { error: 'Workspace name contains unsafe characters (& | ; < > ( ) ! ^ % $ " \' `).' };
+    }
+    dir = path.join(parent, name.replace(/[/\\]/g, '-'));
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch (err) {
+      return { error: errMsg(err).trim() };
+    }
+  }
+  const list = loadWorkspaces();
+  if (!list.some((w) => normPath(w.dir) === normPath(dir))) {
+    invalidateProjectType(dir); // fresh dir — drop any stale cached type
+    list.push({ dir, name });
+    saveWorkspaces(list);
+  }
+  return enrich({ dir, name });
+}
+
 function registerIpc() {
   ipcMain.on('watch:set', (_e, dirs) => watchGitDirs(dirs));
 
@@ -566,17 +609,10 @@ function registerIpc() {
       properties: ['openDirectory'],
     });
     if (canceled || !filePaths[0]) return loadProjects().map(enrich);
-    const projects = loadProjects();
-    const dir = filePaths[0];
-    if (!projects.some((p) => normPath(p.dir) === normPath(dir))) {
-      invalidateProjectType(dir); // re-scan a (possibly re-added) dir fresh
-      projects.push({ dir, name: path.basename(dir) });
-      saveProjects(projects);
-    }
     // Return enriched (isGit/type) so the sidebar keeps its icons immediately,
     // rather than dropping them until the next 15s poll — parity with
     // projects:list / :reorder / the workspace handlers.
-    return projects.map(enrich);
+    return addProjectDir(filePaths[0]).map(enrich);
   });
 
   ipcMain.handle('projects:remove', (_e, dir) => {
@@ -606,33 +642,8 @@ function registerIpc() {
   // (an existing folder becomes the workspace); otherwise `name` is created as
   // a subfolder `parent/name`. Returns the enriched record, or { canceled }/
   // { error }.
-  ipcMain.handle('workspaces:create', async (_e, { parent, name, useParent } = {}) => {
-    if (!parent) return { canceled: true };
-    name = (typeof name === 'string' ? name : '').trim() || path.basename(parent);
-    let dir;
-    if (useParent) {
-      dir = parent;
-    } else {
-      // name becomes a path segment here, so reject shell metacharacters that
-      // could leak through when the dir is later used as a cwd.
-      if (hasShellMeta(name)) {
-        return { error: 'Workspace name contains unsafe characters (& | ; < > ( ) ! ^ % $ " \' `).' };
-      }
-      dir = path.join(parent, name.replace(/[/\\]/g, '-'));
-      try {
-        fs.mkdirSync(dir, { recursive: true });
-      } catch (err) {
-        return { error: errMsg(err).trim() };
-      }
-    }
-    const list = loadWorkspaces();
-    if (!list.some((w) => normPath(w.dir) === normPath(dir))) {
-      invalidateProjectType(dir); // fresh dir — drop any stale cached type
-      list.push({ dir, name });
-      saveWorkspaces(list);
-    }
-    return enrich({ dir, name });
-  });
+  ipcMain.handle('workspaces:create', (_e, opts = {}) => createWorkspace(opts));
+
 
   // `deleteFolder` also wipes the folder from disk. Only a registered workspace
   // dir is ever deleted (never an arbitrary renderer-supplied path), and never a
@@ -796,7 +807,9 @@ function registerIpc() {
   // `-d` first — git refuses if the branch has commits not merged into its
   // upstream/HEAD, which `-D` would orphan. Only on that refusal do we surface a
   // clear warning and, if the user confirms, escalate to the destructive `-D`.
-  ipcMain.handle('git:delete-branch', async (_e, { dir, branch }) => {
+  // `noPrompt` (phone): never show the force-delete dialog on the PC, where
+  // nobody may be watching; an unmerged branch is just kept and reported.
+  ipcMain.handle('git:delete-branch', async (_e, { dir, branch, noPrompt }) => {
     if (!isKnownDir(dir)) return { ok: false, error: 'Unknown directory.' };
     // `--` ends option parsing before the positional branch name; a leading
     // '-' in `branch` is rejected up front too (belt-and-braces, see
@@ -807,6 +820,7 @@ function registerIpc() {
     // Anything other than the "not fully merged" refusal is a real failure the
     // user should see as-is (branch missing, still checked out elsewhere, …).
     if (!/not fully merged/i.test(safe.error || '')) return safe;
+    if (noPrompt) return { ok: false, error: `Branch "${branch}" has unmerged commits, so it was kept.` };
 
     const { response } = await dialog.showMessageBox(mainWindow, {
       type: 'warning',
@@ -1110,6 +1124,7 @@ function sanitizeAgent(a) {
     dir: str(a && a.dir),
     cwd: str(a && a.cwd),
     branch: a && typeof a.branch === 'string' ? a.branch : null,
+    isMain: !(a && a.isMain === false),
     status: str(a && a.status),
     dormant: !!(a && a.dormant),
   };
@@ -1117,7 +1132,7 @@ function sanitizeAgent(a) {
 
 // Invoke-style round trip to the renderer: it runs spawn/resume/kill and
 // answers on 'remote:command-result'.
-function rendererCommand(op, args) {
+function rendererCommand(op, args, { timeoutMs = RENDERER_COMMAND_TIMEOUT_MS } = {}) {
   if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
     return Promise.reject(new Error('Desktop window is not available.'));
   }
@@ -1126,7 +1141,7 @@ function rendererCommand(op, args) {
     const timer = setTimeout(() => {
       pendingCommands.delete(reqId);
       reject(new Error('Desktop did not respond.'));
-    }, RENDERER_COMMAND_TIMEOUT_MS);
+    }, timeoutMs);
     pendingCommands.set(reqId, { resolve, reject, timer });
     sendToRenderer('remote:command', { reqId, op, args });
   });
@@ -1162,6 +1177,25 @@ const REMOTE_RPC = {
   'git.diff': ({ cwd, mode }) => gitDiff(cwd, mode),
   'git.fetch': ({ cwd }) => gitFetch(cwd),
   'git.pull': ({ cwd }) => gitPull(cwd),
+  'agent.rename': ({ id, name }) => rendererCommand('rename', { id, name: name.trim() }),
+  'agent.forget': ({ id }) => rendererCommand('forget', { id }),
+  // Kills the agent, waits for it to exit and runs git: far over 5s.
+  'worktree.delete': ({ id, deleteBranch, force }) =>
+    rendererCommand('deleteWorktree', { id, deleteBranch, force }, { timeoutMs: 120000 }),
+  'fs.list': ({ path: p }) => remotefs.listDirs(p),
+  'project.add': async ({ dir }) => {
+    if (!(await remotefs.isDirectory(dir))) throw new Error('Folder not found.');
+    const projects = addProjectDir(path.resolve(dir));
+    sendToRenderer('projects:changed');
+    return projects.map(enrich);
+  },
+  'workspace.create': async ({ parent, name, useParent }) => {
+    if (!(await remotefs.isDirectory(parent))) throw new Error('Folder not found.');
+    const res = createWorkspace({ parent: path.resolve(parent), name, useParent });
+    if (res.error) throw new Error(res.error);
+    sendToRenderer('projects:changed');
+    return res;
+  },
   transcript: async ({ id }) => {
     const { sessionId } = await rendererCommand('session', { id });
     if (!sessionId) return { entries: [] }; // no prompt sent yet

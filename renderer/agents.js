@@ -565,6 +565,42 @@ const remoteCommands = {
     if (!a) throw new Error('Unknown agent.');
     return { sessionId: a.sessionId || null };
   },
+  rename({ id, name }) {
+    const a = agents.get(id) || dormant.get(id);
+    if (!a) throw new Error('Unknown agent.');
+    a.customLabel = name;
+    persistAgents();
+    notifyAgentsChanged();
+    return { id };
+  },
+  // Same as the dormant row's "Forget session".
+  forget({ id }) {
+    if (!dormant.has(id)) throw new Error('Not a closed session.');
+    removeDormant(id);
+    return { id };
+  },
+  // The desktop's "Delete worktree" without its dialogs: the phone confirms
+  // first and asks about a force remove when git refuses ({ needsForce }).
+  async deleteWorktree({ id, deleteBranch, force }) {
+    const a = agents.get(id);
+    if (!a) throw new Error('Agent is not running.');
+    if (a.isMain) throw new Error('Only a separate worktree can be deleted.');
+    const { dir, cwd, branch } = a;
+    await killAndWait(id);
+    const res = await window.api.removeWorktree(dir, cwd, force);
+    if (res.error && !res.cleanupIncomplete) {
+      // Still on disk: keep a resumable record (same as the desktop flow).
+      convertToDormant(id);
+      return { needsForce: !force, error: res.error };
+    }
+    cleanupAgent(id);
+    let branchError = null;
+    if (deleteBranch && branch) {
+      const del = await window.api.gitDeleteBranch(dir, branch, { noPrompt: true });
+      if (del.error) branchError = del.error;
+    }
+    return { ok: true, cleanupError: res.cleanupIncomplete ? res.error : null, branchError };
+  },
   // Same as the desktop's Close: a used session stays resumable as dormant.
   kill({ id }) {
     if (!agents.has(id)) throw new Error('Agent is not running.');

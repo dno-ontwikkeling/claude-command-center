@@ -299,3 +299,22 @@ test('attach replays the tracked modes right after the reset', () => {
   const replay = sent.find((m) => m.t === 'replay');
   assert.equal(replay.data, '\x1bc\x1b[?1049h\x1b[?1003h');
 });
+
+test('agent management and folder rpcs validate their args', () => {
+  const ok = (method, args) => parseClientFrame(JSON.stringify({ t: 'rpc', reqId: 1, method, args })).ok;
+  assert.equal(ok('agent.rename', { id: 'a1', name: 'my agent' }), true);
+  assert.equal(ok('agent.rename', { id: 'a1', name: '' }), false);
+  assert.equal(ok('agent.rename', { id: 'a1', name: 'x'.repeat(81) }), false);
+  assert.equal(ok('agent.rename', { id: 'a1', name: 'bad\nname' }), false);
+  assert.equal(ok('agent.forget', { id: 'a1' }), true);
+  assert.equal(ok('worktree.delete', { id: 'a1', deleteBranch: true, force: false }), true);
+  assert.equal(ok('worktree.delete', { id: 'a1', deleteBranch: 'yes', force: false }), false);
+  assert.equal(ok('fs.list', {}), true);
+  assert.equal(ok('fs.list', { path: 'C:\\Projects' }), true);
+  assert.equal(ok('fs.list', { path: 42 }), false);
+  assert.equal(ok('project.add', { dir: 'C:\\Projects\\x' }), true);
+  assert.equal(ok('project.add', {}), false);
+  assert.equal(ok('workspace.create', { parent: 'C:\\ws', name: 'scratch', useParent: false }), true);
+  assert.equal(ok('workspace.create', { parent: 'C:\\ws', useParent: true }), true);
+  assert.equal(ok('workspace.create', { parent: 'C:\\ws', name: 7, useParent: false }), false);
+});

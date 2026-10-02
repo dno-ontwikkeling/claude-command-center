@@ -6,14 +6,14 @@ const label = (x) => x.customLabel || (x.branch ? `⎇ ${x.branch}` : x.label);
 
 test('buildRemoteSnapshot maps live and dormant agents to the wire shape', () => {
   const agents = new Map([
-    ['a1', { dir: 'C:\\p', cwd: 'C:\\p', branch: 'main', label: 'Session 1', status: 'needs-input', term: {}, el: {} }],
-    ['a2', { dir: 'C:\\w', cwd: 'C:\\w', branch: null, label: 'Session 1', customLabel: 'scratch', status: 'idle' }],
+    ['a1', { dir: 'C:\\p', cwd: 'C:\\p', branch: 'main', isMain: true, label: 'Session 1', status: 'needs-input', term: {}, el: {} }],
+    ['a2', { dir: 'C:\\w', cwd: 'C:\\w', branch: null, isMain: true, label: 'Session 1', customLabel: 'scratch', status: 'idle' }],
   ]);
-  const dormant = new Map([['a3', { id: 'a3', dir: 'C:\\p', cwd: 'C:\\p\\wt', branch: 'feat', label: 'Session 2' }]]);
+  const dormant = new Map([['a3', { id: 'a3', dir: 'C:\\p', cwd: 'C:\\p\\wt', branch: 'feat', isMain: false, label: 'Session 2' }]]);
   assert.deepEqual(buildRemoteSnapshot(agents, dormant, label), [
-    { id: 'a1', label: '⎇ main', dir: 'C:\\p', cwd: 'C:\\p', branch: 'main', status: 'needs-input', dormant: false },
-    { id: 'a2', label: 'scratch', dir: 'C:\\w', cwd: 'C:\\w', branch: null, status: 'idle', dormant: false },
-    { id: 'a3', label: '⎇ feat', dir: 'C:\\p', cwd: 'C:\\p\\wt', branch: 'feat', status: 'dead', dormant: true },
+    { id: 'a1', label: '⎇ main', dir: 'C:\\p', cwd: 'C:\\p', branch: 'main', isMain: true, status: 'needs-input', dormant: false },
+    { id: 'a2', label: 'scratch', dir: 'C:\\w', cwd: 'C:\\w', branch: null, isMain: true, status: 'idle', dormant: false },
+    { id: 'a3', label: '⎇ feat', dir: 'C:\\p', cwd: 'C:\\p\\wt', branch: 'feat', isMain: false, status: 'dead', dormant: true },
   ]);
 });
 
@@ -22,6 +22,7 @@ test('buildRemoteSnapshot defaults a missing status and branch', () => {
   const [a] = buildRemoteSnapshot(agents, new Map(), label);
   assert.equal(a.status, 'busy');
   assert.equal(a.branch, null);
+  assert.equal(a.isMain, true, 'unknown counts as main: never offer to delete a folder by mistake');
 });
 
 test('snapshotChanged compares by content', () => {

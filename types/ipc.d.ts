@@ -95,6 +95,8 @@ export interface RemoteAgent {
   dir: string;
   cwd: string;
   branch: string | null;
+  /** false for a separate worktree (its folder can be deleted); true otherwise */
+  isMain: boolean;
   status: string;
   dormant: boolean;
 }
@@ -175,7 +177,7 @@ export interface Api {
   gitDiffStat(cwd: string): Promise<DiffStat>;
   gitDiff(cwd: string, mode: 'wip' | 'branch'): Promise<DiffResult>;
   gitBranch(cwd: string): Promise<string | null>;
-  gitDeleteBranch(dir: string, branch: string): Promise<DeleteBranchResult>;
+  gitDeleteBranch(dir: string, branch: string, opts?: { noPrompt?: boolean }): Promise<DeleteBranchResult>;
   openExternal(url: string): Promise<void>;
   openInVS(cwd: string): Promise<OpResult>;
   openInVSCode(cwd: string): Promise<OpResult>;
@@ -207,6 +209,7 @@ export interface Api {
   ): void;
   /** pty size ownership flipped (the phone resized it, or the desktop took it back). */
   onSizeOwner(cb: (p: { id: string; owner: 'desktop' | 'remote' }) => void): void;
+  onProjectsChanged(cb: () => void): void;
 
   // remote access (phone app)
   getRemoteConfig(): Promise<RemoteConfig>;

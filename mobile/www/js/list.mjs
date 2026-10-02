@@ -1,8 +1,35 @@
 // Agent list: live + dormant agents grouped by project, status dots, Resume /
 // Close, and a "New agent" sheet (project/workspace -> worktree -> spawn).
 import { ctx, screens, show, onChanged } from './core.mjs';
-import { groupAgents, bannerFor, statusText, spawnTargets, estimateTermSize } from './list-model.mjs';
+import {
+  groupAgents,
+  bannerFor,
+  statusText,
+  spawnTargets,
+  estimateTermSize,
+  filterAgents,
+  agentActions,
+  dirName,
+  FILTERS,
+} from './list-model.mjs';
+import { browseFolders } from './folders.mjs';
 import { h, fill } from './dom.mjs';
+
+const FILTER_KEY = 'cc.listFilter';
+function loadFilter() {
+  try {
+    return localStorage.getItem(FILTER_KEY) || 'all';
+  } catch {
+    return 'all';
+  }
+}
+function saveFilter(f) {
+  try {
+    localStorage.setItem(FILTER_KEY, f);
+  } catch {
+    /* private mode: keep it for this session only */
+  }
+}
 
 const FONT_SIZE_FOR_ESTIMATE = 11;
 
@@ -53,7 +80,91 @@ function agentRow(a) {
     });
     row.append(close);
   }
+  const more = h('button', { class: 'small more', 'aria-label': 'More actions' }, '⋮');
+  more.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openActionsSheet(document.getElementById('app'), a);
+  });
+  row.append(more);
   return row;
+}
+
+// ---- row actions (same as the desktop sidebar's kebab menus) -----------------
+
+function openSheet(el) {
+  const sheet = h('div', { class: 'sheet' });
+  const backdrop = h('div', { class: 'backdrop', onclick: (e) => e.target === backdrop && backdrop.remove() }, sheet);
+  el.append(backdrop);
+  return { sheet, close: () => backdrop.remove() };
+}
+
+const errText = (err) => (err && err.message) || String(err);
+
+async function deleteWorktreeFlow(a) {
+  if (!confirm(`Delete worktree "${a.label}"?\n\nThis stops the agent and deletes the folder from disk:\n${a.cwd}`)) return;
+  const deleteBranch = a.branch ? confirm(`Also delete the local branch "${a.branch}"?`) : false;
+  let res = await ctx.rpc.call('worktree.delete', { id: a.id, deleteBranch, force: false });
+  if (res.needsForce) {
+    if (!confirm(`git refused:\n\n${res.error}\n\nForce remove? This discards uncommitted changes.`)) return;
+    res = await ctx.rpc.call('worktree.delete', { id: a.id, deleteBranch, force: true });
+  }
+  const notes = [res.error, res.cleanupError, res.branchError].filter(Boolean);
+  if (notes.length) alert(notes.join('\n\n'));
+}
+
+const ACTIONS = {
+  resume: async (a) => {
+    const { id } = await ctx.rpc.call('resume', { id: a.id, ...phoneSize() });
+    openTerminal(id);
+  },
+  forget: async (a) => {
+    if (!confirm(`Forget "${a.label}"?\n\nIt disappears from the list; the session stays on disk.`)) return;
+    await ctx.rpc.call('agent.forget', { id: a.id });
+  },
+  rename: async (a) => {
+    const name = prompt('Rename agent', a.label);
+    if (name === null || !name.trim()) return;
+    await ctx.rpc.call('agent.rename', { id: a.id, name: name.trim().slice(0, 80) });
+  },
+  deleteWorktree: deleteWorktreeFlow,
+  close: async (a) => {
+    if (!confirm(`Close "${a.label}"?\n\nA session that was used stays resumable.`)) return;
+    await ctx.rpc.call('kill', { id: a.id });
+  },
+};
+
+function openActionsSheet(el, a) {
+  const { sheet, close } = openSheet(el);
+  fill(
+    sheet,
+    h('h2', {}, a.label),
+    h('p', { class: 'muted folder-path' }, a.cwd),
+    h(
+      'ul',
+      { class: 'pick' },
+      agentActions(a).map((act) =>
+        h(
+          'li',
+          {},
+          h(
+            'button',
+            {
+              class: act.danger ? 'danger' : null,
+              onclick: async () => {
+                close();
+                try {
+                  await ACTIONS[act.id](a);
+                } catch (err) {
+                  alert(errText(err));
+                }
+              },
+            },
+            act.label,
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 // ---- new agent sheet ----------------------------------------------------------
@@ -95,6 +206,45 @@ async function openNewAgentSheet(el) {
       );
     };
 
+    const addProject = async () => {
+      const dir = await browseFolders(sheet, { title: 'Add project', actionLabel: 'Add this folder' });
+      if (!dir) return backdrop.remove();
+      try {
+        await ctx.rpc.call('project.add', { dir });
+        backdrop.remove();
+        openNewAgentSheet(el); // the new project is in the list now
+      } catch (err) {
+        alert(errText(err));
+      }
+    };
+
+    const newWorkspace = async () => {
+      const parent = await browseFolders(sheet, { title: 'New workspace', actionLabel: 'Choose this folder' });
+      if (!parent) return backdrop.remove();
+      const name = h('input', { type: 'text', value: dirName(parent), autocapitalize: 'off', spellcheck: false });
+      const asIs = h('input', { type: 'checkbox' });
+      const create = h('button', { class: 'primary' }, 'Create and start agent');
+      create.addEventListener('click', () =>
+        run(create, async () => {
+          const ws = await ctx.rpc.call('workspace.create', {
+            parent,
+            name: name.value.trim() || dirName(parent),
+            useParent: asIs.checked,
+          });
+          // Same as the desktop: start an agent in the new workspace.
+          await spawn(create, { dir: ws.dir, cwd: ws.dir });
+        }),
+      );
+      fill(
+        sheet,
+        h('h2', {}, 'New workspace'),
+        h('p', { class: 'muted folder-path' }, parent),
+        h('label', { class: 'field' }, h('span', {}, 'Name'), name),
+        h('label', { class: 'field' }, h('span', {}, 'Use this folder as-is (no subfolder)'), asIs),
+        h('div', { class: 'row' }, h('button', { onclick: () => backdrop.remove() }, 'Cancel'), create),
+      );
+    };
+
     pick('New agent', [
       ...projects.map((p) => h('li', {}, h('button', { onclick: () => chooseWorktree(p) }, p.name))),
       ...workspaces.map((w) => {
@@ -102,6 +252,8 @@ async function openNewAgentSheet(el) {
         b.addEventListener('click', () => spawn(b, { dir: w.dir, cwd: w.dir }));
         return h('li', {}, b);
       }),
+      h('li', { class: 'pick-extra' }, h('button', { onclick: addProject }, '+ Add project')),
+      h('li', {}, h('button', { onclick: newWorkspace }, '+ New workspace')),
     ]);
   } catch (err) {
     sheet.replaceChildren(h('p', { class: 'warn' }, (err && err.message) || String(err)));
@@ -111,11 +263,27 @@ async function openNewAgentSheet(el) {
 // ---- screen ---------------------------------------------------------------
 
 screens.list = (el) => {
+  // The list draws into its own container: sheets (New agent, row menu) live
+  // next to it in `el`, so a redraw on a status change doesn't close them.
+  const body = h('div');
+  el.append(body);
+  let filter = loadFilter();
+  let drawn = null; // what's on screen, to skip redraws that change nothing
+  const setFilter = (f) => {
+    filter = f;
+    saveFilter(f);
+    render();
+  };
   const render = () => {
     const banner = bannerFor(ctx.linkState, ctx.agents.desktopUi);
-    const groups = groupAgents(ctx.agents.list);
+    const visible = filterAgents(ctx.agents.list, filter);
     const connected = ctx.linkState === 'connected';
-    fill(el,
+    // Redrawing replaces the rows, which eats a tap that lands mid-redraw.
+    const sig = JSON.stringify([banner, visible, filter, connected, ctx.agents.desktopUi]);
+    if (sig === drawn) return;
+    drawn = sig;
+    const groups = groupAgents(visible);
+    fill(body,
       h(
         'header',
         { class: 'top' },
@@ -132,6 +300,17 @@ screens.list = (el) => {
             banner.action === 'reconnect' ? h('button', { class: 'small', onclick: () => ctx.link.connect() }, 'Reconnect') : null,
           )
         : null,
+      h(
+        'div',
+        { class: 'filters', role: 'tablist' },
+        FILTERS.map((f) =>
+          h(
+            'button',
+            { class: `chip${f.id === filter ? ' on' : ''}`, role: 'tab', 'aria-selected': String(f.id === filter), onclick: () => setFilter(f.id) },
+            f.label,
+          ),
+        ),
+      ),
       groups.length
         ? groups.map((g) =>
             h(
@@ -141,7 +320,7 @@ screens.list = (el) => {
               h('ul', { class: 'agents' }, g.live.map(agentRow), g.dormant.map(agentRow)),
             ),
           )
-        : h('p', { class: 'muted' }, connected ? 'No agents yet.' : ''),
+        : h('p', { class: 'muted' }, connected ? (filter === 'all' ? 'No agents yet.' : `No ${filter} agents.`) : ''),
       h(
         'button',
         { class: 'primary fab', disabled: !connected || !ctx.agents.desktopUi, onclick: () => openNewAgentSheet(el) },
