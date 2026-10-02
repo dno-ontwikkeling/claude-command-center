@@ -1178,10 +1178,9 @@ const REMOTE_RPC = {
   'git.fetch': ({ cwd }) => gitFetch(cwd),
   'git.pull': ({ cwd }) => gitPull(cwd),
   'agent.rename': ({ id, name }) => rendererCommand('rename', { id, name: name.trim() }),
-  'agent.forget': ({ id }) => rendererCommand('forget', { id }),
-  // Kills the agent, waits for it to exit and runs git: far over 5s.
-  'worktree.delete': ({ id, deleteBranch, force }) =>
-    rendererCommand('deleteWorktree', { id, deleteBranch, force }, { timeoutMs: 120000 }),
+  // Stops the agent, waits for it to exit and may run git: far over 5s.
+  'agent.forget': ({ id, deleteWorktree = false, deleteBranch = false, force = false }) =>
+    rendererCommand('forget', { id, deleteWorktree, deleteBranch, force }, { timeoutMs: 120000 }),
   'fs.list': ({ path: p }) => remotefs.listDirs(p),
   'project.add': async ({ dir }) => {
     if (!(await remotefs.isDirectory(dir))) throw new Error('Folder not found.');

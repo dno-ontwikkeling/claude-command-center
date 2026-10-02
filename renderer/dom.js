@@ -13,6 +13,7 @@ export const els = {
   themeBtn: document.getElementById('theme-toggle'),
   collapseAllBtn: document.getElementById('collapse-all'),
   sidebarFilter: document.getElementById('sidebar-filter'),
+  agentFilter: document.getElementById('agent-filter'),
   settingsBtn: document.getElementById('settings-btn'),
   settingsClose: document.getElementById('settings-close'),
   overlay: document.getElementById('settings'),

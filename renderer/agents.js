@@ -273,70 +273,59 @@ export function pruneDormantForDir(dir, skipRender = false) {
 }
 
 export async function renameAgent(id) {
-  const a = agents.get(id);
+  const a = agents.get(id) || dormant.get(id);
   if (!a) return;
   const current = displayLabel(a);
-  const name = await promptText('Rename worktree', current);
+  const name = await promptText('Rename agent', current);
   if (!name) return;
   a.customLabel = name;
   persistAgents();
   notifyAgentsChanged();
 }
 
-export async function deleteWorktree(id) {
-  const a = agents.get(id);
-  if (!a) return;
+// Sleep: stop the session but keep tracking it (it shows as Sleeping and can be
+// resumed). A session that was never used has no transcript to resume, so it
+// is simply closed.
+export function sleepAgent(id) {
+  removeAgent(id);
+}
+
+// Forget: stop the session and stop tracking it. With `deleteWorktree` a
+// separate worktree's folder is removed too (and optionally its branch). The
+// agent is always fully exited first: its cwd would otherwise keep a file lock
+// on the folder. Dialog-free (desktop and phone confirm first); when git
+// refuses, the agent stays tracked as sleeping and { needsForce } asks the
+// caller to confirm a force remove. `prompt` lets git:delete-branch show its
+// "force delete unmerged branch?" dialog (desktop only).
+export async function forgetAgent(id, { deleteWorktree = false, deleteBranch = false, force = false, prompt = false } = {}) {
+  const live = agents.get(id);
+  const a = live || dormant.get(id);
+  if (!a) throw new Error('Unknown agent.');
   const { dir, cwd, branch } = a;
-  const answer = await confirmDialog('Delete worktree', `This deletes the worktree from disk:\n\n${cwd}`, {
-    okLabel: 'Delete',
-    danger: true,
-    checkbox: branch ? `Also delete the local branch “${branch}”` : null,
-  });
-  // checkbox makes confirmDialog resolve { ok, checked }; otherwise a boolean.
-  const ok = typeof answer === 'object' ? answer.ok : answer;
-  const alsoBranch = typeof answer === 'object' ? answer.checked : false;
-  if (!ok) return;
+  if (deleteWorktree && a.isMain) throw new Error('Only a separate worktree can be deleted.');
+  if (live) await killAndWait(id);
+  const untrack = () => (agents.has(id) ? cleanupAgent(id) : removeDormant(id));
+  if (!deleteWorktree) {
+    untrack();
+    return { ok: true };
+  }
 
-  // Kill the agent first and wait for the process to exit, otherwise its cwd
-  // keeps a file lock on the folder and git/Windows can't remove it.
-  await killAndWait(id);
-
-  let res = await window.api.removeWorktree(dir, cwd, false);
-  // A hard git refusal (locked/dirty worktree) — offer a force remove. A merely
-  // incomplete on-disk cleanup (cleanupIncomplete) is git-side success and is
-  // reported separately below, not force-retried.
+  const res = await window.api.removeWorktree(dir, cwd, force);
+  // A hard git refusal (locked/dirty worktree): it is still on disk, so keep it
+  // tracked as sleeping — there must be a way back to it.
   if (res.error && !res.cleanupIncomplete) {
-    const force = await confirmDialog('Force remove worktree', `git refused:\n\n${res.error}\n\nForce remove? This discards uncommitted changes.`, {
-      okLabel: 'Force remove',
-      danger: true,
-    });
-    if (force) res = await window.api.removeWorktree(dir, cwd, true);
+    if (agents.has(id)) convertToDormant(id);
+    return { needsForce: !force, error: res.error };
   }
-  if (res.cleanupIncomplete) {
-    // git unregistered the worktree but its folder couldn't be fully deleted —
-    // tell the user rather than silently claiming a clean removal.
-    await confirmDialog('Cleanup incomplete', res.error, { alert: true });
-  } else if (res.error) {
-    await confirmDialog('Removal failed', res.error, { alert: true });
+  untrack();
+  // git won't delete a branch that's still checked out in a live worktree, so
+  // only now that the worktree is gone.
+  let branchError = null;
+  if (deleteBranch && branch) {
+    const del = await window.api.gitDeleteBranch(dir, branch, { noPrompt: !prompt });
+    if (del.error && !del.cancelled) branchError = del.error;
   }
-
-  // The worktree registration is gone if git succeeded outright OR left only a
-  // locked-folder remnant. Delete the branch only then (git won't delete a
-  // branch that's still checked out in a live worktree).
-  const worktreeGone = !res.error || res.cleanupIncomplete;
-  if (alsoBranch && branch && worktreeGone) {
-    const del = await window.api.gitDeleteBranch(dir, branch);
-    // cancelled = the user declined the force-delete warning; not an error.
-    if (del.error && !del.cancelled) await confirmDialog('Branch deletion failed', del.error, { alert: true });
-  }
-
-  // The pty is already dead (we had to kill it to release the cwd lock before
-  // git could touch the folder). If the worktree is really gone, drop the row
-  // for good. But if removal was aborted or failed outright, the worktree +
-  // branch still exist on disk — keep the session as a resumable dormant record
-  // so there's a UI path back, instead of silently forgetting it.
-  if (res.error && !res.cleanupIncomplete) convertToDormant(id);
-  else cleanupAgent(id);
+  return { ok: true, cleanupError: res.cleanupIncomplete ? res.error : null, branchError };
 }
 
 // Kill the agent's pty and resolve once it has actually exited (with a short
@@ -573,35 +562,11 @@ const remoteCommands = {
     notifyAgentsChanged();
     return { id };
   },
-  // Same as the dormant row's "Forget session".
-  forget({ id }) {
-    if (!dormant.has(id)) throw new Error('Not a closed session.');
-    removeDormant(id);
-    return { id };
+  // Same as the desktop menu's Forget (the phone confirms first).
+  forget({ id, deleteWorktree, deleteBranch, force }) {
+    return forgetAgent(id, { deleteWorktree, deleteBranch, force });
   },
-  // The desktop's "Delete worktree" without its dialogs: the phone confirms
-  // first and asks about a force remove when git refuses ({ needsForce }).
-  async deleteWorktree({ id, deleteBranch, force }) {
-    const a = agents.get(id);
-    if (!a) throw new Error('Agent is not running.');
-    if (a.isMain) throw new Error('Only a separate worktree can be deleted.');
-    const { dir, cwd, branch } = a;
-    await killAndWait(id);
-    const res = await window.api.removeWorktree(dir, cwd, force);
-    if (res.error && !res.cleanupIncomplete) {
-      // Still on disk: keep a resumable record (same as the desktop flow).
-      convertToDormant(id);
-      return { needsForce: !force, error: res.error };
-    }
-    cleanupAgent(id);
-    let branchError = null;
-    if (deleteBranch && branch) {
-      const del = await window.api.gitDeleteBranch(dir, branch, { noPrompt: true });
-      if (del.error) branchError = del.error;
-    }
-    return { ok: true, cleanupError: res.cleanupIncomplete ? res.error : null, branchError };
-  },
-  // Same as the desktop's Close: a used session stays resumable as dormant.
+  // Same as the desktop menu's Sleep: a used session stays tracked (sleeping).
   kill({ id }) {
     if (!agents.has(id)) throw new Error('Agent is not running.');
     removeAgent(id);

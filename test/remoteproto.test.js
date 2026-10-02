@@ -307,8 +307,9 @@ test('agent management and folder rpcs validate their args', () => {
   assert.equal(ok('agent.rename', { id: 'a1', name: 'x'.repeat(81) }), false);
   assert.equal(ok('agent.rename', { id: 'a1', name: 'bad\nname' }), false);
   assert.equal(ok('agent.forget', { id: 'a1' }), true);
-  assert.equal(ok('worktree.delete', { id: 'a1', deleteBranch: true, force: false }), true);
-  assert.equal(ok('worktree.delete', { id: 'a1', deleteBranch: 'yes', force: false }), false);
+  assert.equal(ok('agent.forget', { id: 'a1', deleteWorktree: true, deleteBranch: false, force: false }), true);
+  assert.equal(ok('agent.forget', { id: 'a1', deleteWorktree: 'yes' }), false);
+  assert.equal(ok('worktree.delete', { id: 'a1', deleteBranch: true, force: false }), false, 'replaced by agent.forget');
   assert.equal(ok('fs.list', {}), true);
   assert.equal(ok('fs.list', { path: 'C:\\Projects' }), true);
   assert.equal(ok('fs.list', { path: 42 }), false);

@@ -43,8 +43,9 @@ const RPC_ARGS = {
   'git.pull': (a) => isPath(a.cwd),
   transcript: (a) => isId(a.id),
   'agent.rename': (a) => isId(a.id) && isName(a.name),
-  'agent.forget': (a) => isId(a.id),
-  'worktree.delete': (a) => isId(a.id) && isBool(a.deleteBranch) && isBool(a.force),
+  // Forget = stop + stop tracking; a worktree's folder (and branch) can go too.
+  'agent.forget': (a) =>
+    isId(a.id) && [a.deleteWorktree, a.deleteBranch, a.force].every((v) => v === undefined || isBool(v)),
   'fs.list': (a) => a.path === undefined || isPath(a.path),
   'project.add': (a) => isPath(a.dir),
   'workspace.create': (a) => isPath(a.parent) && isBool(a.useParent) && (a.name === undefined || isName(a.name)),

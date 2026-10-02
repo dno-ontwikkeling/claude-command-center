@@ -4,9 +4,9 @@ import { ctx, screens, show, onChanged } from './core.mjs';
 import {
   groupAgents,
   bannerFor,
-  statusText,
   spawnTargets,
   estimateTermSize,
+  statusLabel,
   filterAgents,
   agentActions,
   dirName,
@@ -18,7 +18,8 @@ import { h, fill } from './dom.mjs';
 const FILTER_KEY = 'cc.listFilter';
 function loadFilter() {
   try {
-    return localStorage.getItem(FILTER_KEY) || 'all';
+    const f = localStorage.getItem(FILTER_KEY) || 'all';
+    return f === 'closed' ? 'sleeping' : f; // renamed in 1.9
   } catch {
     return 'all';
   }
@@ -52,34 +53,34 @@ async function run(btn, fn) {
   }
 }
 
+// Tapping an agent opens it; a sleeping one is resumed first (same as the
+// desktop sidebar).
+async function openAgent(a) {
+  if (!a.dormant) return openTerminal(a.id);
+  const { id } = await ctx.rpc.call('resume', { id: a.id, ...phoneSize() });
+  openTerminal(id);
+}
+
 function agentRow(a) {
   const row = h(
     'li',
-    { class: `agent status-${a.status}`, onclick: () => !a.dormant && openTerminal(a.id) },
+    { class: `agent status-${a.status}${a.dormant ? ' sleeping' : ''}` },
     h('span', { class: `dot ${a.dormant ? 'dormant' : a.status}` }),
     h('span', { class: 'label' }, a.label),
-    h('span', { class: 'status' }, a.dormant ? 'Resumable' : statusText(a.status)),
+    h('span', { class: 'status' }, statusLabel(a)),
   );
-  if (a.dormant) {
-    const resume = h('button', { class: 'small' }, 'Resume');
-    resume.addEventListener('click', (e) => {
-      e.stopPropagation();
-      run(resume, async () => {
-        const { id } = await ctx.rpc.call('resume', { id: a.id, ...phoneSize() });
-        openTerminal(id);
-      });
-    });
-    row.append(resume);
-  } else {
-    const close = h('button', { class: 'small danger' }, 'Close');
-    close.addEventListener('click', (e) => {
-      e.stopPropagation();
-      // Same as the desktop's Close: a used session stays resumable.
-      if (!confirm(`Close "${a.label}"?\n\nA session that was used stays resumable.`)) return;
-      run(close, () => ctx.rpc.call('kill', { id: a.id }));
-    });
-    row.append(close);
-  }
+  let busy = false;
+  row.addEventListener('click', async () => {
+    if (busy) return;
+    busy = true;
+    try {
+      await openAgent(a);
+    } catch (err) {
+      alert(errText(err));
+    } finally {
+      busy = false;
+    }
+  });
   const more = h('button', { class: 'small more', 'aria-label': 'More actions' }, '⋮');
   more.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -100,37 +101,32 @@ function openSheet(el) {
 
 const errText = (err) => (err && err.message) || String(err);
 
-async function deleteWorktreeFlow(a) {
-  if (!confirm(`Delete worktree "${a.label}"?\n\nThis stops the agent and deletes the folder from disk:\n${a.cwd}`)) return;
-  const deleteBranch = a.branch ? confirm(`Also delete the local branch "${a.branch}"?`) : false;
-  let res = await ctx.rpc.call('worktree.delete', { id: a.id, deleteBranch, force: false });
+// Forget: stop + stop tracking. A worktree's folder (and branch) can go too;
+// the PC stops the session and waits for it to exit before deleting anything.
+async function forgetFlow(a) {
+  const worktree = a.isMain === false;
+  if (!confirm(`Forget "${a.label}"?\n\nThis stops the session and removes it from Command Center.`)) return;
+  const deleteWorktree = worktree ? confirm(`Also delete the worktree folder?\n\n${a.cwd}`) : false;
+  const deleteBranch = deleteWorktree && a.branch ? confirm(`Also delete the local branch "${a.branch}"?`) : false;
+  let res = await ctx.rpc.call('agent.forget', { id: a.id, deleteWorktree, deleteBranch, force: false });
   if (res.needsForce) {
     if (!confirm(`git refused:\n\n${res.error}\n\nForce remove? This discards uncommitted changes.`)) return;
-    res = await ctx.rpc.call('worktree.delete', { id: a.id, deleteBranch, force: true });
+    res = await ctx.rpc.call('agent.forget', { id: a.id, deleteWorktree, deleteBranch, force: true });
   }
   const notes = [res.error, res.cleanupError, res.branchError].filter(Boolean);
   if (notes.length) alert(notes.join('\n\n'));
 }
 
 const ACTIONS = {
-  resume: async (a) => {
-    const { id } = await ctx.rpc.call('resume', { id: a.id, ...phoneSize() });
-    openTerminal(id);
-  },
-  forget: async (a) => {
-    if (!confirm(`Forget "${a.label}"?\n\nIt disappears from the list; the session stays on disk.`)) return;
-    await ctx.rpc.call('agent.forget', { id: a.id });
-  },
   rename: async (a) => {
     const name = prompt('Rename agent', a.label);
     if (name === null || !name.trim()) return;
     await ctx.rpc.call('agent.rename', { id: a.id, name: name.trim().slice(0, 80) });
   },
-  deleteWorktree: deleteWorktreeFlow,
-  close: async (a) => {
-    if (!confirm(`Close "${a.label}"?\n\nA session that was used stays resumable.`)) return;
-    await ctx.rpc.call('kill', { id: a.id });
-  },
+  // Sleep = the desktop's Sleep: stop, keep tracking (shows as Sleeping).
+  sleep: (a) => ctx.rpc.call('kill', { id: a.id }),
+  resume: openAgent,
+  forget: forgetFlow,
 };
 
 function openActionsSheet(el, a) {

@@ -90,7 +90,8 @@ build a versionCode that isn't higher than every existing release.
 - [ ] Use the agent on the PC again → the PC terminal snaps back to its own size.
 - [ ] Pinch → font size changes and stays after restarting the app; PC font unchanged.
 - [ ] New agent → appears on the PC sidebar without stealing focus; phone opens it.
-- [ ] Close / Resume an agent from the phone.
+- [ ] Agent menu: Rename, Sleep / Resume, Forget (worktree: delete folder + branch). Tap a sleeping agent → resumes and opens.
+- [ ] Filter All / Active / Sleeping; New agent → Add project / New workspace via the folder browser.
 - [ ] Git → diff stat, diff viewer, Fetch, Pull.
 - [ ] Lock the phone, make an agent ask for permission → notification; tap → that terminal. Answer on the PC → notification disappears.
 - [ ] PC: Settings → Remote → Regenerate → phone shows "Re-pair needed" and stops retrying.

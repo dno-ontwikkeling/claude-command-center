@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { filterAgents, agentActions,
+import { filterAgents, agentActions, statusLabel, FILTERS,
   groupAgents,
   bannerFor,
   statusText,
@@ -78,7 +78,7 @@ test('estimateTermSize gives protocol-valid cols/rows for a phone viewport', () 
   assert.ok(tiny.cols >= 2 && tiny.rows >= 2);
 });
 
-test('filterAgents: all, active (running) or closed (resumable)', () => {
+test('filterAgents: all, active (running) or sleeping (tracked, not running)', () => {
   const list = [
     { id: 'a', dormant: false },
     { id: 'b', dormant: true },
@@ -86,13 +86,19 @@ test('filterAgents: all, active (running) or closed (resumable)', () => {
   ];
   assert.deepEqual(filterAgents(list, 'all').map((a) => a.id), ['a', 'b', 'c']);
   assert.deepEqual(filterAgents(list, 'active').map((a) => a.id), ['a', 'c']);
-  assert.deepEqual(filterAgents(list, 'closed').map((a) => a.id), ['b']);
+  assert.deepEqual(filterAgents(list, 'sleeping').map((a) => a.id), ['b']);
+  assert.deepEqual(FILTERS.map((f) => f.label), ['All', 'Active', 'Sleeping']);
   assert.deepEqual(filterAgents(list, 'bogus').map((a) => a.id), ['a', 'b', 'c']);
 });
 
-test('agentActions mirror the desktop menus', () => {
+test('agentActions: the same menu as the desktop for every agent', () => {
   const ids = (a) => agentActions(a).map((x) => x.id);
-  assert.deepEqual(ids({ dormant: false, isMain: true }), ['rename', 'close']);
-  assert.deepEqual(ids({ dormant: false, isMain: false }), ['rename', 'deleteWorktree', 'close']);
-  assert.deepEqual(ids({ dormant: true, isMain: false }), ['resume', 'forget']);
+  assert.deepEqual(ids({ dormant: false, isMain: true }), ['rename', 'sleep', 'forget']);
+  assert.deepEqual(ids({ dormant: false, isMain: false }), ['rename', 'sleep', 'forget']);
+  assert.deepEqual(ids({ dormant: true, isMain: false }), ['rename', 'resume', 'forget']);
+});
+
+test('a sleeping agent reads as Sleeping', () => {
+  assert.equal(statusLabel({ dormant: true, status: 'dead' }), 'Sleeping');
+  assert.equal(statusLabel({ dormant: false, status: 'busy' }), 'Working');
 });

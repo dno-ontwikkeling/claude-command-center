@@ -1,10 +1,10 @@
 'use strict';
 
 import { els } from './dom.js';
-import { state, agents, agentsForDir, dormantForDir, displayLabel, readLocalJson } from './state.js';
+import { state, agents, dormant, agentsForDir, dormantForDir, displayLabel, readLocalJson } from './state.js';
 import { openMenu, promptText, confirmDialog } from './modals.js';
 import { fmtDiff, refreshAgentGit } from './agent-git.mjs';
-import { activate, killAndWait, removeAgent, renameAgent, deleteWorktree, resume, removeDormant, pruneDormantForDir, reorderAgent, forceStatus, spawn } from './agents.js';
+import { activate, killAndWait, removeAgent, renameAgent, sleepAgent, forgetAgent, resume, pruneDormantForDir, reorderAgent, forceStatus, spawn } from './agents.js';
 import { newAgent } from './worktree.js';
 
 // ---------------------------------------------------------------------------
@@ -36,7 +36,40 @@ const ICONS = {
   close: svgIcon('<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'),
   minusCircle: svgIcon('<circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/>'),
   xCircle: svgIcon('<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'),
+  moon: svgIcon('<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>'),
 };
+
+// Forget from the menu: confirm (and for a worktree, whether to delete its
+// folder and branch), then forgetAgent; a git refusal offers a force remove.
+async function forgetFlow(id) {
+  const a = agents.get(id) || dormant.get(id);
+  if (!a) return;
+  const worktree = a.isMain === false;
+  const answer = await confirmDialog(
+    'Forget agent',
+    'This stops the session and removes it from Command Center.' + (worktree ? '' : ' Files on disk are left untouched.'),
+    { okLabel: 'Forget', danger: true, checkbox: worktree ? `Also delete the worktree folder:\n${a.cwd}` : null }
+  );
+  // checkbox makes confirmDialog resolve { ok, checked }; otherwise a boolean.
+  const ok = typeof answer === 'object' ? answer.ok : answer;
+  const deleteWorktree = typeof answer === 'object' ? answer.checked : false;
+  if (!ok) return;
+  const deleteBranch =
+    deleteWorktree && a.branch
+      ? await confirmDialog('Delete branch', `Also delete the local branch “${a.branch}”?`, { okLabel: 'Delete branch', danger: true })
+      : false;
+  let res = await forgetAgent(id, { deleteWorktree, deleteBranch, prompt: true });
+  if (res.needsForce) {
+    const force = await confirmDialog('Force remove worktree', `git refused:\n\n${res.error}\n\nForce remove? This discards uncommitted changes.`, {
+      okLabel: 'Force remove',
+      danger: true,
+    });
+    if (!force) return;
+    res = await forgetAgent(id, { deleteWorktree, deleteBranch, force: true, prompt: true });
+  }
+  const notes = [res.error, res.cleanupError, res.branchError].filter(Boolean);
+  if (notes.length) await confirmDialog('Forget agent', notes.join('\n\n'), { alert: true });
+}
 
 // A filled dot coloured per status (`st-idle`/`st-busy`/`st-needs`/`st-done`),
 // mirroring the row's own status dot so the "Set status" menu shows the exact
@@ -161,6 +194,7 @@ function buildAgentRow(id, a) {
     e.stopPropagation();
     const items = [
       { label: 'Rename', icon: ICONS.pencil, action: () => renameAgent(id) },
+      { label: 'Sleep', icon: ICONS.moon, action: () => sleepAgent(id) },
       {
         label: 'Set status ▸',
         icon: ICONS.activity,
@@ -172,12 +206,7 @@ function buildAgentRow(id, a) {
         ],
       },
     ];
-    // Only worktrees have a folder of their own to delete; the main worktree and
-    // workspace agents (isMain) share the folder, so offer plain close only.
-    if (!a.isMain) {
-      items.push({ label: 'Delete worktree', icon: ICONS.trash, danger: true, action: () => deleteWorktree(id) });
-    }
-    items.push({ label: 'Close', icon: ICONS.close, danger: true, action: () => removeAgent(id) });
+    items.push({ label: 'Forget', icon: ICONS.xCircle, danger: true, action: () => forgetFlow(id) });
     openMenu(rowKebab, items);
   });
 
@@ -212,20 +241,52 @@ function buildDormantRow(id, d) {
   rowKebab.addEventListener('click', (e) => {
     e.stopPropagation();
     openMenu(rowKebab, [
+      { label: 'Rename', icon: ICONS.pencil, action: () => renameAgent(id) },
       { label: 'Resume', icon: ICONS.play, action: () => resume(id) },
-      { label: 'Forget session', icon: ICONS.xCircle, danger: true, action: () => removeDormant(id) },
+      { label: 'Forget', icon: ICONS.xCircle, danger: true, action: () => forgetFlow(id) },
     ]);
   });
 
   return row;
 }
 
-// Append every agent + dormant row for `dir` into a fresh <ul>.
+// Agent filter: all | active (running) | sleeping (tracked, not running).
+// Persisted, same choices as the phone app.
+const AGENT_FILTER_KEY = 'agentFilter';
+let agentFilter = (() => {
+  try {
+    return localStorage.getItem(AGENT_FILTER_KEY) || 'all';
+  } catch {
+    return 'all';
+  }
+})();
+function syncFilterButtons() {
+  for (const b of els.agentFilter.querySelectorAll('button')) {
+    const on = b.dataset.filter === agentFilter;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', String(on));
+  }
+}
+els.agentFilter.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-filter]');
+  if (!b) return;
+  agentFilter = b.dataset.filter;
+  try {
+    localStorage.setItem(AGENT_FILTER_KEY, agentFilter);
+  } catch {
+    /* private mode: keep it for this session */
+  }
+  syncFilterButtons();
+  renderSidebar();
+});
+syncFilterButtons();
+
+// Append every agent + dormant row for `dir` (per the filter) into a fresh <ul>.
 function buildAgentList(dir) {
   const sub = document.createElement('ul');
   sub.className = 'agents';
-  for (const [id, a] of agentsForDir(dir)) sub.appendChild(buildAgentRow(id, a));
-  for (const [id, d] of dormantForDir(dir)) sub.appendChild(buildDormantRow(id, d));
+  if (agentFilter !== 'sleeping') for (const [id, a] of agentsForDir(dir)) sub.appendChild(buildAgentRow(id, a));
+  if (agentFilter !== 'active') for (const [id, d] of dormantForDir(dir)) sub.appendChild(buildDormantRow(id, d));
   return sub;
 }
 

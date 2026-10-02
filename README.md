@@ -9,6 +9,12 @@ with a status dot that reflects what the agent is doing right now.
 - **Saved project list** — add a folder once, click to launch an agent there.
 - **Live terminal** — full interactive `claude` session per project (xterm.js +
   PTY). Type as you would in a normal terminal.
+- **Agent menu** — every agent has the same menu on the desktop and the phone:
+  **Rename**, **Sleep** (stop the session but keep it in the list) or
+  **Resume**, and **Forget** (stop it and drop it from the list; for a worktree
+  you can also delete its folder and branch — the session is stopped first so
+  no file stays locked). Clicking a sleeping agent resumes it. Filter the list
+  with **All / Active / Sleeping**.
 - **Accurate status** — status comes from Claude Code lifecycle hooks, not from
   scraping terminal output:
   - `busy` — agent is working
@@ -17,9 +23,10 @@ with a status dot that reflects what the agent is doing right now.
   - `dead` — session ended
 - **Light / dark theme** — follows OS by default, toggle in the sidebar.
 - **Remote access from your phone** (opt-in) — a sideloaded Android app shows
-  the same agents and status, opens their terminals, starts / resumes / closes
-  agents, shows diffs, fetches / pulls, and notifies you when an agent needs
-  input. See [Remote access](#remote-access).
+  the same agents and status, opens their terminals, has the same agent menu,
+  adds projects and workspaces, shows diffs and the conversation history,
+  fetches / pulls, and notifies you when an agent needs input. See
+  [Remote access](#remote-access).
 
 ## How status works
 

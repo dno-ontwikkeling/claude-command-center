@@ -68,28 +68,28 @@ export function estimateTermSize(width, height, fontSize) {
 export const FILTERS = [
   { id: 'all', label: 'All' },
   { id: 'active', label: 'Active' },
-  { id: 'closed', label: 'Closed' },
+  { id: 'sleeping', label: 'Sleeping' },
 ];
 
-/** 'active' = running agents, 'closed' = resumable sessions; anything else = all. */
+/** 'active' = running agents, 'sleeping' = tracked but not running; anything else = all. */
 export function filterAgents(list, filter) {
   if (filter === 'active') return list.filter((a) => !a.dormant);
-  if (filter === 'closed') return list.filter((a) => a.dormant);
+  if (filter === 'sleeping') return list.filter((a) => a.dormant);
   return list;
 }
 
-/** The row menu, same entries as the desktop sidebar's kebab menus. */
+/** Row status text: a tracked session that isn't running is "Sleeping". */
+export const statusLabel = (a) => (a.dormant ? 'Sleeping' : statusText(a.status));
+
+/**
+ * The row menu, identical to the desktop sidebar's: Rename, Sleep (stop, keep
+ * tracking) or Resume, and Forget (stop, stop tracking; a worktree's folder
+ * can be deleted too).
+ */
 export function agentActions(a) {
-  if (a.dormant) {
-    return [
-      { id: 'resume', label: 'Resume' },
-      { id: 'forget', label: 'Forget session', danger: true },
-    ];
-  }
   return [
     { id: 'rename', label: 'Rename' },
-    // Only a separate worktree has a folder of its own to delete.
-    ...(a.isMain === false ? [{ id: 'deleteWorktree', label: 'Delete worktree', danger: true }] : []),
-    { id: 'close', label: 'Close', danger: true },
+    a.dormant ? { id: 'resume', label: 'Resume' } : { id: 'sleep', label: 'Sleep' },
+    { id: 'forget', label: 'Forget', danger: true },
   ];
 }
