@@ -411,6 +411,12 @@ function resizeAgent(id, cols, rows, owner) {
   if (owner !== prevOwner) sendToRenderer('agent:sizeOwner', { id, owner });
 }
 
+// The phone stopped viewing this pty: let the desktop take its size back. The
+// renderer refits on the owner change, which resizes via resizeAgent.
+function releaseSize(id) {
+  if (ptySizes.owner(id) === 'remote') sendToRenderer('agent:sizeOwner', { id, owner: 'desktop' });
+}
+
 // Kill the agent and its child processes. claude spawns children that keep a
 // handle on the worktree cwd; on Windows only a tree kill releases the lock.
 function killAgent(id) {
@@ -1034,6 +1040,7 @@ async function startRemote() {
           },
           resize: resizeAgent,
           sizeOwner: (id) => ptySizes.owner(id),
+          releaseSize,
           getAgents: () => remoteAgents,
           rpc: remoteRpc,
           log,

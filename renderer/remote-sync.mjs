@@ -61,3 +61,13 @@ export function createSnapshotPusher({ build, push, delayMs = 150, setTimer = se
     },
   };
 }
+
+// Terminal reports xterm sends on its own while a TUI tracks the mouse (?1000/
+// ?1002/?1003, SGR or legacy) or focus (?1004): hovering or switching windows
+// produces them. Only real keys mean "the user is working here now".
+const AUTO_REPORTS = /\x1b\[<\d+;\d+;\d+[Mm]|\x1b\[M[\s\S]{3}|\x1b\[[IO]/g;
+
+/** True when terminal input data contains something the user typed. */
+export function isUserInput(data) {
+  return String(data).replace(AUTO_REPORTS, '').length > 0;
+}

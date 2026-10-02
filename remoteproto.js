@@ -98,6 +98,7 @@ function createSizeTracker() {
 //   writeInput(id, data)     - write to the pty
 //   resize(id, cols, rows, owner) - resize via the size tracker
 //   sizeOwner(id)            - current size owner ('desktop' | 'remote' | null)
+//   releaseSize(id)          - this client stopped viewing the pty: hand its size back
 //   getAgents()              - current { seq, desktopUi, list }
 //   rpc(method, args)        - Promise of the result; rejects with an Error to report
 //   log                      - { warn, info }
@@ -156,7 +157,9 @@ function createConnectionHandler(deps) {
 
   const handlers = {
     attach,
-    detach: ({ id }) => attached.delete(id),
+    detach: ({ id }) => {
+      if (attached.delete(id)) deps.releaseSize(id);
+    },
     input: ({ id, data }) => {
       const a = attached.get(id);
       if (!a) return;
@@ -191,6 +194,7 @@ function createConnectionHandler(deps) {
     onClose() {
       if (closed) return;
       closed = true;
+      for (const id of attached.keys()) deps.releaseSize(id);
       attached.clear();
       hub.off('data', onData);
       hub.off('exit', onExit);

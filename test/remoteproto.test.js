@@ -64,6 +64,7 @@ function setup({ agents = { seq: 1, desktopUi: true, list: [] }, rpc } = {}) {
   const writes = [];
   const resizes = [];
   const owners = new Map();
+  const released = [];
   const ptys = new Set();
   const addPty = (id) => {
     ptys.add(id);
@@ -83,11 +84,12 @@ function setup({ agents = { seq: 1, desktopUi: true, list: [] }, rpc } = {}) {
       resizes.push({ id, cols, rows, owner });
     },
     sizeOwner: (id) => owners.get(id) || null,
+    releaseSize: (id) => released.push(id),
     getAgents: () => agents,
     rpc: rpc || (async () => ({})),
     log: { warn: () => {}, info: () => {} },
   });
-  return { h, hub, sent, closed, writes, resizes, owners, addPty, emitData };
+  return { h, hub, sent, closed, writes, resizes, owners, released, addPty, emitData };
 }
 
 const tick = () => new Promise((r) => setImmediate(r));
@@ -238,4 +240,24 @@ test('onClose unsubscribes from the hub', () => {
   const { h, hub } = setup();
   h.onClose();
   assert.equal(hub.listenerCount('data') + hub.listenerCount('exit') + hub.listenerCount('agents'), 0);
+});
+
+test('detach hands the pty size back', () => {
+  const { h, released, addPty } = setup();
+  addPty('a1');
+  h.onMessage(JSON.stringify({ t: 'attach', id: 'a1', cols: 60, rows: 30 }));
+  h.onMessage(JSON.stringify({ t: 'detach', id: 'a1' }));
+  assert.deepEqual(released, ['a1']);
+  h.onMessage(JSON.stringify({ t: 'detach', id: 'a1' }));
+  assert.deepEqual(released, ['a1'], 'not attached any more: nothing to release');
+});
+
+test('closing the connection hands back the size of every attached pty', () => {
+  const { h, released, addPty } = setup();
+  addPty('a1');
+  addPty('a2');
+  h.onMessage(JSON.stringify({ t: 'attach', id: 'a1', cols: 60, rows: 30 }));
+  h.onMessage(JSON.stringify({ t: 'attach', id: 'a2', cols: 60, rows: 30 }));
+  h.onClose();
+  assert.deepEqual(released.sort(), ['a1', 'a2']);
 });

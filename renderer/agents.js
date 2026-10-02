@@ -4,7 +4,7 @@
 
 import { els } from './dom.js';
 import { agents, agentSeq, pendingExit, dormant, state, persistAgents, agentsForDir, dormantForDir, notifyAgentsChanged, record, displayLabel, onAgentsChanged, onStatusChanged } from './state.js';
-import { buildRemoteSnapshot, createSnapshotPusher } from './remote-sync.mjs';
+import { buildRemoteSnapshot, createSnapshotPusher, isUserInput } from './remote-sync.mjs';
 import { settings, termOpts } from './settings.js';
 import { confirmDialog, promptText, closeMenu } from './modals.js';
 import { updateStageBar, openSearch } from './stage.js';
@@ -159,9 +159,10 @@ export function spawn(dir, cwd, branch, isMain, restore = null, opts = {}) {
 
   term.onData((data) => {
     // The phone sized this pty; typing here takes it back once (refit sends the
-    // desktop size, main flips ownership) — not on every keystroke.
+    // desktop size, main flips ownership) — not on every keystroke. Mouse and
+    // focus reports (hovering, switching windows) don't count as typing.
     const owner = agents.get(id);
-    if (owner && owner.sizeOwner === 'remote') {
+    if (owner && owner.sizeOwner === 'remote' && isUserInput(data)) {
       owner.sizeOwner = 'desktop';
       owner.refit();
     }
@@ -181,10 +182,13 @@ export function spawn(dir, cwd, branch, isMain, restore = null, opts = {}) {
 
   // Refit whenever the panel changes size. Skipped while hidden (0 size),
   // so the pty is sized to the real visible panel, not the initial 80x30.
+  // While the phone owns the pty size, only the local view refits: a layout
+  // change here must not snap the phone's terminal back to desktop size.
   const refit = () => {
     if (el.clientHeight === 0 || el.clientWidth === 0) return;
     try {
       fit.fit();
+      if (agents.get(id)?.sizeOwner === 'remote') return;
       window.api.resize(id, term.cols, term.rows);
     } catch {
       /* terminal disposed */
@@ -449,6 +453,8 @@ export function activate(id) {
     // Viewing an agent that finished while unfocused clears the "unseen" flag;
     // it stays as plain "done".
     if (a.status === 'unseen') setStatus(id, 'done');
+    // Opening an agent here is using it here: take the pty size back.
+    if (a.sizeOwner === 'remote') a.sizeOwner = 'desktop';
     requestAnimationFrame(() => {
       a.refit();
       a.term.focus();
@@ -532,7 +538,11 @@ export function startRemoteSync() {
 // activate or keystroke then re-fits once to reclaim it.
 window.api.onSizeOwner(({ id, owner }) => {
   const a = agents.get(id);
-  if (a) a.sizeOwner = owner;
+  if (!a) return;
+  const handedBack = a.sizeOwner === 'remote' && owner === 'desktop';
+  a.sizeOwner = owner;
+  // The phone left this terminal: resize the pty back to the desktop panel.
+  if (handedBack) a.refit();
 });
 
 const remoteCommands = {

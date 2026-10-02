@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildRemoteSnapshot, snapshotChanged, createSnapshotPusher } from '../renderer/remote-sync.mjs';
+import { isUserInput, buildRemoteSnapshot, snapshotChanged, createSnapshotPusher } from '../renderer/remote-sync.mjs';
 
 const label = (x) => x.customLabel || (x.branch ? `⎇ ${x.branch}` : x.label);
 
@@ -79,4 +79,18 @@ test('the first push happens even for an empty list', () => {
   p.schedule();
   t.fire();
   assert.deepEqual(pushed, [{ seq: 1, list: [] }]);
+});
+
+test('isUserInput: typing and keys count, mouse and focus reports do not', () => {
+  assert.equal(isUserInput('a'), true);
+  assert.equal(isUserInput('\r'), true);
+  assert.equal(isUserInput('\x1b[A'), true); // arrow key
+  assert.equal(isUserInput('\x1b'), true); // Esc
+  assert.equal(isUserInput('\x1b[<35;12;7M'), false); // SGR mouse motion (?1003)
+  assert.equal(isUserInput('\x1b[<0;1;1M\x1b[<0;1;1m'), false); // SGR click
+  assert.equal(isUserInput('\x1b[M !!'), false); // legacy X10 mouse
+  assert.equal(isUserInput('\x1b[I'), false); // focus in (?1004)
+  assert.equal(isUserInput('\x1b[O'), false); // focus out
+  assert.equal(isUserInput('\x1b[Ix'), true); // focus report plus a real key
+  assert.equal(isUserInput(''), false);
 });

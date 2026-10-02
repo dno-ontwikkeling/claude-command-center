@@ -88,6 +88,7 @@ async function startServer(overrides = {}) {
         writeInput: (id, data) => writes.push({ id, data }),
         resize: () => {},
         sizeOwner: () => 'remote',
+        releaseSize: () => {},
         getAgents: () => ({ seq: 1, desktopUi: true, list: [] }),
         rpc: async () => ({}),
         log: quietLog,
