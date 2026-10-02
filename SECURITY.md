@@ -44,6 +44,17 @@ This is a local desktop application (Electron). Relevant to its threat model:
 - **Settings modification** — the app can add lifecycle hooks to
   `~/.claude/settings.json`; hooks are env-gated so they only report for
   app-spawned agents.
+- **Remote access server** (opt-in, off by default) — a WSS server that lets a
+  paired phone type into agent terminals, start/stop agents and run git
+  fetch/pull. It may face the internet (port forwarding). Controls: TLS with a
+  self-signed certificate pinned by the phone; a 256-bit token checked at the
+  HTTP upgrade (no WebSocket before auth); per-IP lockout after 5 failures;
+  frame validation that closes on the first malformed frame; size limits; the
+  token encrypted at rest on both ends; Regenerate to revoke all phones.
+  Bypasses of any of these — or a way to reach a pty, spawn outside saved
+  projects, or run other commands without the token — are in scope.
+- **Phone app** (`mobile/`) — the certificate pin (`PinTrustManager`), token
+  storage (Android Keystore) and the pairing QR format.
 
 Reports about any of the above — or bypasses of these controls — are in scope.
 

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- No cleartext anywhere. The PC connection uses its own pinned trust
+     manager in native code (PinnedSocket), not the system trust store. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

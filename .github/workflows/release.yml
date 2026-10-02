@@ -10,8 +10,11 @@ name: Release
 #   docs/chore/refactor/… → no release (default_bump: false)
 #
 # A push to main with no feat/fix/breaking commit produces no tag and no
-# release. When a bump happens the Windows job builds the installer and
-# attaches it to a GitHub pre-release; promote-release.yml flips it to stable.
+# release. When a bump happens: `draft` creates a draft release, the Windows
+# job (installer) and the android job (signed phone APK) upload to it in
+# parallel, and `publish` makes it a pre-release once both are attached;
+# promote-release.yml flips it to stable. If either build fails nothing is
+# published: re-run the failed job to finish the same release.
 #
 # workflow_dispatch with `version` set skips the auto-bump and releases that
 # exact version — an escape hatch for when the computed tag name is unusable
@@ -27,6 +30,7 @@ on:
       - "reviews/**"
       - ".claude/**"
       - "test/**"
+      - "mobile/test/**"
   workflow_dispatch:
     inputs:
       version:
@@ -92,8 +96,27 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           fi
 
-  build:
+  # Create the draft ONCE. The Windows and Android jobs then only upload to it
+  # (two parallel jobs creating it could produce duplicate drafts), and
+  # `publish` flips it live after both finish. Drafts stay mutable, which
+  # matters when immutable releases is on.
+  draft:
     needs: tag
+    if: ${{ needs.tag.outputs.new_tag != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create draft pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.tag.outputs.new_tag }}
+          CHANGELOG: ${{ needs.tag.outputs.changelog }}
+        run: |
+          printf '%s\n' "$CHANGELOG" > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" --verify-tag --draft --prerelease --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
+
+  build:
+    needs: [tag, draft]
     if: ${{ needs.tag.outputs.new_tag != '' }}
     runs-on: windows-latest
     steps:
@@ -117,23 +140,133 @@ jobs:
 
       - name: Build installer
         # --publish never: electron-builder only packages; the release upload
-        # below is owned by action-gh-release, not electron-builder.
+        # below goes to the draft the `draft` job created.
         run: npm run dist -- --publish never
 
-      # Upload to a DRAFT first (drafts stay mutable), then publish it. This is
-      # required when immutable releases is on (prereleases publish on creation,
-      # freezing assets before they upload) and is harmless when it is off.
-      - name: Upload installer to a draft release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.tag.outputs.new_tag }}
-          name: ${{ needs.tag.outputs.new_tag }}
-          body: ${{ needs.tag.outputs.changelog }}
-          prerelease: true
-          draft: true
-          files: dist/*.exe
+      - name: Upload installer to the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.tag.outputs.new_tag }}
+        run: gh release upload "$TAG" dist/*.exe --clobber
 
+  # The phone app (mobile/), signed with the fixed release keystore so each
+  # APK installs over the previous one. Runs in parallel with the Windows build.
+  android:
+    needs: [tag, draft]
+    if: ${{ needs.tag.outputs.new_tag != '' }}
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.tag.outputs.new_tag }}
+      V: ${{ needs.tag.outputs.new_version }}
+    steps:
+      - name: Require the release keystore secrets
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=""
+          [ -n "$KS" ] || missing="$missing ANDROID_KEYSTORE_BASE64"
+          [ -n "$KS_PASS" ] || missing="$missing ANDROID_KEYSTORE_PASSWORD"
+          [ -n "$KEY_ALIAS" ] || missing="$missing ANDROID_KEY_ALIAS"
+          [ -n "$KEY_PASS" ] || missing="$missing ANDROID_KEY_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repo secrets:$missing (see mobile/README.md, keystore setup)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # all tags, for the versionCode check below
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      # A sideloaded update only installs over the previous APK when its
+      # versionCode is higher, so refuse to build one that isn't (e.g. a
+      # workflow_dispatch with an explicit lower version).
+      - name: Compute and check versionCode
+        id: code
+        run: |
+          code=$(node mobile/scripts/version-code.mjs "$V")
+          max=0
+          for t in $(git tag -l 'v*'); do
+            [ "$t" = "$TAG" ] && continue
+            c=$(node mobile/scripts/version-code.mjs "$t" 2>/dev/null) || continue
+            [ "$c" -gt "$max" ] && max=$c
+          done
+          if [ "$code" -le "$max" ]; then
+            echo "::error::versionCode $code for $TAG is not higher than an existing release ($max); the APK could not update in place."
+            exit 1
+          fi
+          echo "versionCode=$code (previous max $max)"
+          echo "value=$code" >> "$GITHUB_OUTPUT"
+
+      - name: Install, sync version, build web assets
+        working-directory: mobile
+        run: |
+          npm ci
+          npm version "$V" --no-git-tag-version --allow-same-version
+          npm run build
+          npx cap sync android
+
+      - name: Decode keystore
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: echo "$KS" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+      - name: Build signed release APK
+        working-directory: mobile/android
+        env:
+          CC_KEYSTORE_PATH: ${{ runner.temp }}/release.jks
+          CC_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          CC_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          CC_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          CODE: ${{ steps.code.outputs.value }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease -PccVersionName="$V" -PccVersionCode="$CODE" --console=plain
+
+      - name: Verify signature and name the APK
+        run: |
+          bt=$(ls "$ANDROID_SDK_ROOT/build-tools" | sort -V | tail -1)
+          apk=mobile/android/app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_SDK_ROOT/build-tools/$bt/apksigner" verify --print-certs "$apk"
+          cp "$apk" "command-center-remote-$V.apk"
+
+      - name: Upload APK to the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$TAG" "command-center-remote-$V.apk" --clobber
+
+      - name: Remove keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"
+
+  # Publish only after BOTH artifacts are attached: with immutable releases on,
+  # assets are frozen the moment a release is published.
+  publish:
+    needs: [tag, build, android]
+    if: ${{ needs.tag.outputs.new_tag != '' }}
+    runs-on: ubuntu-latest
+    steps:
       - name: Publish the draft as a pre-release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "${{ needs.tag.outputs.new_tag }}" --draft=false --prerelease
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.tag.outputs.new_tag }}
+        run: gh release edit "$TAG" --draft=false --prerelease

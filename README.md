@@ -16,6 +16,10 @@ with a status dot that reflects what the agent is doing right now.
   - `idle` — turn finished, waiting for you
   - `dead` — session ended
 - **Light / dark theme** — follows OS by default, toggle in the sidebar.
+- **Remote access from your phone** (opt-in) — a sideloaded Android app shows
+  the same agents and status, opens their terminals, starts / resumes / closes
+  agents, shows diffs, fetches / pulls, and notifies you when an agent needs
+  input. See [Remote access](#remote-access).
 
 ## How status works
 
@@ -31,6 +35,67 @@ can't spoof status events.
 ```
 hook event ──> report.js ──POST (x-cc-secret)──> app HTTP server ──> sidebar dot
 ```
+
+## Remote access
+
+Work on this PC's agents from your phone with the **CC Remote** Android app
+(`mobile/`). Remote access is **off by default**.
+
+```
+phone app ──WSS (pinned cert + token)──> Command Center ──> the same ptys / agents
+```
+
+### Reaching the PC
+
+- **Tailscale (recommended).** Install Tailscale on the PC and the phone. The PC
+  gets a stable `100.x.y.z` address that only your devices can reach, so nothing
+  is exposed to the internet. Command Center offers that address first.
+- **Port forwarding.** Forward a TCP port on your router to the PC (default
+  `47820`) and enter your public IP or DDNS name under **Phone connects to**.
+  This puts a server that can type into your terminals on the internet; it is
+  protected by TLS, the token and a lockout (below), but Tailscale is safer.
+
+Windows Firewall asks the first time the server listens: allow **private
+networks** (and public only if you really need it).
+
+### Pairing
+
+1. **Settings → Remote**: turn on **Remote access**. The status line shows
+   where it listens, or why it couldn't (port in use, firewall).
+2. Click **Show pairing QR** and scan it with CC Remote.
+3. The phone connects and stays connected in the background (a persistent
+   "Connected to PC" notification), so it can alert you when an agent needs input.
+
+- **Disconnect all** kicks connected phones; they keep their pairing and can
+  reconnect.
+- **Regenerate** creates a new token *and* certificate: every phone is
+  disconnected and must scan the new QR. Use it if a phone is lost or the QR
+  leaked.
+- The pairing survives restarts of both apps. If the PC's address changes (LAN
+  IP, no Tailscale), re-scan the QR.
+
+### Security model
+
+- **TLS with a pinned self-signed certificate.** The QR carries the
+  certificate's SHA-256 fingerprint; the phone trusts exactly that certificate,
+  no CA, so a man in the middle can't impersonate the PC.
+- **256-bit token, checked before any WebSocket exists.** A wrong token gets
+  HTTP 401; 5 failures from one IP lock it out for 15 minutes (in memory: an app
+  restart resets it). Connections and failures are logged with the IP, never the
+  token.
+- **Token encrypted at rest** — on the PC with the OS keystore (`safeStorage`,
+  DPAPI on Windows), on the phone with the Android Keystore; phone backups are
+  disabled so it can't be restored onto another device.
+- **A leaked QR code equals full access** to your agents. Show it only when
+  pairing; Regenerate if a screenshot of it got out.
+- **Bypass permissions applies to phone-started agents too.** If it's on, an
+  agent started from the phone skips permission prompts (and never raises a
+  needs-input alert for them). Settings → Remote warns when both are on.
+- Remote clients can only start agents in saved projects / workspaces and their
+  registered worktrees, and only run the same guarded git commands as the UI.
+
+The phone app itself — building, sideloading and the release keystore — is
+documented in [`mobile/README.md`](mobile/README.md).
 
 ## Stack
 
@@ -64,21 +129,46 @@ Electron, two processes with a curated IPC bridge (`contextIsolation: true`,
     `git` porcelain output parsers.
   - `logger.js` — leveled logger, rotating file at `userData/logs/main.log`
     (`CC_LOG_LEVEL` controls verbosity); renderer logs are forwarded here too.
+  - Remote access: `remoteserver.js` (WSS server, auth at upgrade),
+    `remoteproto.js` (protocol v1 frames + per-connection handler),
+    `remoteauth.js` (token, lockout, pairing code), `remotecert.js` (pinned
+    self-signed cert), `ringbuffer.js` (per-agent scrollback for replay). The
+    protocol contract lives in `test/fixtures/remote-proto/`, shared with the
+    phone app's JS and Kotlin tests.
 - **Renderer** (`renderer/`) — ES modules. `state.js` holds shared state and a
-  small pub/sub (`onAgentsChanged`) so `agents.js` no longer imports the sidebar.
+  small pub/sub (`onAgentsChanged`, `onStatusChanged`) so `agents.js` no longer
+  imports the sidebar. The renderer is the source of truth for agents: it mirrors
+  the list to main for the phone and runs phone actions (`remote:command`).
   Pure helpers are isolated for testing: `diff-parse.mjs` (unified-diff parser),
-  `tui-signals.mjs` (terminal-output status classifier).
+  `tui-signals.mjs` (terminal-output status classifier), `remote-sync.mjs`
+  (phone snapshot).
+- **Phone app** (`mobile/`) — see [`mobile/README.md`](mobile/README.md).
 
 ### Testing
 
-Zero-dependency unit tests via Node's built-in runner. They cover the
-electron-free modules (no `npm install` needed to run them):
+Unit tests via Node's built-in runner cover the electron-free modules. The
+remote-access tests need the pure-JS dependencies (`ws`, `selfsigned`), so
+install first — `--ignore-scripts` skips the Electron download and node-pty
+build:
 
 ```bash
-npm test        # node --test
+npm ci --ignore-scripts
+npm test        # node --test "test/**/*.test.{js,mjs}"  (Node >= 21)
 ```
 
-CI (`.github/workflows/ci.yml`) runs the suite on every push and pull request.
+CI (`.github/workflows/ci.yml`) runs the suite on every push and pull request,
+plus the phone app's tests and a debug APK build.
+
+### Smoke-running a dev build
+
+The installed app and `npm start` share one profile folder
+(`%APPDATA%\claude-command-center`) and one single-instance lock: while the
+installed app runs, a dev launch exits immediately, and anything a dev build
+writes lands in your real profile. Use a throwaway profile:
+
+```bash
+npx electron . --user-data-dir=/path/to/scratch-profile
+```
 
 ### Logging
 

@@ -1,0 +1,23 @@
+{
+  "name": "claude-command-center-remote",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Phone client for Claude Command Center remote access (sideloaded Android app)",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/copy-assets.mjs",
+    "test": "node --test \"test/**/*.test.mjs\"",
+    "sync": "npm run build && npx cap sync android"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/barcode-scanner": "^3.1.2",
+    "@capacitor/core": "^8.5.2",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.2"
+  }
+}

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">CC Remote</string>
+    <string name="title_activity_main">CC Remote</string>
+    <string name="package_name">com.olivier.commandcenter.remote</string>
+    <string name="custom_url_scheme">com.olivier.commandcenter.remote</string>
+</resources>

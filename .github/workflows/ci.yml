@@ -38,3 +38,44 @@ jobs:
       # Self-contained via npx — no project install needed.
       - name: Typecheck IPC boundary
         run: npm run typecheck
+
+  # Phone app (mobile/): JS unit tests, Android unit tests and a debug APK.
+  # No secrets here, so it is safe for pull requests from forks. Release
+  # signing happens only in release.yml.
+  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      # Full checkout: the app vendors renderer/diff-parse.mjs and its tests
+      # read the shared protocol fixtures under test/fixtures/.
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      # Capacitor 8 builds with JDK 21. ubuntu-latest ships the Android SDK.
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Install dependencies
+        run: npm ci
+      - name: JS unit tests
+        run: npm test
+      - name: Build web assets and sync Android project
+        run: npm run build && npx cap sync android
+      - name: Android unit tests and debug APK
+        working-directory: mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest assembleDebug --console=plain
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: command-center-remote-debug
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
