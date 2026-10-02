@@ -507,3 +507,56 @@ textarea.link-code {
   padding: 8px;
   word-break: break-all;
 }
+
+/* ---- history ---- */
+.history {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 12px 24px;
+  font-size: 14px;
+}
+
+.h-status {
+  margin: 16px 0;
+}
+
+.h-user {
+  margin: 14px 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--panel);
+  border-left: 3px solid var(--accent);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.h-text p {
+  margin: 6px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.h-text pre {
+  margin: 6px 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--panel);
+  overflow-x: auto;
+  font: 12px/1.45 monospace;
+}
+
+.h-tool {
+  margin: 2px 0;
+  font: 12px/1.5 monospace;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.h-tool b {
+  color: var(--fg);
+  font-weight: 600;
+}

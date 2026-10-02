@@ -261,3 +261,8 @@ test('closing the connection hands back the size of every attached pty', () => {
   h.onClose();
   assert.deepEqual(released.sort(), ['a1', 'a2']);
 });
+
+test('transcript rpc needs an agent id', () => {
+  assert.equal(parseClientFrame(JSON.stringify({ t: 'rpc', reqId: 1, method: 'transcript', args: { id: 'a1' } })).ok, true);
+  assert.equal(parseClientFrame(JSON.stringify({ t: 'rpc', reqId: 1, method: 'transcript', args: {} })).ok, false);
+});

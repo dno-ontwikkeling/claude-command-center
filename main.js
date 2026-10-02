@@ -40,6 +40,7 @@ const {
 } = require('./gitops');
 const { createRingBuffer } = require('./ringbuffer');
 const { createConnectionHandler, createSizeTracker } = require('./remoteproto');
+const transcript = require('./transcript');
 const { createRemoteServer } = require('./remoteserver');
 const { loadOrCreateCert, regenerateCert } = require('./remotecert');
 const remoteAuth = require('./remoteauth');
@@ -1149,7 +1150,49 @@ const REMOTE_RPC = {
   'git.diff': ({ cwd, mode }) => gitDiff(cwd, mode),
   'git.fetch': ({ cwd }) => gitFetch(cwd),
   'git.pull': ({ cwd }) => gitPull(cwd),
+  transcript: async ({ id }) => {
+    const { sessionId } = await rendererCommand('session', { id });
+    if (!sessionId) return { entries: [] }; // no prompt sent yet
+    return { entries: transcript.parseTranscript(await readTranscriptTail(sessionId)) };
+  },
 };
+
+// Claude Code keeps each session at ~/.claude/projects/<encoded cwd>/<id>.jsonl.
+// Session ids are UUIDs, so look the file up by name instead of re-deriving
+// Claude Code's folder encoding.
+const TRANSCRIPT_TAIL_BYTES = 8 * 1024 * 1024;
+async function readTranscriptTail(sessionId) {
+  if (!transcript.isSessionId(sessionId)) throw new Error('Invalid session.');
+  const root = path.join(os.homedir(), '.claude', 'projects');
+  let dirs = [];
+  try {
+    dirs = await fs.promises.readdir(root, { withFileTypes: true });
+  } catch {
+    throw new Error('No Claude Code transcripts found.');
+  }
+  for (const d of dirs) {
+    if (!d.isDirectory()) continue;
+    const file = path.join(root, d.name, `${sessionId}.jsonl`);
+    let fh;
+    try {
+      fh = await fs.promises.open(file, 'r');
+    } catch {
+      continue;
+    }
+    try {
+      const { size } = await fh.stat();
+      const start = Math.max(0, size - TRANSCRIPT_TAIL_BYTES);
+      const buf = Buffer.alloc(size - start);
+      await fh.read(buf, 0, buf.length, start);
+      const text = buf.toString('utf8');
+      // A tail read starts mid-line: drop the partial first line.
+      return start > 0 ? text.slice(text.indexOf('\n') + 1) : text;
+    } finally {
+      await fh.close();
+    }
+  }
+  throw new Error('Transcript not found.');
+}
 
 // Methods and args were already validated by remoteproto.parseClientFrame.
 async function remoteRpc(method, args) {

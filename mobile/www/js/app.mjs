@@ -9,6 +9,7 @@ import './list.mjs';
 import './settings-screen.mjs';
 import './terminal.mjs';
 import './git.mjs';
+import './history.mjs';
 
 const Scanner = window.Capacitor?.registerPlugin('CapacitorBarcodeScanner');
 const QR_CODE = 0; // html5-qrcode Html5QrcodeSupportedFormats.QR_CODE

@@ -38,6 +38,7 @@ const RPC_ARGS = {
   'git.diff': (a) => isPath(a.cwd) && (a.mode === 'wip' || a.mode === 'branch'),
   'git.fetch': (a) => isPath(a.cwd),
   'git.pull': (a) => isPath(a.cwd),
+  transcript: (a) => isId(a.id),
 };
 
 const FRAME_RULES = {

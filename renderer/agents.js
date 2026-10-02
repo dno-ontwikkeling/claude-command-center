@@ -558,6 +558,13 @@ const remoteCommands = {
     if (!dormant.has(id)) throw new Error('Not a dormant agent.');
     return { id: resume(id, { background: true, cols, rows }) };
   },
+  // The Claude session id behind an agent (live or dormant), for the phone's
+  // history view; main reads the transcript itself.
+  session({ id }) {
+    const a = agents.get(id) || dormant.get(id);
+    if (!a) throw new Error('Unknown agent.');
+    return { sessionId: a.sessionId || null };
+  },
   // Same as the desktop's Close: a used session stays resumable as dormant.
   kill({ id }) {
     if (!agents.has(id)) throw new Error('Agent is not running.');

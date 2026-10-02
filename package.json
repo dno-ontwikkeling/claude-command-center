@@ -45,6 +45,7 @@
       "remoteproto.js",
       "remotecert.js",
       "remoteserver.js",
+      "transcript.js",
       "build/icon.png",
       "renderer/**",
       "hooks/**",
