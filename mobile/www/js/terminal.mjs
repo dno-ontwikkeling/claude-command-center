@@ -21,8 +21,8 @@ screens.terminal = (el, { id }) => {
   const yieldedBox = h(
     'div',
     { class: 'term-yielded', hidden: true },
-    h('div', { class: 'term-yielded-title' }, 'Controlled from the desktop'),
-    h('p', { class: 'muted' }, 'Take over to continue here. The session restarts at this screen size.'),
+    h('div', { class: 'term-yielded-title' }, 'Working on host'),
+    h('p', { class: 'muted' }, 'This agent is being used on the PC. Take over to continue here; the session restarts at this screen size.'),
     h('button', { class: 'primary', onclick: () => takeOver() }, 'Take over'),
   );
   const host = h('div', { class: 'term-host' });

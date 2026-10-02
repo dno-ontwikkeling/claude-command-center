@@ -4,7 +4,7 @@
 
 import { els } from './dom.js';
 import { agents, agentSeq, pendingExit, dormant, state, persistAgents, agentsForDir, dormantForDir, notifyAgentsChanged, record, displayLabel, onAgentsChanged, onStatusChanged } from './state.js';
-import { buildRemoteSnapshot, createSnapshotPusher, shouldContinueAfterRestart } from './remote-sync.mjs';
+import { buildRemoteSnapshot, createSnapshotPusher } from './remote-sync.mjs';
 import { settings, termOpts } from './settings.js';
 import { confirmDialog, promptText, closeMenu } from './modals.js';
 import { updateStageBar, openSearch } from './stage.js';
@@ -467,7 +467,6 @@ window.api.onData(({ id, data }) => {
   const a = agents.get(id);
   if (!a) return;
   a.term.write(data);
-  a.lastDataAt = Date.now();
   detectPrompts(id, data);
   markActivity(id);
 });
@@ -548,42 +547,23 @@ function syncRemoteOverlay(id) {
 
 // Hand an agent to a device by restarting its session there (--resume at that
 // device's size): the app reprints the conversation at the new width, so the
-// terminal on that device has a clean, complete scrollback. Interrupted work or
-// a pending question gets a "continue" once the session is back. Returns false
+// terminal on that device has a clean, complete scrollback. A turn in progress
+// is interrupted (type "continue" to pick it up). Returns false
 // when there is no session to resume yet (nothing was sent): callers fall back
 // to a plain resize.
 export async function restartFor(id, { owner, cols, rows }) {
   const a = agents.get(id);
   if (!a || !a.sessionId || !a.used || a.restarting) return false;
-  const resumeTurn = shouldContinueAfterRestart(a.status);
   a.restarting = true;
   a.sizeOwner = owner;
   syncRemoteOverlay(id);
   a.term.reset();
   try {
-    const ok = await window.api.restart(id, a.cwd, { bypass: settings.bypass, resume: a.sessionId, cols, rows, owner });
-    if (ok && resumeTurn) continueWhenReady(id);
-    return ok;
+    return await window.api.restart(id, a.cwd, { bypass: settings.bypass, resume: a.sessionId, cols, rows, owner });
   } finally {
     a.restarting = false;
     remotePusher.schedule();
   }
-}
-
-// Type "continue" once the resumed session has finished drawing (no output for
-// a moment); give up after 30s.
-function continueWhenReady(id) {
-  const started = Date.now();
-  const check = () => {
-    const a = agents.get(id);
-    if (!a || Date.now() - started > 30000) return;
-    const quiet = a.lastDataAt && a.lastDataAt > started && Date.now() - a.lastDataAt > 1500;
-    if (!quiet) return void setTimeout(check, 300);
-    window.api.sendInput(id, 'continue');
-    // Separate Enter, so the TUI doesn't take the text + Enter as one paste.
-    setTimeout(() => window.api.sendInput(id, '\r'), 150);
-  };
-  setTimeout(check, 1000);
 }
 
 // "Take over" on the desktop's "Working remotely" page.

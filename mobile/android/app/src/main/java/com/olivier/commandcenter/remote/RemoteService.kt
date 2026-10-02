@@ -36,6 +36,7 @@ class RemoteService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private val conn = ConnState()
     private val needsInput = NeedsInput()
+    private val turnFinished = TurnFinished()
     private var socket: WebSocket? = null
     private var reconnect: Runnable? = null
     private lateinit var notifications: NotificationManager
@@ -126,6 +127,11 @@ class RemoteService : Service() {
                     val result = needsInput.apply(agents)
                     result.dismiss.forEach { notifications.cancel(notificationId(it)) }
                     result.notify.forEach { postNeedsInput(it, labels[it]) }
+                    // With bypass permissions on, agents rarely need input:
+                    // a finished turn is the other thing worth a notification.
+                    val finished = turnFinished.apply(agents)
+                    finished.dismiss.forEach { notifications.cancel(finishedId(it)) }
+                    finished.notify.forEach { postFinished(it, labels[it]) }
                 }
                 EventBus.message(text)
             }
@@ -222,6 +228,18 @@ class RemoteService : Service() {
         notifications.notify(notificationId(agentId), n)
     }
 
+    private fun postFinished(agentId: String, label: String?) {
+        val n = NotificationCompat.Builder(this, CHANNEL_INPUT)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("${label?.ifBlank { null } ?: "An agent"} finished")
+            .setContentText("Tap to open the terminal.")
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setAutoCancel(true)
+            .setContentIntent(openAppIntent(agentId))
+            .build()
+        notifications.notify(finishedId(agentId), n)
+    }
+
     private fun postInfo(title: String, text: String) {
         val n = NotificationCompat.Builder(this, CHANNEL_INPUT)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
@@ -234,6 +252,9 @@ class RemoteService : Service() {
     }
 
     private fun notificationId(agentId: String) = NOTIFY_BASE + (agentId.hashCode() and 0xFFFF)
+
+    // A separate range, so "finished" and "needs input" don't replace each other.
+    private fun finishedId(agentId: String) = NOTIFY_BASE + 0x10000 + (agentId.hashCode() and 0xFFFF)
 
     companion object {
         const val ACTION_CONNECT = "com.olivier.commandcenter.remote.CONNECT"

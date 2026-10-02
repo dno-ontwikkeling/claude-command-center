@@ -26,7 +26,8 @@ with a status dot that reflects what the agent is doing right now.
   the same agents and status, opens their terminals, has the same agent menu,
   adds projects and workspaces, shows diffs and the conversation history,
   fetches / pulls, and notifies you when an agent needs input. See
-  [Remote access](#remote-access).
+  [Remote access](#remote-access). The phone notifies you when an agent needs
+  input and when it finishes a turn.
 
 ## How status works
 
@@ -91,10 +92,9 @@ control of it:
   conversation at that width and the phone can scroll through it cleanly.
 - The desktop then shows **Working remotely** instead of the terminal, with a
   **Take over** button that restarts the session at the desktop's size. The
-  phone in turn shows **Controlled from the desktop** with its own Take over.
-- A restart in the middle of a turn interrupts it; the app then types
-  `continue` for you once the session is back. A pending permission question
-  is asked again.
+  phone in turn shows **Working on host** with its own Take over.
+- A restart in the middle of a turn interrupts it: type `continue` to pick it
+  up. A pending permission question is asked again.
 - An agent you haven't sent a prompt to has no session to resume yet: it is
   just resized and repainted.
 

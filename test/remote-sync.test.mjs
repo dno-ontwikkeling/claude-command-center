@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildRemoteSnapshot, snapshotChanged, createSnapshotPusher, shouldContinueAfterRestart } from '../renderer/remote-sync.mjs';
+import { buildRemoteSnapshot, snapshotChanged, createSnapshotPusher } from '../renderer/remote-sync.mjs';
 
 const label = (x) => x.customLabel || (x.branch ? `⎇ ${x.branch}` : x.label);
 
@@ -82,10 +82,3 @@ test('the first push happens even for an empty list', () => {
   assert.deepEqual(pushed, [{ seq: 1, list: [] }]);
 });
 
-test('a restart that interrupted work (or a question) gets a "continue"', () => {
-  assert.equal(shouldContinueAfterRestart('busy'), true);
-  assert.equal(shouldContinueAfterRestart('needs-input'), true);
-  assert.equal(shouldContinueAfterRestart('idle'), false);
-  assert.equal(shouldContinueAfterRestart('done'), false);
-  assert.equal(shouldContinueAfterRestart('unseen'), false);
-});

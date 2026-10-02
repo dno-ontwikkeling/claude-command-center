@@ -66,11 +66,3 @@ export function createSnapshotPusher({ build, push, delayMs = 150, setTimer = se
     },
   };
 }
-
-/**
- * A session restarted mid-turn (working, or waiting on a question) lost that
- * turn: the app types "continue" once the resumed session is ready.
- */
-export function shouldContinueAfterRestart(status) {
-  return status === 'busy' || status === 'needs-input';
-}
