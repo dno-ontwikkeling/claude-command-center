@@ -7,7 +7,7 @@ import { termSettings } from './settings-screen.mjs';
 import { xtermOptions } from './term-settings.mjs';
 import { EXTRA_KEYS, keySequence, applyCtrl } from './keys.mjs';
 import { touchDistance, fontSizeFromPinch } from './pinch.mjs';
-import { createLineAccumulator, wheelSequence } from './touch-scroll.mjs';
+import { createLineAccumulator, wheelSequence, createVelocityTracker, momentumStep, WHEEL_LINES } from './touch-scroll.mjs';
 import { h } from './dom.mjs';
 
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -164,32 +164,74 @@ screens.terminal = (el, { id }) => {
   const offSettings = termSettings.subscribe(applySettings);
   darkQuery.addEventListener('change', applySettings);
 
-  // Touch: one finger scrolls, two fingers pinch-zoom (live preview,
-  // persisted on release). Capture phase + preventDefault so neither the
-  // WebView nor xterm's own (unreliable) touch handling also reacts.
+  // Touch: one finger scrolls (with a momentum fling after release), two
+  // fingers pinch-zoom (live preview, persisted on release). Capture phase +
+  // preventDefault so neither the WebView nor xterm's own (unreliable) touch
+  // handling also reacts.
   let pinch = null;
   let swipe = null;
-  const lineHeight = () => (host.querySelector('.xterm-screen')?.clientHeight || host.clientHeight) / term.rows;
+  let fling = 0; // requestAnimationFrame id
+  const screenEl = () => host.querySelector('.xterm-screen') || host;
+  const lineHeight = () => screenEl().clientHeight / term.rows;
 
-  function scrollBy(lines) {
-    if (!lines) return;
-    // Full-screen apps that track the mouse get wheel events; otherwise
-    // scroll our own scrollback.
-    if (term.buffer.active.type === 'alternate' && term.modes.mouseTrackingMode !== 'none') {
-      if (attached) send(inputFrame(id, wheelSequence(lines)));
+  // Full-screen apps that track the mouse (Claude Code does) scroll
+  // themselves: send them wheel events at the finger's cell. Otherwise scroll
+  // our own scrollback line by line.
+  const wantsWheel = () => term.buffer.active.type === 'alternate' && term.modes.mouseTrackingMode !== 'none';
+
+  function startSwipe(touch) {
+    const wheel = wantsWheel();
+    const rect = screenEl().getBoundingClientRect();
+    const col = Math.floor(((touch.clientX - rect.left) / rect.width) * term.cols) + 1;
+    const row = Math.floor(((touch.clientY - rect.top) / rect.height) * term.rows) + 1;
+    return {
+      y: touch.clientY,
+      wheel,
+      col: Math.min(term.cols, col),
+      row: Math.min(term.rows, row),
+      acc: createLineAccumulator(lineHeight() * (wheel ? WHEEL_LINES : 1)),
+      vel: createVelocityTracker(),
+    };
+  }
+
+  function scrollPx(s, dy) {
+    const steps = s.acc.move(dy);
+    if (!steps) return;
+    if (s.wheel) {
+      if (attached) send(inputFrame(id, wheelSequence(steps, s.col, s.row)));
     } else {
-      term.scrollLines(lines);
+      term.scrollLines(steps);
     }
+  }
+
+  function stopFling() {
+    cancelAnimationFrame(fling);
+    fling = 0;
+  }
+
+  function startFling(s, v) {
+    let last = performance.now();
+    const frame = (now) => {
+      const step = momentumStep(v, now - last);
+      last = now;
+      if (!step) return stopFling();
+      v = step.v;
+      scrollPx(s, step.dy);
+      fling = requestAnimationFrame(frame);
+    };
+    fling = requestAnimationFrame(frame);
   }
 
   host.addEventListener(
     'touchstart',
     (e) => {
+      stopFling();
       if (e.touches.length === 2) {
         swipe = null;
         pinch = { dist: touchDistance(e.touches[0], e.touches[1]), size: term.options.fontSize };
       } else if (e.touches.length === 1 && !pinch) {
-        swipe = { y: e.touches[0].clientY, acc: createLineAccumulator(lineHeight()) };
+        swipe = startSwipe(e.touches[0]);
+        swipe.vel.add(e.timeStamp, swipe.y);
       }
     },
     { capture: true, passive: true },
@@ -209,8 +251,9 @@ screens.terminal = (el, { id }) => {
         e.preventDefault();
         e.stopPropagation();
         const y = e.touches[0].clientY;
-        scrollBy(swipe.acc.move(y - swipe.y));
+        scrollPx(swipe, y - swipe.y);
         swipe.y = y;
+        swipe.vel.add(e.timeStamp, y);
       }
     },
     { capture: true, passive: false },
@@ -219,13 +262,21 @@ screens.terminal = (el, { id }) => {
     'touchend',
     (e) => {
       if (e.touches.length) return;
-      swipe = null;
+      if (swipe) {
+        const v = swipe.vel.velocity(e.timeStamp);
+        if (v) startFling(swipe, v);
+        swipe = null;
+      }
       if (!pinch) return;
       pinch = null;
       termSettings.update({ fontSize: term.options.fontSize });
     },
     { capture: true },
   );
+  host.addEventListener('touchcancel', () => {
+    swipe = null;
+    pinch = null;
+  });
 
   host.addEventListener('click', () => term.focus());
   requestAnimationFrame(() => {
@@ -234,6 +285,7 @@ screens.terminal = (el, { id }) => {
   });
 
   return () => {
+    stopFling();
     detach();
     offFrames();
     offChanged();
