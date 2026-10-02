@@ -434,6 +434,18 @@ function resizeAgent(id, cols, rows, owner, { repaint = false } = {}) {
 // is not reported to the renderer or the phone. Resolves true once the new pty
 // runs. Used when the phone or the desktop takes control of an agent.
 const restarting = new Set();
+
+// `claude stop <id>` ends a session left running in the background (its
+// conversation is kept). Errors (nothing running) are expected and ignored.
+function stopBackgroundSession(sessionId) {
+  if (!sessionId) return Promise.resolve();
+  return new Promise((resolve) => {
+    execFile(resolveClaude(), ['stop', String(sessionId).slice(0, 8)], { timeout: 8000, windowsHide: true }, () =>
+      resolve(),
+    );
+  });
+}
+
 function restartAgent(id, cwd, opts) {
   return new Promise((resolve) => {
     const old = agents.get(id);
@@ -447,8 +459,12 @@ function restartAgent(id, cwd, opts) {
         agents.delete(id);
         restarting.delete(id);
       }
-      spawnAgent(id, cwd, opts);
-      resolve(agents.has(id));
+      // The killed claude may have left its session running in the background,
+      // and `--resume` then refuses ("running in the background"). Stop it first.
+      stopBackgroundSession(opts && opts.resume).then(() => {
+        spawnAgent(id, cwd, opts);
+        resolve(agents.has(id));
+      });
     };
     if (!old) return start();
     restarting.add(id);
