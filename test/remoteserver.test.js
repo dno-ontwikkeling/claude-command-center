@@ -205,7 +205,7 @@ test('plain HTTPS requests (no upgrade) get 426', async () => {
   }
 });
 
-test('attach replays scrollback then streams live data in order over the wire', async () => {
+test('attach replays a reset (app repaints at the new size) then streams live data in order over the wire', async () => {
   const { server, port, token, pems, addPty, emitData, writes } = await startServer();
   try {
     addPty('a1');
@@ -214,7 +214,7 @@ test('attach replays scrollback then streams live data in order over the wire', 
     await nextMessage(ws); // agents
     ws.send(JSON.stringify({ t: 'attach', id: 'a1', cols: 60, rows: 30 }));
     const replay = await nextMessage(ws);
-    assert.deepEqual(replay, { t: 'replay', id: 'a1', lastSeq: 1, data: '\x1bcbefore' });
+    assert.deepEqual(replay, { t: 'replay', id: 'a1', lastSeq: 1, data: '\x1bc' });
     emitData('a1', 'after');
     assert.deepEqual(await nextMessage(ws), { t: 'data', id: 'a1', seq: 2, data: 'after' });
     ws.send(JSON.stringify({ t: 'input', id: 'a1', data: 'hi' }));

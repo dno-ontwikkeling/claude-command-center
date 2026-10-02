@@ -182,6 +182,14 @@ screens.terminal = (el, { id }) => {
   // our own scrollback line by line.
   const wantsWheel = () => term.buffer.active.type === 'alternate' && term.modes.mouseTrackingMode !== 'none';
 
+  // Everything else (Claude Code's classic renderer, shells) has real
+  // scrollback: let the WebView scroll xterm's viewport natively (finger-speed
+  // flings, roll-out, faster repeated flicks) by passing touches through the
+  // text layer (CSS: .term-host.native-scroll).
+  const updateScrollMode = () => host.classList.toggle('native-scroll', !wantsWheel());
+  updateScrollMode();
+  const offWriteParsed = term.onWriteParsed(updateScrollMode);
+
   function startSwipe(touch) {
     const wheel = wantsWheel();
     const rect = screenEl().getBoundingClientRect();
@@ -238,7 +246,7 @@ screens.terminal = (el, { id }) => {
       if (e.touches.length === 2) {
         swipe = null;
         pinch = { dist: touchDistance(e.touches[0], e.touches[1]), size: term.options.fontSize };
-      } else if (e.touches.length === 1 && !pinch) {
+      } else if (e.touches.length === 1 && !pinch && wantsWheel()) {
         swipe = startSwipe(e.touches[0]);
         swipe.vel.add(e.timeStamp, swipe.y);
       }
@@ -295,6 +303,7 @@ screens.terminal = (el, { id }) => {
   });
 
   return () => {
+    offWriteParsed.dispose();
     stopFling();
     detach();
     offFrames();

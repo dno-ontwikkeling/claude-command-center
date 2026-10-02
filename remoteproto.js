@@ -134,7 +134,8 @@ function createSizeTracker() {
 //   hasPty(id)               - is there a live pty for this agent
 //   getBuffer(id)            - the agent's ring buffer (or null)
 //   writeInput(id, data)     - write to the pty
-//   resize(id, cols, rows, owner) - resize via the size tracker
+//   resize(id, cols, rows, owner, {repaint}) - resize via the size tracker;
+//                              repaint forces a redraw even at an unchanged size
 //   sizeOwner(id)            - current size owner ('desktop' | 'remote' | null)
 //   releaseSize(id)          - this client stopped viewing the pty: hand its size back
 //   modePrefix(id)           - escape sequences re-enabling the app's terminal modes
@@ -175,14 +176,17 @@ function createConnectionHandler(deps) {
       safeSend({ t: 'exit', id, exitCode: null, error: 'Agent is not running.' });
       return;
     }
-    // Size first so the app repaints (SIGWINCH) at the phone's width, then
-    // snapshot + subscribe in this same synchronous tick: nothing can be
-    // appended in between, so live data continues exactly after lastSeq.
-    deps.resize(id, cols, rows, 'remote');
+    // Old output was drawn at the desktop's width; replayed into the phone's
+    // terminal it fills the scrollback with garbage. Instead resize with a
+    // forced repaint, so the app (and ConPTY) redraw the screen at the phone's
+    // size, and send only a reset plus the app's terminal modes. Subscribing in
+    // this same synchronous tick means the repaint arrives as live data after
+    // lastSeq. The phone's History screen covers older conversation.
+    deps.resize(id, cols, rows, 'remote', { repaint: true });
     const buf = deps.getBuffer(id);
-    const { data, lastSeq } = buf ? buf.snapshot() : { data: '', lastSeq: 0 };
+    const lastSeq = buf ? buf.snapshot().lastSeq : 0;
     attached.set(id, { lastSeq, cols, rows });
-    safeSend({ t: 'replay', id, lastSeq, data: RESET + deps.modePrefix(id) + data });
+    safeSend({ t: 'replay', id, lastSeq, data: RESET + deps.modePrefix(id) });
   }
 
   async function rpc({ reqId, method, args }) {

@@ -79,9 +79,9 @@ function setup({ agents = { seq: 1, desktopUi: true, list: [] }, rpc, modePrefix
     hasPty: (id) => ptys.has(id),
     getBuffer: (id) => buffers.get(id) || null,
     writeInput: (id, data) => writes.push({ id, data }),
-    resize: (id, cols, rows, owner) => {
+    resize: (id, cols, rows, owner, opts) => {
       owners.set(id, owner);
-      resizes.push({ id, cols, rows, owner });
+      resizes.push({ id, cols, rows, owner, ...opts });
     },
     sizeOwner: (id) => owners.get(id) || null,
     releaseSize: (id) => released.push(id),
@@ -122,15 +122,18 @@ test('frames after close are ignored', () => {
   assert.equal(writes.length, 0);
 });
 
-test('attach resizes first, then replays with a reset prefix, then streams only newer data', () => {
+test('attach resizes with a forced repaint, replays only a reset, then streams only newer data', () => {
+  // Old output was drawn at the desktop's width: replaying it into the phone's
+  // narrower terminal fills its scrollback with garbage. The app repaints at
+  // the phone's size instead.
   const { h, sent, resizes, addPty, emitData } = setup();
   addPty('a1');
   emitData('a1', 'old1');
   emitData('a1', 'old2');
   h.onMessage(JSON.stringify({ t: 'attach', id: 'a1', cols: 60, rows: 30 }));
-  assert.deepEqual(resizes, [{ id: 'a1', cols: 60, rows: 30, owner: 'remote' }]);
+  assert.deepEqual(resizes, [{ id: 'a1', cols: 60, rows: 30, owner: 'remote', repaint: true }]);
   const replay = sent.find((m) => m.t === 'replay');
-  assert.deepEqual(replay, { t: 'replay', id: 'a1', lastSeq: 2, data: '\x1bcold1old2' });
+  assert.deepEqual(replay, { t: 'replay', id: 'a1', lastSeq: 2, data: '\x1bc' });
   emitData('a1', 'new');
   assert.deepEqual(sent.at(-1), { t: 'data', id: 'a1', seq: 3, data: 'new' });
 });
@@ -294,5 +297,5 @@ test('attach replays the tracked modes right after the reset', () => {
   emitData('a1', 'screen');
   h.onMessage(JSON.stringify({ t: 'attach', id: 'a1', cols: 60, rows: 30 }));
   const replay = sent.find((m) => m.t === 'replay');
-  assert.equal(replay.data, '\x1bc\x1b[?1049h\x1b[?1003hscreen');
+  assert.equal(replay.data, '\x1bc\x1b[?1049h\x1b[?1003h');
 });

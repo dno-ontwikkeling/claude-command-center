@@ -403,16 +403,22 @@ function spawnAgent(id, cwd, opts = {}) {
 // Resize through the size tracker: an unchanged size never touches the pty (so
 // no needless app redraw), and the renderer is told when ownership flips so the
 // desktop knows to reclaim the size on its next activate/keystroke.
-function resizeAgent(id, cols, rows, owner) {
+// `repaint`: the caller needs a fresh full redraw even if the size is
+// unchanged (a phone attaching): nudge the height by one row and back, so the
+// app gets SIGWINCH and redraws.
+function resizeAgent(id, cols, rows, owner, { repaint = false } = {}) {
   const term = agents.get(id);
   if (!term) return;
   const prevOwner = ptySizes.owner(id);
-  if (ptySizes.request(id, owner, cols, rows)) {
-    try {
+  try {
+    if (ptySizes.request(id, owner, cols, rows)) {
       term.resize(cols, rows);
-    } catch {
-      /* ignore resize on dead pty */
+    } else if (repaint) {
+      term.resize(cols, rows > 2 ? rows - 1 : rows + 1);
+      term.resize(cols, rows);
     }
+  } catch {
+    /* ignore resize on dead pty */
   }
   if (owner !== prevOwner) sendToRenderer('agent:sizeOwner', { id, owner });
 }

@@ -492,9 +492,24 @@ button.file {
   border-color: var(--danger);
 }
 
-/* Touch scrolling and pinch are handled in terminal.mjs. */
+/* Full-screen apps: one-finger scrolling (wheel events) and pinch are handled
+   in terminal.mjs. */
 .term-host {
   touch-action: none;
+}
+
+/* Apps with real scrollback: touches pass through the text layer to xterm's
+   scrollable viewport, so the WebView scrolls it natively. */
+.term-host.native-scroll {
+  touch-action: pan-y;
+}
+
+.term-host.native-scroll .xterm-screen {
+  pointer-events: none;
+}
+
+.term-host .xterm-viewport {
+  overscroll-behavior: contain;
 }
 
 textarea.link-code {
