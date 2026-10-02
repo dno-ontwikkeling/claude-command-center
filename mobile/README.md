@@ -1,4 +1,4 @@
-# CC Remote (Android)
+# CommandCenter remote (Android)
 
 Phone client for Claude Command Center's [remote access](../README.md#remote-access).
 Personal use: the APK is **sideloaded**, not published on the Play Store.

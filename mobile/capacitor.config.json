@@ -1,6 +1,6 @@
 {
   "appId": "com.olivier.commandcenter.remote",
-  "appName": "CC Remote",
+  "appName": "CommandCenter remote",
   "webDir": "www",
   "server": {
     "androidScheme": "https"

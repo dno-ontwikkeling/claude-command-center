@@ -87,7 +87,7 @@ screens.pairing = (el, { reason } = {}) => {
     h(
       'section',
       { class: 'pairing' },
-      h('h1', {}, 'CC Remote'),
+      h('h1', {}, 'CommandCenter remote'),
       reason === 'auth-failed'
         ? h('p', { class: 'warn' }, 'Your PC no longer accepts this phone (pairing regenerated). Scan the new QR code.')
         : h('p', {}, 'Open Command Center on your PC → Settings → Remote, turn on remote access and show the pairing QR.'),
@@ -104,7 +104,7 @@ screens.pairing = (el, { reason } = {}) => {
 
 (async () => {
   if (!window.Capacitor?.isNativePlatform?.()) {
-    document.getElementById('app').replaceChildren(h('p', { class: 'muted' }, 'CC Remote runs inside the Android app.'));
+    document.getElementById('app').replaceChildren(h('p', { class: 'muted' }, 'CommandCenter remote runs inside the Android app.'));
     return;
   }
   const st = await link.getState();

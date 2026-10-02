@@ -38,7 +38,7 @@ hook event ──> report.js ──POST (x-cc-secret)──> app HTTP server ─
 
 ## Remote access
 
-Work on this PC's agents from your phone with the **CC Remote** Android app
+Work on this PC's agents from your phone with the **CommandCenter remote** Android app
 (`mobile/`). Remote access is **off by default**.
 
 ```
@@ -62,7 +62,7 @@ networks** (and public only if you really need it).
 
 1. **Settings → Remote**: turn on **Remote access**. The status line shows
    where it listens, or why it couldn't (port in use, firewall).
-2. Click **Show pairing QR** and scan it with CC Remote.
+2. Click **Show pairing QR** and scan it with CommandCenter remote.
 3. The phone connects and stays connected in the background (a persistent
    "Connected to PC" notification), so it can alert you when an agent needs input.
 

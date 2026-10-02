@@ -199,7 +199,7 @@ class RemoteService : Service() {
     private fun linkNotification(text: String): Notification =
         NotificationCompat.Builder(this, CHANNEL_LINK)
             .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
-            .setContentTitle("CC Remote")
+            .setContentTitle("CommandCenter remote")
             .setContentText(text)
             .setOngoing(true)
             .setContentIntent(openAppIntent(null))
