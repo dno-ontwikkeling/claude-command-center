@@ -636,3 +636,59 @@ li.pick-extra {
   font-size: 18px;
   font-weight: 600;
 }
+
+/* ---- app dialogs (replace alert / confirm / prompt) ---- */
+.backdrop.dialog-backdrop {
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.dialog {
+  width: 100%;
+  max-width: 360px;
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+.dialog h2 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+
+.dialog-message {
+  margin: 0 0 16px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 50vh;
+  overflow-y: auto;
+  color: var(--muted);
+}
+
+.dialog-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 8px 0 16px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  min-height: 44px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dialog-actions button.danger-fill {
+  background: var(--danger);
+  border-color: var(--danger);
+}

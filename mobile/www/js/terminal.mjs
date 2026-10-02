@@ -9,6 +9,7 @@ import { EXTRA_KEYS, keySequence, applyCtrl } from './keys.mjs';
 import { touchDistance, fontSizeFromPinch } from './pinch.mjs';
 import { createLineAccumulator, wheelSequence, createVelocityTracker, momentumStep, stackVelocity, WHEEL_LINES } from './touch-scroll.mjs';
 import { h } from './dom.mjs';
+import { alertDialog } from './dialog.mjs';
 import { createControlTracker } from './control.mjs';
 
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -45,7 +46,6 @@ screens.terminal = (el, { id }) => {
         { class: 'top' },
         h('button', { class: 'icon', 'aria-label': 'Back', onclick: () => show('list') }, '‹'),
         title,
-        h('button', { class: 'small', onclick: () => show('history', { id }) }, 'History'),
         screens.git ? h('button', { class: 'small', onclick: () => show('git', { id }) }, 'Git') : null,
       ),
       ended,
@@ -170,7 +170,7 @@ screens.terminal = (el, { id }) => {
         show('terminal', { id: newId });
       } catch (err) {
         resume.disabled = false;
-        alert((err && err.message) || String(err));
+        alertDialog((err && err.message) || String(err));
       }
     });
     ended.replaceChildren(h('span', {}, `Agent ${reason}.`), resume);

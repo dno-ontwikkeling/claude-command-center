@@ -2,6 +2,7 @@
 import { ctx, screens, show, onChanged } from './core.mjs';
 import { createSettingsStore, FONT_FAMILIES } from './term-settings.mjs';
 import { h, fill } from './dom.mjs';
+import { confirmDialog } from './dialog.mjs';
 
 /** The phone's terminal settings; the terminal screen subscribes for live updates. */
 export const termSettings = createSettingsStore(window.localStorage);
@@ -79,8 +80,9 @@ screens.settings = (el) => {
         'button',
         {
           class: 'danger',
-          onclick: () => {
-            if (confirm('Unpair this phone? You will need to scan the QR code again.')) ctx.link.unpair();
+          onclick: async () => {
+            const ok = await confirmDialog('You will need to scan the QR code again.', { title: 'Unpair this phone?', confirmLabel: 'Unpair', danger: true });
+            if (ok) ctx.link.unpair();
           },
         },
         'Unpair',
