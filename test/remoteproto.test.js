@@ -65,6 +65,7 @@ function setup({ agents = { seq: 1, desktopUi: true, list: [] }, rpc, modePrefix
   const resizes = [];
   const owners = new Map();
   const takeovers = [];
+  const pushed = [];
   const ptys = new Set();
   const addPty = (id) => {
     ptys.add(id);
@@ -91,10 +92,11 @@ function setup({ agents = { seq: 1, desktopUi: true, list: [] }, rpc, modePrefix
     },
     modePrefix: modePrefix || (() => ''),
     getAgents: () => agents,
+    registerPush: (token) => pushed.push(token),
     rpc: rpc || (async () => ({})),
     log: { warn: () => {}, info: () => {} },
   });
-  return { h, hub, sent, closed, writes, resizes, owners, takeovers, addPty, emitData };
+  return { h, hub, sent, closed, writes, resizes, owners, takeovers, pushed, addPty, emitData };
 }
 
 const tick = () => new Promise((r) => setImmediate(r));
@@ -328,4 +330,10 @@ test('agent management and folder rpcs validate their args', () => {
   assert.equal(ok('workspace.create', { parent: 'C:\\ws', name: 'scratch', useParent: false }), true);
   assert.equal(ok('workspace.create', { parent: 'C:\\ws', useParent: true }), true);
   assert.equal(ok('workspace.create', { parent: 'C:\\ws', name: 7, useParent: false }), false);
+});
+
+test('push-register hands the phone token to the host', () => {
+  const { h, pushed } = setup();
+  h.onMessage(JSON.stringify({ t: 'push-register', token: 'abc:APA91b-_x.yzabcdefghijkl' }));
+  assert.deepEqual(pushed, ['abc:APA91b-_x.yzabcdefghijkl']);
 });

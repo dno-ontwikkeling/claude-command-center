@@ -12,6 +12,8 @@
 // still validated strictly: the first malformed one closes the connection.
 // ---------------------------------------------------------------------------
 
+const { isPushToken } = require('./fcm');
+
 const MAX_INPUT_CHARS = 16384;
 const MIN_DIM = 2;
 const MAX_DIM = 500;
@@ -54,6 +56,7 @@ const RPC_ARGS = {
 const FRAME_RULES = {
   attach: (f) => isId(f.id) && isDim(f.cols) && isDim(f.rows),
   detach: (f) => isId(f.id),
+  'push-register': (f) => isPushToken(f.token),
   input: (f) => isId(f.id) && typeof f.data === 'string' && f.data.length <= MAX_INPUT_CHARS,
   resize: (f) => isId(f.id) && isDim(f.cols) && isDim(f.rows),
   rpc: (f) =>
@@ -151,6 +154,7 @@ function createSizeTracker() {
 //                              phone's size so it redraws there. true (or a Promise
 //                              of true) when restarted; false = no resumable session
 //   modePrefix(id)           - escape sequences re-enabling the app's terminal modes
+//   registerPush(token)      - remember this phone's FCM token (background alerts)
 //   getAgents()              - current { seq, desktopUi, list }
 //   rpc(method, args)        - Promise of the result; rejects with an Error to report
 //   log                      - { warn, info }
@@ -246,6 +250,7 @@ function createConnectionHandler(deps) {
   const handlers = {
     attach,
     detach: ({ id }) => attached.delete(id),
+    'push-register': ({ token }) => deps.registerPush(token),
     input: ({ id, data }) => {
       const a = attached.get(id);
       if (!a) return;

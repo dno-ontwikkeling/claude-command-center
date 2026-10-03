@@ -5,6 +5,7 @@
     "valid": [
       { "t": "attach", "id": "a1", "cols": 60, "rows": 30 },
       { "t": "detach", "id": "a1" },
+      { "t": "push-register", "token": "abc:APA91b-_x.yzabcdefghijkl" },
       { "t": "input", "id": "a1", "data": "hello\r" },
       { "t": "input", "id": "a1", "data": "\u001b[A" },
       { "t": "resize", "id": "a1", "cols": 2, "rows": 500 },
@@ -28,6 +29,7 @@
       { "why": "missing type", "frame": { "id": "a1" } },
       { "why": "attach without id", "frame": { "t": "attach", "cols": 60, "rows": 30 } },
       { "why": "empty id", "frame": { "t": "detach", "id": "" } },
+      { "why": "push token too short", "frame": { "t": "push-register", "token": "x" } },
       { "why": "non-string id", "frame": { "t": "detach", "id": 5 } },
       { "why": "attach without size", "frame": { "t": "attach", "id": "a1" } },
       { "why": "cols below min", "frame": { "t": "resize", "id": "a1", "cols": 1, "rows": 30 } },

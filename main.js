@@ -27,6 +27,8 @@ const hooksMerge = require('./hooksmerge');
 const { createRequestHandler } = require('./hookserver');
 const { openInVisualStudio, openInVSCode } = require('./editors');
 const { readJsonSafe, writeJsonAtomic, hasShellMeta, hasLeadingDash } = require('./jsonstore');
+const { parseServiceAccount, createFcmClient } = require('./fcm');
+const { createPushNotifier } = require('./pushnotify');
 const { gitBranch, isGitRepo, detectProjectType } = require('./gitinfo');
 const {
   execGit,
@@ -998,7 +1000,7 @@ async function gitDiff(cwd, mode) {
 
 const REMOTE_FILE = path.join(app.getPath('userData'), 'remote.json');
 const REMOTE_CERT_DIR = path.join(app.getPath('userData'), 'remote');
-const REMOTE_DEFAULTS = { enabled: false, port: 47820, bindHost: '0.0.0.0', advertisedHost: '', tokenEnc: '' };
+const REMOTE_DEFAULTS = { enabled: false, port: 47820, bindHost: '0.0.0.0', advertisedHost: '', tokenEnc: '', pushToken: '', fcmKeyEnc: '' };
 const RENDERER_COMMAND_TIMEOUT_MS = 5000;
 // Close codes the phone treats as terminal (no auto-reconnect).
 const CLOSE_REVOKED = 4001; // token/cert regenerated: re-pair needed
@@ -1052,6 +1054,57 @@ function rotateRemoteToken(cfg) {
   cfg.tokenEnc = safeStorage.encryptString(token).toString('base64');
   saveRemoteConfig(cfg);
   return token;
+}
+
+// ---- background alerts (Firebase Cloud Messaging) --------------------------
+// The phone has no always-on connection: it registers an FCM token when it
+// connects, and the PC pushes needs-input / finished alerts to it. The service
+// account key that signs those pushes is encrypted at rest like the token.
+
+const pushNotifier = createPushNotifier();
+let fcmClient = null;
+let fcmClientFor = ''; // the fcmKeyEnc the cached client was built from
+let pushError = null;
+
+function getFcm(cfg) {
+  if (!cfg.fcmKeyEnc) return null;
+  if (fcmClient && fcmClientFor === cfg.fcmKeyEnc) return fcmClient;
+  try {
+    const account = parseServiceAccount(safeStorage.decryptString(Buffer.from(cfg.fcmKeyEnc, 'base64')));
+    fcmClient = createFcmClient(account);
+    fcmClientFor = cfg.fcmKeyEnc;
+    return fcmClient;
+  } catch (err) {
+    log.warn('remote', 'stored Firebase key could not be used', err);
+    return null;
+  }
+}
+
+// Resolves 'ok' | 'skipped' (no key or no phone registered yet) | 'error'.
+async function sendPush(data) {
+  const cfg = loadRemoteConfig();
+  const fcm = getFcm(cfg);
+  if (!fcm || !cfg.pushToken) return 'skipped';
+  try {
+    const result = await fcm.send(cfg.pushToken, data);
+    if (result === 'invalid-token') {
+      saveRemoteConfig({ ...loadRemoteConfig(), pushToken: '' }); // the phone registers again on its next connect
+      return 'skipped';
+    }
+    pushError = null;
+    return 'ok';
+  } catch (err) {
+    pushError = errMsg(err);
+    log.warn('remote', 'push failed', err);
+    return 'error';
+  }
+}
+
+function pushForAgents(snapshot) {
+  if (!snapshot.desktopUi || !remote.server) return;
+  const { notify, dismiss } = pushNotifier.apply(snapshot.list);
+  for (const n of notify) sendPush({ type: n.kind, agentId: n.id, label: n.label });
+  for (const d of dismiss) sendPush({ type: 'dismiss', kind: d.kind, agentId: d.id });
 }
 
 // Candidate addresses for the pairing QR: non-internal IPv4, Tailscale's
@@ -1121,6 +1174,10 @@ async function startRemote() {
             ),
           modePrefix: (id) => termModes.get(id)?.prefix() ?? '',
           getAgents: () => remoteAgents,
+          registerPush: (token) => {
+            const cfg = loadRemoteConfig();
+            if (cfg.pushToken !== token) saveRemoteConfig({ ...cfg, pushToken: token });
+          },
           rpc: remoteRpc,
           log,
         }),
@@ -1164,6 +1221,7 @@ function markDesktopUiGone() {
 function publishAgents({ desktopUi, list }) {
   remoteAgents = { seq: remoteAgents.seq + 1, desktopUi, list };
   remoteHub.emit('agents', remoteAgents);
+  pushForAgents(remoteAgents);
 }
 
 // Only the fields the phone needs, coerced to the documented types — the
@@ -1310,6 +1368,12 @@ function remoteConfigView() {
     error: remote.error,
     fingerprint: remote.fingerprint,
     clients: remote.server ? remote.server.clients() : [],
+    push: {
+      configured: !!cfg.fcmKeyEnc,
+      projectId: getFcm(cfg)?.projectId ?? null,
+      phoneRegistered: !!cfg.pushToken,
+      error: pushError,
+    },
   };
 }
 
@@ -1377,6 +1441,7 @@ function registerRemoteIpc() {
     const cfg = loadRemoteConfig();
     if (remote.server) remote.server.closeAll(CLOSE_REVOKED, 'pairing revoked');
     const token = rotateRemoteToken(cfg);
+    saveRemoteConfig({ ...loadRemoteConfig(), pushToken: '' }); // paired phones must register again
     const pems = await regenerateCert(REMOTE_CERT_DIR, { hosts: [effectiveAdvertisedHost(cfg)] });
     remote.fingerprint = pems.fingerprint;
     if (remote.server) {
@@ -1386,6 +1451,41 @@ function registerRemoteIpc() {
     log.info('remote', 'pairing token and certificate regenerated');
     return remoteConfigView();
   });
+
+  // Pick the Firebase service-account key; it is validated, then kept encrypted.
+  ipcMain.handle('remote:importFcmKey', async () => {
+    if (!safeStorage.isEncryptionAvailable()) {
+      return { ...remoteConfigView(), error: 'OS encryption is unavailable.' };
+    }
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      title: 'Firebase service account key',
+      properties: ['openFile'],
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (canceled || !filePaths.length) return remoteConfigView();
+    try {
+      const text = await fs.promises.readFile(filePaths[0], 'utf8');
+      parseServiceAccount(text); // throws a message fit for the UI
+      const enc = safeStorage.encryptString(text).toString('base64');
+      saveRemoteConfig({ ...loadRemoteConfig(), fcmKeyEnc: enc });
+      pushError = null;
+    } catch (err) {
+      return { ...remoteConfigView(), error: errMsg(err) };
+    }
+    return remoteConfigView();
+  });
+
+  ipcMain.handle('remote:clearFcmKey', () => {
+    saveRemoteConfig({ ...loadRemoteConfig(), fcmKeyEnc: '' });
+    fcmClient = null;
+    pushError = null;
+    return remoteConfigView();
+  });
+
+  ipcMain.handle('remote:testPush', async () => ({
+    result: await sendPush({ type: 'test' }),
+    config: remoteConfigView(),
+  }));
 
   ipcMain.handle('remote:disconnectAll', () => {
     if (remote.server) remote.server.closeAll(CLOSE_KICKED, 'disconnected by desktop');

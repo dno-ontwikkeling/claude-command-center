@@ -217,6 +217,16 @@
             <small class="remote-warn">Anyone with this QR or linking code can control your agents. Regenerate if it leaks.</small>
           </div>
           <div class="set-txt">
+            <span>Background alerts</span>
+            <small>The phone gets "needs input" and "finished" alerts through Firebase Cloud Messaging, with no always-on connection. Import a Firebase service account key to enable it.</small>
+            <p id="set-push-status" class="remote-status"></p>
+          </div>
+          <div class="remote-actions">
+            <button id="set-push-import" class="btn-ghost">Import Firebase key…</button>
+            <button id="set-push-test" class="btn-ghost">Send test</button>
+            <button id="set-push-clear" class="btn-ghost danger">Remove key</button>
+          </div>
+          <div class="set-txt">
             <span>Connected devices</span>
             <ul id="set-remote-clients" class="remote-clients"></ul>
           </div>

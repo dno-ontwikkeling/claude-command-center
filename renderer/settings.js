@@ -289,6 +289,16 @@ function renderRemote(cfg) {
   els.setRemoteKick.disabled = !cfg.clients.length;
   if (!listening) els.setRemoteQr.hidden = true;
 
+  const push = cfg.push;
+  els.setPushStatus.classList.toggle('is-error', !!push.error);
+  els.setPushStatus.textContent = push.error
+    ? push.error
+    : !push.configured
+      ? 'Not set up'
+      : `Firebase project ${push.projectId || '?'} — ${push.phoneRegistered ? 'phone registered' : 'waiting for the phone to connect once'}`;
+  els.setPushTest.disabled = !push.configured || !push.phoneRegistered;
+  els.setPushClear.disabled = !push.configured;
+
   els.setRemoteClients.innerHTML = '';
   if (!cfg.clients.length) {
     const li = document.createElement('li');
@@ -361,6 +371,28 @@ els.setRemoteCopy.addEventListener('click', async () => {
   window.api.writeClipboard(res.code);
   els.setRemoteCopy.textContent = 'Copied';
   setTimeout(() => (els.setRemoteCopy.textContent = 'Copy linking code'), 1500);
+});
+
+els.setPushImport.addEventListener('click', async () => {
+  const cfg = await window.api.importFcmKey();
+  renderRemote(cfg);
+  if (cfg.error) await confirmDialog('Could not import key', cfg.error, { alert: true });
+});
+
+els.setPushTest.addEventListener('click', async () => {
+  const { result, config } = await window.api.testRemotePush();
+  renderRemote(config);
+  if (result !== 'ok') {
+    await confirmDialog('Test failed', config.push.error || 'The phone has not registered for alerts yet.', { alert: true });
+  }
+});
+
+els.setPushClear.addEventListener('click', async () => {
+  const ok = await confirmDialog('Remove Firebase key', 'The phone will no longer get background alerts.', {
+    okLabel: 'Remove',
+    danger: true,
+  });
+  if (ok) renderRemote(await window.api.clearFcmKey());
 });
 
 els.setRemoteKick.addEventListener('click', async () => {
