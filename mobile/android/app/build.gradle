@@ -70,6 +70,9 @@ dependencies {
     implementation project(':capacitor-android')
     // Native, cert-pinned WebSocket to the desktop (see PinnedSocket.kt).
     implementation "com.squareup.okhttp3:okhttp:$okhttpVersion"
+    // FCM data messages deliver the PC's alerts with the app closed (PushService).
+    implementation platform("com.google.firebase:firebase-bom:$firebaseBomVersion")
+    implementation 'com.google.firebase:firebase-messaging'
     testImplementation "junit:junit:$junitVersion"
     testImplementation "com.squareup.okhttp3:okhttp-tls:$okhttpVersion"
     testImplementation "com.squareup.okhttp3:mockwebserver3:$okhttpVersion"

@@ -4,9 +4,10 @@ Phone client for Claude Command Center's [remote access](../README.md#remote-acc
 Personal use: the APK is **sideloaded**, not published on the Play Store.
 
 - Capacitor 8 + plain ES modules in `www/` (no bundler), xterm.js for terminals.
-- A Kotlin foreground service (`RemoteService`) owns a cert-pinned OkHttp
-  WebSocket to the PC, keeps it alive in the background and raises the
-  needs-input notifications. The WebView only sends and receives protocol frames;
+- `RemoteConnection` (Kotlin) owns a cert-pinned OkHttp WebSocket to the PC
+  while the app is visible. There is no background service: with the app
+  closed, the PC pushes needs-input / finished alerts through Firebase Cloud
+  Messaging (`PushService`). The WebView only sends and receives protocol frames;
   the token never reaches it.
 
 ## Install (sideload)
@@ -22,8 +23,10 @@ APK from a CI run uses a debug key and **cannot be installed over a release
 APK** (uninstall first — that drops the pairing).
 
 On first start, scan the pairing QR (PC: Settings → Remote → Show pairing QR),
-allow notifications, and allow **unrestricted battery use** so Android doesn't
-stall the background connection.
+allow notifications. Background alerts need the Firebase setup in the
+[main README](../README.md#background-alerts-firebase-cloud-messaging):
+`google-services.json` in `mobile/android/app/` before building, and the
+service account key imported on the PC.
 
 ## Build locally
 
@@ -93,6 +96,8 @@ build a versionCode that isn't higher than every existing release.
 - [ ] Agent menu: Rename, Sleep / Resume, Forget (worktree: delete folder + branch). Tap a sleeping agent → resumes and opens.
 - [ ] Filter All / Active / Sleeping; New agent → Add project / New workspace via the folder browser.
 - [ ] Git → diff stat, diff viewer, Fetch, Pull.
-- [ ] Lock the phone, make an agent ask for permission → notification; tap → that terminal. Answer on the PC → notification disappears.
+- [ ] PC: Settings → Remote → Background alerts → Send test → notification on the phone (app closed).
+- [ ] Close the app, make an agent ask for permission → notification; tap → that terminal. Answer on the PC → notification disappears.
+- [ ] A turn finishes with the app closed → "finished" notification.
 - [ ] PC: Settings → Remote → Regenerate → phone shows "Re-pair needed" and stops retrying.
 - [ ] PC: Disconnect all → phone shows "Disconnected by the PC" with Reconnect.

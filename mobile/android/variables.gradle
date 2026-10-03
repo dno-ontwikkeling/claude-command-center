@@ -17,4 +17,6 @@ ext {
     // 5.5.0+ needs compileSdk 37; Capacitor 8 (AGP 8.13) maxes at 36.
     okhttpVersion = '5.4.0'
     orgJsonVersion = '20260814'
+    // Background alerts (FCM). google-services.json is added per build, see mobile/README.md.
+    firebaseBomVersion = '34.19.0'
 }

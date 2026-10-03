@@ -30,15 +30,14 @@
 
         </activity>
 
-        <!-- Holds the pinned link to the desktop while the app is in the
-             background, so needs-input notifications still arrive. -->
+        <!-- Alerts from the PC (agent needs input / finished) arrive as FCM
+             data messages, with the app closed or in the background. -->
         <service
-            android:name=".RemoteService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Persistent connection to the user's own PC to receive real-time alerts when a coding agent needs input." />
+            android:name=".PushService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
         </service>
 
         <provider
@@ -56,8 +55,5 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 </manifest>

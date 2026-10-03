@@ -2,9 +2,6 @@ package com.olivier.commandcenter.remote
 
 import android.Manifest
 import android.content.Intent
-import android.net.Uri
-import android.os.PowerManager
-import android.provider.Settings
 import com.getcapacitor.JSObject
 import com.getcapacitor.PermissionState
 import com.getcapacitor.Plugin
@@ -15,13 +12,15 @@ import com.getcapacitor.annotation.Permission
 import com.getcapacitor.annotation.PermissionCallback
 
 /**
- * Bridge between the WebView (www/js/remote-link.mjs) and RemoteService.
+ * Bridge between the WebView (www/js/remote-link.mjs) and RemoteConnection.
  *
  * Methods: connect({url,token,certSha256}?) — with a pairing it is validated
  * and stored first, without one the stored pairing is used; disconnect;
- * unpair; send({text}); getState; requestNotificationPermission;
- * requestBatteryExemption.
+ * unpair; send({text}); getState; requestNotificationPermission.
  * Events: message {text}, state {state, detail}, notificationTap {agentId}.
+ *
+ * The link only lives while the app is visible: it closes when the app stops
+ * and reopens when it starts again. Alerts in between arrive as FCM pushes.
  */
 @CapacitorPlugin(
     name = "RemoteLink",
@@ -44,6 +43,25 @@ class RemoteLinkPlugin : Plugin() {
         activity?.intent?.let { deliverTap(it) }
     }
 
+    // The JS boot connects on a cold start; this covers coming back from the background.
+    private var stopped = false
+
+    override fun handleOnStart() {
+        super.handleOnStart()
+        if (!stopped) return
+        stopped = false
+        // Not after a state the user has to act on (kicked from the PC, pairing rejected, unpaired).
+        if (RemoteConnection.instance == null && creds.load() != null && EventBus.lastState in RESUMABLE) {
+            RemoteConnection.start(context)
+        }
+    }
+
+    override fun handleOnStop() {
+        stopped = true
+        RemoteConnection.stop(context)
+        super.handleOnStop()
+    }
+
     override fun handleOnNewIntent(intent: Intent) {
         super.handleOnNewIntent(intent)
         deliverTap(intent)
@@ -55,8 +73,8 @@ class RemoteLinkPlugin : Plugin() {
     }
 
     private fun deliverTap(intent: Intent) {
-        val agentId = intent.getStringExtra(RemoteService.EXTRA_AGENT_ID) ?: return
-        intent.removeExtra(RemoteService.EXTRA_AGENT_ID) // deliver once
+        val agentId = intent.getStringExtra(AlertNotifier.EXTRA_AGENT_ID) ?: return
+        intent.removeExtra(AlertNotifier.EXTRA_AGENT_ID) // deliver once
         notifyListeners("notificationTap", JSObject().put("agentId", agentId), true)
     }
 
@@ -77,19 +95,19 @@ class RemoteLinkPlugin : Plugin() {
         } else if (creds.load() == null) {
             return call.reject("Not paired")
         }
-        RemoteService.start(context)
+        RemoteConnection.start(context)
         call.resolve()
     }
 
     @PluginMethod
     fun disconnect(call: PluginCall) {
-        RemoteService.stop(context)
+        RemoteConnection.stop(context)
         call.resolve()
     }
 
     @PluginMethod
     fun unpair(call: PluginCall) {
-        RemoteService.stop(context)
+        RemoteConnection.stop(context)
         creds.clear()
         EventBus.state("unpaired")
         call.resolve()
@@ -98,14 +116,14 @@ class RemoteLinkPlugin : Plugin() {
     @PluginMethod
     fun send(call: PluginCall) {
         val text = call.getString("text") ?: return call.reject("text is required")
-        val sent = RemoteService.instance?.send(text) ?: false
+        val sent = RemoteConnection.instance?.send(text) ?: false
         call.resolve(JSObject().put("sent", sent))
     }
 
     @PluginMethod
     fun getState(call: PluginCall) {
         val stored = creds.load()
-        val running = RemoteService.instance != null
+        val running = RemoteConnection.instance != null
         val state = if (running) EventBus.lastState else if (stored == null) "unpaired" else EventBus.lastState
         call.resolve(
             JSObject()
@@ -130,16 +148,8 @@ class RemoteLinkPlugin : Plugin() {
         call.resolve(JSObject().put("granted", getPermissionState("notifications") == PermissionState.GRANTED))
     }
 
-    /** Ask to be exempt from battery optimisation so Doze doesn't stall the link. */
-    @PluginMethod
-    fun requestBatteryExemption(call: PluginCall) {
-        val pm = context.getSystemService(PowerManager::class.java)
-        val ignoring = pm.isIgnoringBatteryOptimizations(context.packageName)
-        if (!ignoring) {
-            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-                .setData(Uri.parse("package:${context.packageName}"))
-            activity.startActivity(intent)
-        }
-        call.resolve(JSObject().put("ignoring", ignoring))
+    private companion object {
+        // Where the link can be reopened automatically after the app was backgrounded.
+        val RESUMABLE = setOf("idle", "connecting", "connected", "offline")
     }
 }

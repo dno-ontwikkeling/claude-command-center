@@ -62,7 +62,7 @@ class CredStore(context: Context) {
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setKeySize(256)
-                // The foreground service must reconnect with the screen locked.
+                // Reconnecting must work without unlocking (the app can start while locked).
                 .setUserAuthenticationRequired(false)
                 .build(),
         )

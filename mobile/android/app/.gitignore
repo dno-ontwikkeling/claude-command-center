@@ -1,2 +1,5 @@
 /build/*
 !/build/.npmkeep
+
+# Firebase client config for background alerts (per project; CI writes it from a secret).
+/google-services.json

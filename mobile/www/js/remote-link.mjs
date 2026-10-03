@@ -1,5 +1,5 @@
 // Thin wrapper over the native RemoteLink plugin (RemoteLinkPlugin.kt). The
-// native service owns the socket and the token; the WebView only sends and
+// native RemoteConnection owns the socket and the token; the WebView only sends and
 // receives protocol frames. `window.Capacitor` comes from vendor/capacitor.js
 // (no bundler, so no bare `@capacitor/core` import).
 
@@ -31,4 +31,3 @@ export const onState = (cb) => native().addListener('state', cb);
 export const onNotificationTap = (cb) => native().addListener('notificationTap', ({ agentId }) => cb(agentId));
 
 export const requestNotificationPermission = () => native().requestNotificationPermission();
-export const requestBatteryExemption = () => native().requestBatteryExemption();

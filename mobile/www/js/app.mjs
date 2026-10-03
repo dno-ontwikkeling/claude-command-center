@@ -55,7 +55,6 @@ async function pair(status, getCode) {
     status.textContent = `${describePairing(pairing)}…`;
     await link.requestNotificationPermission();
     await link.connect(pairing);
-    await link.requestBatteryExemption();
     show('list');
   } catch (err) {
     // A cancelled scan rejects too; only surface real problems.

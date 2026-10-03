@@ -71,8 +71,8 @@ networks** (and public only if you really need it).
 1. **Settings → Remote**: turn on **Remote access**. The status line shows
    where it listens, or why it couldn't (port in use, firewall).
 2. Click **Show pairing QR** and scan it with CommandCenter remote.
-3. The phone connects and stays connected in the background (a persistent
-   "Connected to PC" notification), so it can alert you when an agent needs input.
+3. The phone connects while its app is open. With the app closed it gets
+   alerts as push notifications instead (see below).
 
 - **Disconnect all** kicks connected phones; they keep their pairing and can
   reconnect.
@@ -81,6 +81,26 @@ networks** (and public only if you really need it).
   leaked.
 - The pairing survives restarts of both apps. If the PC's address changes (LAN
   IP, no Tailscale), re-scan the QR.
+
+### Background alerts (Firebase Cloud Messaging)
+
+The phone keeps no connection in the background. When an agent needs input or
+finishes a turn, the PC pushes an alert through Firebase Cloud Messaging (free,
+no billing account needed); tapping it opens that agent. Setup, once:
+
+1. Create a project in the [Firebase console](https://console.firebase.google.com)
+   and add an **Android app** with the id `com.olivier.commandcenter.remote`.
+2. Download `google-services.json` and put it in `mobile/android/app/`
+   (git-ignored), then build and install the app. For release builds, store it
+   base64-encoded in the repo secret `GOOGLE_SERVICES_JSON_BASE64`. Without it
+   the app builds without alerts.
+3. Firebase console → Project settings → **Service accounts** → *Generate new
+   private key*. In Command Center: **Settings → Remote → Background alerts →
+   Import Firebase key…** (kept encrypted with the OS keystore).
+4. Open the app on the phone once so it registers, then **Send test**.
+
+Regenerating the pairing clears the phone's registration; it registers again
+the next time it connects.
 
 ### Phone or desktop: one has control
 

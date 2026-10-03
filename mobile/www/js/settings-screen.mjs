@@ -74,7 +74,7 @@ screens.settings = (el) => {
         st === 'connected' || st === 'connecting' || st === 'offline'
           ? h('button', { onclick: () => ctx.link.disconnect() }, 'Disconnect')
           : h('button', { onclick: () => ctx.link.connect() }, 'Reconnect'),
-        h('button', { onclick: () => ctx.link.requestBatteryExemption() }, 'Allow in background'),
+        h('button', { onclick: () => ctx.link.requestNotificationPermission() }, 'Allow notifications'),
       ),
       h(
         'button',
