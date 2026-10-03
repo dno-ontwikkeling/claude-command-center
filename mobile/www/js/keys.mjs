@@ -16,14 +16,14 @@ const ARROWS = { up: 'A', down: 'B', right: 'C', left: 'D' };
 export const EXTRA_KEYS = [
   { id: 'newline', label: '↵ line' },
   { id: 'esc', label: 'Esc' },
-  { id: 'ctrl', label: 'Ctrl' },
   { id: 'tab', label: 'Tab' },
-  { id: 'shift-tab', label: '⇧Tab' },
   { id: 'up', label: '↑' },
   { id: 'down', label: '↓' },
   { id: 'left', label: '←' },
   { id: 'right', label: '→' },
   { id: 'enter', label: 'Enter' },
+  { id: 'ctrl', label: 'Ctrl' },
+  { id: 'shift-tab', label: '⇧Tab' },
 ];
 
 // A finger that moved further than this is scrolling the bar, not pressing a key.
