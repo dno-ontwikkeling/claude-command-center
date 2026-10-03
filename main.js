@@ -1000,7 +1000,7 @@ async function gitDiff(cwd, mode) {
 
 const REMOTE_FILE = path.join(app.getPath('userData'), 'remote.json');
 const REMOTE_CERT_DIR = path.join(app.getPath('userData'), 'remote');
-const REMOTE_DEFAULTS = { enabled: false, port: 47820, bindHost: '0.0.0.0', advertisedHost: '', tokenEnc: '', pushToken: '', fcmKeyEnc: '' };
+const REMOTE_DEFAULTS = { enabled: false, port: 47820, bindHost: '0.0.0.0', advertisedHost: '', tokenEnc: '', pushToken: '' };
 const RENDERER_COMMAND_TIMEOUT_MS = 5000;
 // Close codes the phone treats as terminal (no auto-reconnect).
 const CLOSE_REVOKED = 4001; // token/cert regenerated: re-pair needed
@@ -1058,41 +1058,34 @@ function rotateRemoteToken(cfg) {
 
 // ---- background alerts (Firebase Cloud Messaging) --------------------------
 // The phone has no always-on connection: it registers an FCM token when it
-// connects, and the PC pushes needs-input / finished alerts to it. The service
-// account key that signs those pushes is encrypted at rest like the token.
+// connects, and the PC pushes needs-input / finished alerts to it.
 
 const pushNotifier = createPushNotifier();
-let fcmClient = null;
-let fcmClientFor = ''; // the fcmKeyEnc the cached client was built from
+let fcmClient; // undefined = not loaded yet, null = no usable key
 let pushError = null;
 
-// A key imported in settings wins; otherwise the one release builds bundle
-// (a send-only FCM service account, dropped in by release.yml).
+// The send-only service account key that signs the pushes. Release builds
+// bundle it (release.yml, from a repo secret); for a dev run, drop it in
+// bundled/fcm-key.json (git-ignored). It can only send messages, so shipping
+// it in a public installer is acceptable.
 const BUNDLED_FCM_KEY = path.join(app.isPackaged ? process.resourcesPath : __dirname, 'bundled', 'fcm-key.json');
 
-function getFcm(cfg) {
-  const source = cfg.fcmKeyEnc ? 'imported' : fs.existsSync(BUNDLED_FCM_KEY) ? 'bundled' : null;
-  if (!source) return null;
-  const identity = source === 'imported' ? cfg.fcmKeyEnc : BUNDLED_FCM_KEY;
-  if (fcmClient && fcmClientFor === identity) return fcmClient;
+function getFcm() {
+  if (fcmClient !== undefined) return fcmClient;
+  fcmClient = null;
+  if (!fs.existsSync(BUNDLED_FCM_KEY)) return fcmClient;
   try {
-    const text =
-      source === 'imported'
-        ? safeStorage.decryptString(Buffer.from(cfg.fcmKeyEnc, 'base64'))
-        : fs.readFileSync(BUNDLED_FCM_KEY, 'utf8');
-    fcmClient = Object.assign(createFcmClient(parseServiceAccount(text)), { source });
-    fcmClientFor = identity;
-    return fcmClient;
+    fcmClient = createFcmClient(parseServiceAccount(fs.readFileSync(BUNDLED_FCM_KEY, 'utf8')));
   } catch (err) {
-    log.warn('remote', `${source} Firebase key could not be used`, err);
-    return null;
+    log.warn('remote', 'bundled Firebase key could not be used', err);
   }
+  return fcmClient;
 }
 
 // Resolves 'ok' | 'skipped' (no key or no phone registered yet) | 'error'.
 async function sendPush(data) {
   const cfg = loadRemoteConfig();
-  const fcm = getFcm(cfg);
+  const fcm = getFcm();
   if (!fcm || !cfg.pushToken) return 'skipped';
   try {
     const result = await fcm.send(cfg.pushToken, data);
@@ -1378,9 +1371,8 @@ function remoteConfigView() {
     fingerprint: remote.fingerprint,
     clients: remote.server ? remote.server.clients() : [],
     push: {
-      configured: !!getFcm(cfg),
-      source: getFcm(cfg)?.source ?? null, // 'imported' | 'bundled' | null
-      projectId: getFcm(cfg)?.projectId ?? null,
+      configured: !!getFcm(),
+      projectId: getFcm()?.projectId ?? null,
       phoneRegistered: !!cfg.pushToken,
       error: pushError,
     },
@@ -1459,36 +1451,6 @@ function registerRemoteIpc() {
       remote.server.setSecureContext({ cert: pems.cert, key: pems.key });
     }
     log.info('remote', 'pairing token and certificate regenerated');
-    return remoteConfigView();
-  });
-
-  // Pick the Firebase service-account key; it is validated, then kept encrypted.
-  ipcMain.handle('remote:importFcmKey', async () => {
-    if (!safeStorage.isEncryptionAvailable()) {
-      return { ...remoteConfigView(), error: 'OS encryption is unavailable.' };
-    }
-    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-      title: 'Firebase service account key',
-      properties: ['openFile'],
-      filters: [{ name: 'JSON', extensions: ['json'] }],
-    });
-    if (canceled || !filePaths.length) return remoteConfigView();
-    try {
-      const text = await fs.promises.readFile(filePaths[0], 'utf8');
-      parseServiceAccount(text); // throws a message fit for the UI
-      const enc = safeStorage.encryptString(text).toString('base64');
-      saveRemoteConfig({ ...loadRemoteConfig(), fcmKeyEnc: enc });
-      pushError = null;
-    } catch (err) {
-      return { ...remoteConfigView(), error: errMsg(err) };
-    }
-    return remoteConfigView();
-  });
-
-  ipcMain.handle('remote:clearFcmKey', () => {
-    saveRemoteConfig({ ...loadRemoteConfig(), fcmKeyEnc: '' });
-    fcmClient = null;
-    pushError = null;
     return remoteConfigView();
   });
 

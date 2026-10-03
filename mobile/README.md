@@ -26,7 +26,7 @@ On first start, scan the pairing QR (PC: Settings → Remote → Show pairing QR
 allow notifications. Background alerts need the Firebase setup in the
 [main README](../README.md#background-alerts-firebase-cloud-messaging):
 `google-services.json` in `mobile/android/app/` before building, and the
-service account key imported on the PC.
+send-only service account key bundled into the PC build.
 
 ## Build locally
 

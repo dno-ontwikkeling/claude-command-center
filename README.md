@@ -94,9 +94,12 @@ no billing account needed); tapping it opens that agent. Setup, once:
    (git-ignored), then build and install the app. For release builds, store it
    base64-encoded in the repo secret `GOOGLE_SERVICES_JSON_BASE64`. Without it
    the app builds without alerts.
-3. Firebase console → Project settings → **Service accounts** → *Generate new
-   private key*. In Command Center: **Settings → Remote → Background alerts →
-   Import Firebase key…** (kept encrypted with the OS keystore).
+3. The PC signs pushes with a service account that can **only send**: in
+   Google Cloud Console create a custom role with just
+   `cloudmessaging.messages.create`, grant it to a new service account on the
+   project, and create a JSON key for it. Store the key base64-encoded in the
+   repo secret `FCM_SERVICE_ACCOUNT_BASE64`; release builds bundle it. For a
+   dev run, put it in `bundled/fcm-key.json` (git-ignored).
 4. Open the app on the phone once so it registers, then **Send test**.
 
 Regenerating the pairing clears the phone's registration; it registers again
