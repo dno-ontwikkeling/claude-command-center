@@ -140,6 +140,15 @@ export interface RemoteConfig {
   error: string | null;
   fingerprint: string | null;
   clients: { ip: string; since: number }[];
+  /** Background alerts to the phone through Firebase Cloud Messaging. */
+  push: {
+    configured: boolean;
+    /** where the sender key comes from: imported in settings, or built into the release. */
+    source: 'imported' | 'bundled' | null;
+    projectId: string | null;
+    phoneRegistered: boolean;
+    error: string | null;
+  };
 }
 
 export interface RemoteConfigPatch {
@@ -222,6 +231,11 @@ export interface Api {
   /** Rotate token + certificate; every paired phone must re-pair. */
   regenerateRemote(): Promise<RemoteConfig>;
   disconnectRemoteClients(): Promise<RemoteConfig>;
+  /** Pick a Firebase service account key; the config carries `error` if it was rejected. */
+  importFcmKey(): Promise<RemoteConfig & { error?: string }>;
+  clearFcmKey(): Promise<RemoteConfig>;
+  /** Push a test alert to the phone. */
+  testRemotePush(): Promise<{ result: 'ok' | 'skipped' | 'error'; config: RemoteConfig }>;
   /** The string the pairing QR encodes, while the server is listening. */
   getRemotePairing(): Promise<{ code?: string; qr?: string; url?: string; error?: string }>;
   pushRemoteAgents(snapshot: RemoteAgentsSnapshot): void;
