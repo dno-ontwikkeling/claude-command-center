@@ -1066,16 +1066,25 @@ let fcmClient = null;
 let fcmClientFor = ''; // the fcmKeyEnc the cached client was built from
 let pushError = null;
 
+// A key imported in settings wins; otherwise the one release builds bundle
+// (a send-only FCM service account, dropped in by release.yml).
+const BUNDLED_FCM_KEY = path.join(app.isPackaged ? process.resourcesPath : __dirname, 'bundled', 'fcm-key.json');
+
 function getFcm(cfg) {
-  if (!cfg.fcmKeyEnc) return null;
-  if (fcmClient && fcmClientFor === cfg.fcmKeyEnc) return fcmClient;
+  const source = cfg.fcmKeyEnc ? 'imported' : fs.existsSync(BUNDLED_FCM_KEY) ? 'bundled' : null;
+  if (!source) return null;
+  const identity = source === 'imported' ? cfg.fcmKeyEnc : BUNDLED_FCM_KEY;
+  if (fcmClient && fcmClientFor === identity) return fcmClient;
   try {
-    const account = parseServiceAccount(safeStorage.decryptString(Buffer.from(cfg.fcmKeyEnc, 'base64')));
-    fcmClient = createFcmClient(account);
-    fcmClientFor = cfg.fcmKeyEnc;
+    const text =
+      source === 'imported'
+        ? safeStorage.decryptString(Buffer.from(cfg.fcmKeyEnc, 'base64'))
+        : fs.readFileSync(BUNDLED_FCM_KEY, 'utf8');
+    fcmClient = Object.assign(createFcmClient(parseServiceAccount(text)), { source });
+    fcmClientFor = identity;
     return fcmClient;
   } catch (err) {
-    log.warn('remote', 'stored Firebase key could not be used', err);
+    log.warn('remote', `${source} Firebase key could not be used`, err);
     return null;
   }
 }
@@ -1369,7 +1378,8 @@ function remoteConfigView() {
     fingerprint: remote.fingerprint,
     clients: remote.server ? remote.server.clients() : [],
     push: {
-      configured: !!cfg.fcmKeyEnc,
+      configured: !!getFcm(cfg),
+      source: getFcm(cfg)?.source ?? null, // 'imported' | 'bundled' | null
       projectId: getFcm(cfg)?.projectId ?? null,
       phoneRegistered: !!cfg.pushToken,
       error: pushError,

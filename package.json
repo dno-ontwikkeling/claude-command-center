@@ -47,10 +47,21 @@
       "remoteserver.js",
       "transcript.js",
       "remotefs.js",
+      "fcm.js",
+      "pushnotify.js",
       "build/icon.png",
       "renderer/**",
       "hooks/**",
       "node_modules/**"
+    ],
+    "extraResources": [
+      {
+        "from": "bundled",
+        "to": "bundled",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "asarUnpack": [
       "hooks/**",

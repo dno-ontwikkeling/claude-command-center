@@ -1,4 +1,7 @@
 node_modules/
 dist/
+# Release builds drop the FCM sender key here (see release.yml); never commit it.
+bundled/*
+!bundled/.gitkeep
 *.log
 .claude/

@@ -138,6 +138,14 @@ jobs:
           node -e "const fs=require('fs'),p=require('./package.json');p.version=process.env.V;fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
           echo "package.json version set to $V"
 
+      - name: Bundle the FCM sender key (optional)
+        shell: bash
+        env:
+          FCM: ${{ secrets.FCM_SERVICE_ACCOUNT_BASE64 }}
+        run: |
+          mkdir -p bundled
+          if [ -n "$FCM" ]; then echo "$FCM" | base64 -d > bundled/fcm-key.json; fi
+
       - name: Build installer
         # --publish never: electron-builder only packages; the release upload
         # below goes to the draft the `draft` job created.

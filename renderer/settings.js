@@ -295,9 +295,9 @@ function renderRemote(cfg) {
     ? push.error
     : !push.configured
       ? 'Not set up'
-      : `Firebase project ${push.projectId || '?'} — ${push.phoneRegistered ? 'phone registered' : 'waiting for the phone to connect once'}`;
+      : `Firebase project ${push.projectId || '?'}${push.source === 'bundled' ? ' (built in)' : ''} — ${push.phoneRegistered ? 'phone registered' : 'waiting for the phone to connect once'}`;
   els.setPushTest.disabled = !push.configured || !push.phoneRegistered;
-  els.setPushClear.disabled = !push.configured;
+  els.setPushClear.disabled = push.source !== 'imported';
 
   els.setRemoteClients.innerHTML = '';
   if (!cfg.clients.length) {
