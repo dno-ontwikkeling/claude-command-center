@@ -8,7 +8,7 @@ import { xtermOptions } from './term-settings.mjs';
 import { EXTRA_KEYS, keySequence, applyCtrl, isTap } from './keys.mjs';
 import { touchDistance, fontSizeFromPinch } from './pinch.mjs';
 import { createLineAccumulator, wheelSequence, createVelocityTracker, momentumStep, stackVelocity, WHEEL_LINES } from './touch-scroll.mjs';
-import { h } from './dom.mjs';
+import { h, noSuggestions } from './dom.mjs';
 import { alertDialog } from './dialog.mjs';
 import { createControlTracker } from './control.mjs';
 
@@ -78,6 +78,8 @@ screens.terminal = (el, { id }) => {
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
   term.open(host);
+  // xterm types through a hidden textarea: no suggestion strip or autocorrect.
+  if (term.textarea) noSuggestions(term.textarea);
 
   let stream = createStream();
   let attached = false;

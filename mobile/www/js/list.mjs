@@ -13,7 +13,7 @@ import {
   FILTERS,
 } from './list-model.mjs';
 import { browseFolders } from './folders.mjs';
-import { h, fill } from './dom.mjs';
+import { h, fill, NO_SUGGESTIONS } from './dom.mjs';
 import { alertDialog, confirmDialog, promptDialog } from './dialog.mjs';
 
 const FILTER_KEY = 'cc.listFilter';
@@ -233,7 +233,7 @@ async function openNewAgentSheet(el) {
     const newWorkspace = async () => {
       const parent = await browseFolders(sheet, { title: 'New workspace', actionLabel: 'Choose this folder' });
       if (!parent) return backdrop.remove();
-      const name = h('input', { type: 'text', value: dirName(parent), autocapitalize: 'off', spellcheck: false });
+      const name = h('input', { type: 'text', value: dirName(parent), ...NO_SUGGESTIONS });
       const asIs = h('input', { type: 'checkbox' });
       const create = h('button', { class: 'primary' }, 'Create and start agent');
       create.addEventListener('click', () =>

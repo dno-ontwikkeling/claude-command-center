@@ -1,11 +1,11 @@
 // App-styled replacements for the browser's alert / confirm / prompt.
 // Each returns a promise; Escape or a tap outside cancels.
-import { h } from './dom.mjs';
+import { h, NO_SUGGESTIONS } from './dom.mjs';
 
 function open({ title, message, input, buttons }) {
   return new Promise((resolve) => {
     const field = input
-      ? h('input', { type: 'text', value: input.value ?? '', autocapitalize: 'off', spellcheck: false, class: 'dialog-input' })
+      ? h('input', { type: 'text', value: input.value ?? '', ...NO_SUGGESTIONS, class: 'dialog-input' })
       : null;
     const done = (value) => {
       backdrop.remove();

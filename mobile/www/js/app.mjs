@@ -4,7 +4,7 @@ import * as link from './remote-link.mjs';
 import { decodePairing, describePairing } from './pairing.mjs';
 import { parseServerFrame } from './proto.mjs';
 import { ctx, screens, show, currentScreen, notifyChanged } from './core.mjs';
-import { h } from './dom.mjs';
+import { h, NO_SUGGESTIONS } from './dom.mjs';
 import './list.mjs';
 import './settings-screen.mjs';
 import './terminal.mjs';
@@ -79,9 +79,7 @@ screens.pairing = (el, { reason } = {}) => {
     class: 'link-code',
     rows: 3,
     placeholder: 'ccr1:…',
-    autocapitalize: 'off',
-    autocomplete: 'off',
-    spellcheck: false,
+    ...NO_SUGGESTIONS,
   });
   el.append(
     h(

@@ -11,6 +11,17 @@ export function fill(el, ...children) {
   el.replaceChildren(...nodes(children));
 }
 
+// Attributes that tell the keyboard not to suggest, autocorrect or capitalize
+// (a terminal and paths/names don't want any of it). String values: h() skips
+// a plain `false`.
+export const NO_SUGGESTIONS = { autocomplete: 'off', autocorrect: 'off', autocapitalize: 'off', spellcheck: 'false' };
+
+/** Apply NO_SUGGESTIONS to an existing element (e.g. xterm's hidden textarea). */
+export function noSuggestions(el) {
+  for (const [k, v] of Object.entries(NO_SUGGESTIONS)) el.setAttribute(k, v);
+  return el;
+}
+
 // Tiny DOM helper: h('button', { class: 'x', onclick }, 'text', child...).
 export function h(tag, props = {}, ...children) {
   const el = document.createElement(tag);
