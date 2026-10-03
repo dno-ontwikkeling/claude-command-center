@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { keySequence, ctrlOf, applyCtrl, EXTRA_KEYS } from '../www/js/keys.mjs';
+import { keySequence, ctrlOf, applyCtrl, EXTRA_KEYS, isTap, TAP_SLOP_PX } from '../www/js/keys.mjs';
 
 test('extra keys send the standard terminal sequences', () => {
   assert.equal(keySequence('esc'), '\x1b');
@@ -50,4 +50,12 @@ test('applyCtrl consumes the latch only for a single mappable character', () => 
   // Pasted text or an unmappable key passes through and keeps the latch.
   assert.deepEqual(applyCtrl('hello', true), { data: 'hello', consumed: false });
   assert.deepEqual(applyCtrl('1', true), { data: '1', consumed: false });
+});
+
+test('a key press is a tap only when the finger barely moved', () => {
+  assert.equal(isTap(0, 0), true);
+  assert.equal(isTap(3, -4), true);
+  assert.equal(isTap(TAP_SLOP_PX, 0), true);
+  assert.equal(isTap(TAP_SLOP_PX + 1, 0), false); // scrolling the bar
+  assert.equal(isTap(0, -40), false);
 });

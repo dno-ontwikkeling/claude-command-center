@@ -26,6 +26,14 @@ export const EXTRA_KEYS = [
   { id: 'enter', label: 'Enter' },
 ];
 
+// A finger that moved further than this is scrolling the bar, not pressing a key.
+export const TAP_SLOP_PX = 10;
+
+/** Was a press that moved (dx, dy) px between down and up a tap? */
+export function isTap(dx, dy) {
+  return Math.hypot(dx, dy) <= TAP_SLOP_PX;
+}
+
 // appCursor: the app enabled DECCKM (application cursor keys), so arrows use SS3.
 export function keySequence(id, { appCursor = false } = {}) {
   if (id in ARROWS) return `\x1b${appCursor ? 'O' : '['}${ARROWS[id]}`;

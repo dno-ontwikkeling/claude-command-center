@@ -5,7 +5,7 @@ import { ctx, screens, show, onChanged, onFrame } from './core.mjs';
 import { attachFrame, detachFrame, inputFrame, resizeFrame, createStream } from './proto.mjs';
 import { termSettings } from './settings-screen.mjs';
 import { xtermOptions } from './term-settings.mjs';
-import { EXTRA_KEYS, keySequence, applyCtrl } from './keys.mjs';
+import { EXTRA_KEYS, keySequence, applyCtrl, isTap } from './keys.mjs';
 import { touchDistance, fontSizeFromPinch } from './pinch.mjs';
 import { createLineAccumulator, wheelSequence, createVelocityTracker, momentumStep, stackVelocity, WHEEL_LINES } from './touch-scroll.mjs';
 import { h } from './dom.mjs';
@@ -13,6 +13,26 @@ import { alertDialog } from './dialog.mjs';
 import { createControlTracker } from './control.mjs';
 
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+// Extra-keys bar: a key fires on release, and only for a tap. A swipe that
+// scrolls the bar sideways moves the finger (or the browser takes the gesture
+// over and sends pointercancel), so it presses nothing.
+// preventDefault on pointerdown keeps the soft keyboard (textarea focus) open.
+function onKeyTap(el, fn) {
+  let start = null;
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    start = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  });
+  el.addEventListener('pointerup', (e) => {
+    if (!start || start.id !== e.pointerId) return;
+    const tap = isTap(e.clientX - start.x, e.clientY - start.y);
+    start = null;
+    if (tap) fn();
+  });
+  el.addEventListener('pointercancel', () => (start = null));
+  return el;
+}
 
 screens.terminal = (el, { id }) => {
   const agent = ctx.agents.get(id);
@@ -33,8 +53,7 @@ screens.terminal = (el, { id }) => {
     { class: 'keys' },
     EXTRA_KEYS.map((k) => {
       if (k.id === 'ctrl') return ctrlBtn;
-      // pointerdown + preventDefault keeps the soft keyboard (textarea focus) open.
-      return h('button', { class: 'key', onpointerdown: (e) => (e.preventDefault(), sendKey(k.id)) }, k.label);
+      return onKeyTap(h('button', { class: 'key' }, k.label), () => sendKey(k.id));
     }),
   );
   el.append(
@@ -101,10 +120,7 @@ screens.terminal = (el, { id }) => {
     ctrl = on;
     ctrlBtn.classList.toggle('on', on);
   }
-  ctrlBtn.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    setCtrl(!ctrl);
-  });
+  onKeyTap(ctrlBtn, () => setCtrl(!ctrl));
 
   function sendKey(keyId) {
     if (!attached) return;

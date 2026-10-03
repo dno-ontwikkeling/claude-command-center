@@ -365,6 +365,8 @@ label.field input[type='number'] {
 
 .keys {
   display: flex;
+  /* Sideways swipes scroll the bar natively (and cancel the key press). */
+  touch-action: pan-x;
   gap: 4px;
   overflow-x: auto;
   padding: 4px 6px;
