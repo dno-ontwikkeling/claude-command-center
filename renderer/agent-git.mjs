@@ -10,14 +10,8 @@
 // the render path stays purely git-free.
 // ---------------------------------------------------------------------------
 
-import { agents } from './state.js';
-
-// GitHub-style coloured diff badge: green +added, red -removed. Numbers only, so
-// building the markup directly is safe.
-export function fmtDiff(d) {
-  if (!d || (!d.added && !d.removed)) return '';
-  return `<span class="add">+${d.added}</span><span class="del">-${d.removed}</span>`;
-}
+import { agents, state } from './state.js';
+import { updateStageBar, refreshAheadBehind } from './stage.js';
 
 // Refresh one agent's cached branch + diffstat, updating its row in place.
 // `_gitBusy` dedupes concurrent fetches; `_gitFetched` gates the lazy first pull.
@@ -30,11 +24,12 @@ export function refreshAgentGit(id, a) {
       // Branch can change under us (user runs git switch in the terminal).
       if (b && b !== a.branch) {
         a.branch = b;
-        if (a.labelEl && !a.customLabel) a.labelEl.textContent = `⎇ ${b}`;
+        if (a.labelEl && !a.customLabel) a.labelEl.textContent = b;
       }
-      if (d) {
-        a.diffStat = d;
-        if (a.diffEl) a.diffEl.innerHTML = fmtDiff(d);
+      if (d) a.diffStat = d;
+      if (id === state.activeId) {
+        updateStageBar(); // pass strip shows branch + changes
+        refreshAheadBehind(id, a);
       }
     })
     .finally(() => {

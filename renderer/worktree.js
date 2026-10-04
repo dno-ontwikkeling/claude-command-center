@@ -78,7 +78,7 @@ async function openWorktreePicker(p) {
   const updateNewBtn = () => {
     const name = newName();
     els.wtNewBtn.disabled = !canCreate();
-    els.wtNewBtn.textContent = canCreate() ? `＋ Create branch “${name}”` : '＋ Create new branch';
+    els.wtNewBtn.textContent = canCreate() ? `Create branch “${name}”` : 'Create new branch';
   };
 
   // Step 2: pick the base ref for the new branch.

@@ -1,9 +1,11 @@
 'use strict';
 
 import { els } from './dom.js';
-import { state, agents, dormant, agentsForDir, dormantForDir, displayLabel, readLocalJson } from './state.js';
+import { ICONS } from './icons.mjs';
+import { state, agents, dormant, agentsForDir, dormantForDir, readLocalJson, onStatusChanged } from './state.js';
+import { bandModel } from './needs-band.mjs';
 import { openMenu, promptText, confirmDialog } from './modals.js';
-import { fmtDiff, refreshAgentGit } from './agent-git.mjs';
+import { refreshAgentGit } from './agent-git.mjs';
 import { activate, killAndWait, removeAgent, renameAgent, sleepAgent, forgetAgent, resume, pruneDormantForDir, reorderAgent, forceStatus, spawn } from './agents.js';
 import { newAgent } from './worktree.js';
 
@@ -17,27 +19,6 @@ import { newAgent } from './worktree.js';
 // ---------------------------------------------------------------------------
 
 // Short badge per detected project type (see detectProjectType in main.js).
-const PTYPE_LABEL = { node: 'JS', dotnet: '.NET', go: 'GO', rust: 'RS', python: 'PY' };
-
-// Kebab-menu icons. Trusted, hardcoded SVG literals (never interpolate a label
-// into these — openMenu builds the icon and the label as separate DOM nodes).
-// Feather-style: 14×14, stroke=currentColor so they inherit the item colour
-// (incl. the red `.danger` variants).
-const svgIcon = (inner) =>
-  `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
-const ICONS = {
-  branch: svgIcon('<line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>'),
-  plus: svgIcon('<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>'),
-  folder: svgIcon('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>'),
-  pencil: svgIcon('<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),
-  activity: svgIcon('<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>'),
-  play: svgIcon('<polygon points="5 3 19 12 5 21 5 3"/>'),
-  trash: svgIcon('<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>'),
-  close: svgIcon('<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'),
-  minusCircle: svgIcon('<circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/>'),
-  xCircle: svgIcon('<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'),
-  moon: svgIcon('<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>'),
-};
 
 // Forget from the menu: confirm (and for a worktree, whether to delete its
 // folder and branch), then forgetAgent; a git refusal offers a force remove.
@@ -108,6 +89,10 @@ function toggleCollapseAll() {
   renderSidebar();
 }
 
+// Board row label: custom name, else branch, else generated label. No branch
+// glyph, so branch and custom labels share one left edge.
+export const rowLabel = (x) => x.customLabel || x.branch || x.label;
+
 // Live name filter. Empty string shows everything. Filtering toggles row
 // visibility (see applyFilter) rather than rebuilding the sidebar, so keystrokes
 // never re-spawn the git subprocesses that a full render triggers.
@@ -116,15 +101,6 @@ let filterText = '';
 // ---------------------------------------------------------------------------
 // Shared row builders (used by both projects and workspaces)
 // ---------------------------------------------------------------------------
-
-function typeIcon(type) {
-  if (!type) return null;
-  const icon = document.createElement('span');
-  icon.className = `ptype ptype-${type}`;
-  icon.textContent = PTYPE_LABEL[type] || '';
-  icon.title = type;
-  return icon;
-}
 
 function buildAgentRow(id, a) {
   const row = document.createElement('li');
@@ -138,18 +114,16 @@ function buildAgentRow(id, a) {
 
   const label = document.createElement('span');
   label.className = 'agent-label';
-  label.textContent = displayLabel(a);
+  label.textContent = rowLabel(a);
   label.title = a.cwd;
   a.labelEl = label; // refreshAgentGit updates the branch label in place
 
-  // Uncommitted diff size vs HEAD, e.g. "+23/-4". Rendered from the per-agent
-  // cache only — the branch label and this badge are refreshed out-of-band by
-  // refreshAgentGit, never during a render, so collapse/reorder/refresh (and the
-  // filter, which uses applyFilter) can't spawn 2×N git subprocesses.
-  const diff = document.createElement('span');
-  diff.className = 'agent-diff';
-  if (a.diffStat) diff.innerHTML = fmtDiff(a.diffStat);
-  a.diffEl = diff;
+  // Short state word ("finished", "error", "rate limited"). Empty for the
+  // calm states; the text comes from CSS keyed on the dot's class, so it
+  // follows setStatus without a re-render. The diff stat lives in the stage
+  // pass strip for the active agent only.
+  const word = document.createElement('span');
+  word.className = 'agent-state';
 
   // Lazily populate the git cache the first time this agent's row is built (a
   // new spawn). Existing agents already have `_gitFetched`, so later renders
@@ -158,10 +132,10 @@ function buildAgentRow(id, a) {
 
   const rowKebab = document.createElement('button');
   rowKebab.className = 'kebab';
-  rowKebab.textContent = '⋮';
+  rowKebab.innerHTML = ICONS.kebab;
   rowKebab.title = 'Agent options';
 
-  row.append(dot, label, diff, rowKebab);
+  row.append(dot, label, word, rowKebab);
 
   // Drag to reorder within the project/workspace.
   row.draggable = true;
@@ -196,7 +170,7 @@ function buildAgentRow(id, a) {
       { label: 'Rename', icon: ICONS.pencil, action: () => renameAgent(id) },
       { label: 'Sleep', icon: ICONS.moon, action: () => sleepAgent(id) },
       {
-        label: 'Set status ▸',
+        label: 'Set status',
         icon: ICONS.activity,
         submenu: [
           { label: 'Idle', icon: statusDot('st-idle'), action: () => forceStatus(id, 'idle') },
@@ -224,15 +198,18 @@ function buildDormantRow(id, d) {
 
   const label = document.createElement('span');
   label.className = 'agent-label';
-  label.textContent = displayLabel(d);
+  label.textContent = rowLabel(d);
   label.title = d.cwd;
 
   const rowKebab = document.createElement('button');
   rowKebab.className = 'kebab';
-  rowKebab.textContent = '⋮';
+  rowKebab.innerHTML = ICONS.kebab;
   rowKebab.title = 'Session options';
 
-  row.append(dot, label, rowKebab);
+  const word = document.createElement('span');
+  word.className = 'agent-state';
+
+  row.append(dot, label, word, rowKebab);
 
   row.addEventListener('click', (e) => {
     if (e.target === rowKebab) return;
@@ -308,7 +285,7 @@ function buildItemHeader(p, { dragType, onReorder, onAddAgent, menuItems }) {
 
   const chevron = document.createElement('span');
   chevron.className = 'chevron';
-  chevron.textContent = isCollapsed ? '▸' : '▾';
+  chevron.innerHTML = isCollapsed ? ICONS.chevronRight : ICONS.chevronDown;
   chevron.title = isCollapsed ? 'Expand' : 'Collapse';
 
   const name = document.createElement('span');
@@ -318,27 +295,29 @@ function buildItemHeader(p, { dragType, onReorder, onAddAgent, menuItems }) {
 
   const addBtn = document.createElement('button');
   addBtn.className = 'add-agent';
-  addBtn.textContent = '+';
+  addBtn.innerHTML = `${ICONS.plus}<span>New agent</span>`;
   addBtn.title = 'New agent';
 
   const kebab = document.createElement('button');
   kebab.className = 'kebab';
-  kebab.textContent = '⋮';
+  kebab.innerHTML = ICONS.kebab;
   kebab.title = 'Options';
 
-  const before = [chevron];
-  const icon = typeIcon(p.type);
-  if (icon) before.push(icon);
-  header.append(...before, name);
+  header.append(chevron, name);
 
-  // When collapsed, show how many rows are hidden so the row isn't blank.
-  const hiddenCount = agentsForDir(p.dir).length + dormantForDir(p.dir).length;
-  if (isCollapsed && hiddenCount) {
-    const count = document.createElement('span');
-    count.className = 'collapse-count';
-    count.textContent = String(hiddenCount);
-    count.title = `${hiddenCount} hidden`;
-    header.append(count);
+  // Collapsed: one tiny signal square per agent, so a problem inside a folded
+  // project still shows. The squares are the agents' own dot class names.
+  const rows = [...agentsForDir(p.dir).map(([, a]) => a.status), ...dormantForDir(p.dir).map(() => 'dormant')];
+  if (isCollapsed && rows.length) {
+    const mini = document.createElement('span');
+    mini.className = 'mini';
+    mini.title = `${rows.length} hidden`;
+    for (const st of rows) {
+      const sq = document.createElement('i');
+      sq.className = `dot ${st}`;
+      mini.append(sq);
+    }
+    header.append(mini);
   }
   header.append(addBtn, kebab);
   item.appendChild(header);
@@ -411,7 +390,113 @@ export function renderSidebar() {
   renderProjects();
   renderWorkspaces();
   applyFilter();
+  renderBand();
+  requestAnimationFrame(updateBelowMarker);
 }
+
+// ---------------------------------------------------------------------------
+// "Needs you" band: every agent blocked on you, oldest first, above the list
+// (their rows hide themselves). It ignores the name filter and All / Active /
+// Sleeping on purpose, so a waiting agent can never be filtered out of sight.
+// ---------------------------------------------------------------------------
+
+function projectName(dir) {
+  const p = state.projectsData.find((x) => x.dir === dir) || state.workspacesData.find((x) => x.dir === dir);
+  return p ? p.name : null;
+}
+
+// "Claude needs your permission to use Bash" -> "Permission to use Bash".
+const askText = (message) => (message ? message.replace(/^claude needs your permission/i, 'Permission') : 'Waiting for your input');
+
+function renderBand() {
+  const { items, more } = bandModel(agents, projectName);
+  const band = els.needsBand;
+  band.hidden = !items.length;
+  band.replaceChildren();
+  if (!items.length) return;
+
+  const head = document.createElement('div');
+  head.className = 'nb-head';
+  head.textContent = 'Needs you';
+  band.append(head);
+
+  for (const it of items) {
+    const b = document.createElement('button');
+    b.className = 'nb-item';
+    b.title = 'Open this agent';
+    const label = document.createElement('span');
+    label.className = 'nb-label';
+    label.textContent = it.label;
+    const meta = document.createElement('span');
+    meta.className = 'nb-meta';
+    meta.textContent = `${it.project} · ${askText(it.message)}`;
+    b.append(label, meta);
+    b.addEventListener('click', () => activate(it.id));
+    band.append(b);
+  }
+  if (more) {
+    const m = document.createElement('div');
+    m.className = 'nb-more';
+    m.textContent = `+${more} more waiting`;
+    band.append(m);
+  }
+}
+
+// Collapsed headings carry one square per agent; keep them in step with live
+// status changes without a full re-render.
+function refreshMinis() {
+  for (const item of [...els.list.children, ...els.wsList.children]) {
+    const mini = item.querySelector(':scope > .project > .mini');
+    if (!mini) continue;
+    const dir = item.querySelector(':scope > .project').dataset.dir;
+    const states = [...agentsForDir(dir).map(([, a]) => a.status), ...dormantForDir(dir).map(() => 'dormant')];
+    mini.replaceChildren(
+      ...states.map((st) => {
+        const sq = document.createElement('i');
+        sq.className = `dot ${st}`;
+        return sq;
+      })
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Loud rows below the fold: on a short window the list scrolls, and a finished,
+// error or rate-limited row out of view would be silent. A marker on the list's
+// bottom edge names what is down there; clicking it scrolls to the first one.
+// ---------------------------------------------------------------------------
+
+const LOUD = [
+  ['error', 'error'],
+  ['rate-limited', 'rate limited'],
+  ['unseen', 'finished'],
+];
+const belowMarker = document.createElement('button');
+belowMarker.className = 'below-marker';
+belowMarker.hidden = true;
+els.list.closest('#lists').after(belowMarker);
+
+function updateBelowMarker() {
+  const lists = els.list.closest('#lists');
+  const edge = lists.getBoundingClientRect().bottom;
+  const below = [...lists.querySelectorAll('.agent')].filter((row) => row.offsetParent && row.getBoundingClientRect().bottom > edge + 1);
+  const counts = LOUD.map(([cls, word]) => [word, below.filter((r) => r.querySelector(`.dot.${cls}`)).length]).filter(([, n]) => n);
+  belowMarker.hidden = !counts.length;
+  if (!counts.length) return;
+  belowMarker.textContent = `${counts.map(([w, n]) => `${n} ${w}`).join(' · ')} below`;
+  belowMarker.onclick = () => {
+    const first = below.find((r) => LOUD.some(([cls]) => r.querySelector(`.dot.${cls}`)));
+    first?.scrollIntoView({ block: 'nearest' });
+  };
+}
+els.list.closest('#lists').addEventListener('scroll', updateBelowMarker, { passive: true });
+window.addEventListener('resize', updateBelowMarker);
+
+onStatusChanged(() => {
+  renderBand();
+  refreshMinis();
+  updateBelowMarker();
+});
 
 // Toggle each item's visibility against the current filter. Cheap DOM-only pass
 // (no data rebuild, no git spawns), so it's safe to run on every keystroke.
@@ -551,12 +636,26 @@ els.sidebarFilter.addEventListener('input', () => {
     applyFilter();
   }, 200);
 });
-// Esc clears the filter while the box is focused (immediate, no debounce).
+// Esc clears the filter while the box is focused (immediate, no debounce);
+// a second Esc on an empty box folds it away again.
 els.sidebarFilter.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && filterText) {
+  if (e.key !== 'Escape') return;
+  if (filterText) {
     clearTimeout(filterTimer);
     els.sidebarFilter.value = '';
     filterText = '';
     applyFilter();
+  } else {
+    showFilter(false);
   }
 });
+
+// The filter field is folded behind the header's search button until needed.
+const filterBox = els.sidebarFilter.closest('.sidebar-search');
+function showFilter(open) {
+  filterBox.hidden = !open;
+  els.filterToggle.setAttribute('aria-expanded', String(open));
+  els.filterToggle.classList.toggle('on', open);
+  if (open) els.sidebarFilter.focus();
+}
+els.filterToggle.addEventListener('click', () => showFilter(filterBox.hidden));

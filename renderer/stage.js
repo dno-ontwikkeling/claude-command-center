@@ -23,12 +23,57 @@ export function updateStageBar() {
     return;
   }
   els.stageBar.hidden = false;
-  els.sbBranch.textContent = a.branch ? `⎇ ${a.branch}` : '(no branch)';
+  const owner = state.projectsData.find((p) => p.dir === a.dir) || state.workspacesData.find((w) => w.dir === a.dir);
+  els.sbProject.textContent = owner ? owner.name : a.dir.split(/[\/]/).filter(Boolean).pop();
+  els.sbBranch.textContent = a.customLabel || a.branch || a.label;
+  els.sbBranch.title = a.branch ? `Branch ${a.branch}` : 'No branch';
+  // Commits ahead / behind upstream for this agent's worktree, from the same
+  // worktree listing the picker uses. Fetched lazily for the active agent only.
+  if (a.ab === undefined) refreshAheadBehind(state.activeId, a);
+  const ab = a.ab;
+  els.sbAbSeg.hidden = !ab;
+  if (ab) els.sbAb.textContent = `${ab.ahead} / ${ab.behind}`;
+
+  // Uncommitted changes vs HEAD for the active agent (the board rows no
+  // longer carry a diff badge). Hidden when clean or not a repo.
+  const d = a.diffStat;
+  const dirty = !!d && (d.added || d.removed);
+  els.sbChangesSeg.hidden = !dirty;
+  if (dirty) {
+    const add = document.createElement('span');
+    add.className = 'add';
+    add.textContent = `+${d.added}`;
+    const del = document.createElement('span');
+    del.className = 'del';
+    del.textContent = `−${d.removed}`;
+    els.sbChanges.replaceChildren(add, ' ', del);
+  }
   // git actions only make sense on a real branch (worktree / repo checkout).
   const noGit = !a.branch;
   els.sbFetch.disabled = noGit || gitInFlight.has('fetch');
   els.sbPull.disabled = noGit || gitInFlight.has('pull');
   els.sbDiff.disabled = noGit;
+}
+
+const normPath = (p) => p.replace(/\\/g, '/').replace(/\/$/, '').toLowerCase();
+const samePath = (x, y) => normPath(x) === normPath(y);
+
+/** Look up ahead/behind for one agent's worktree; null when not a repo or no upstream info. */
+export function refreshAheadBehind(id, a) {
+  if (a._abBusy) return;
+  a._abBusy = true;
+  Promise.resolve(window.api.listWorktrees(a.dir))
+    .then((list) => {
+      const w = (list || []).find((x) => x.path && samePath(x.path, a.cwd));
+      a.ab = w ? { ahead: w.ahead || 0, behind: w.behind || 0 } : null;
+    })
+    .catch(() => {
+      a.ab = null;
+    })
+    .finally(() => {
+      a._abBusy = false;
+      if (id === state.activeId) updateStageBar();
+    });
 }
 
 async function runGit(action, label) {

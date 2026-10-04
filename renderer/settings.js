@@ -4,66 +4,16 @@ import { els } from './dom.js';
 import { agents, readLocalJson } from './state.js';
 import { beep, SOUNDS } from './sound.js';
 import { confirmDialog } from './modals.js';
+import { TERM_DARK, TERM_LIGHT } from './term-palettes.mjs';
 
 // ---------------------------------------------------------------------------
-// Terminal look — mirrors the user's Windows Terminal "Claude code" profile:
-// Campbell color scheme, Cascadia Mono 12, bar cursor, 8px padding.
+// Terminal look — Departure Hall palettes (renderer/term-palettes.mjs), bar
+// cursor, Cascadia Mono by default.
 // ---------------------------------------------------------------------------
-
-const CAMPBELL = {
-  background: '#0C0C0C',
-  foreground: '#CCCCCC',
-  cursor: '#FFFFFF',
-  cursorAccent: '#0C0C0C',
-  selectionBackground: '#FFFFFF44',
-  black: '#0C0C0C',
-  red: '#C50F1F',
-  green: '#13A10E',
-  yellow: '#C19C00',
-  blue: '#0037DA',
-  magenta: '#881798',
-  cyan: '#3A96DD',
-  white: '#CCCCCC',
-  brightBlack: '#767676',
-  brightRed: '#E74856',
-  brightGreen: '#16C60C',
-  brightYellow: '#F9F1A5',
-  brightBlue: '#3B78FF',
-  brightMagenta: '#B4009E',
-  brightCyan: '#61D6D6',
-  brightWhite: '#F2F2F2',
-};
-
-// Light-mode terminal — mirrors Windows Terminal "One Half Light": light
-// paper background, dark ink, same 16-color roles darkened for contrast on
-// white so ANSI output stays legible.
-const CAMPBELL_LIGHT = {
-  background: '#FAFAFA',
-  foreground: '#383A42',
-  cursor: '#4F525E',
-  cursorAccent: '#FAFAFA',
-  selectionBackground: '#0037DA33',
-  black: '#383A42',
-  red: '#E45649',
-  green: '#50A14F',
-  yellow: '#C18401',
-  blue: '#0184BC',
-  magenta: '#A626A4',
-  cyan: '#0997B3',
-  white: '#FAFAFA',
-  brightBlack: '#4F525E',
-  brightRed: '#E45649',
-  brightGreen: '#50A14F',
-  brightYellow: '#C18401',
-  brightBlue: '#0184BC',
-  brightMagenta: '#A626A4',
-  brightCyan: '#0997B3',
-  brightWhite: '#FFFFFF',
-};
 
 // Terminal palette follows the app chrome theme.
 function termTheme() {
-  return settings.theme === 'light' ? CAMPBELL_LIGHT : CAMPBELL;
+  return settings.theme === 'light' ? TERM_LIGHT : TERM_DARK;
 }
 
 const DEFAULT_SETTINGS = {
@@ -100,6 +50,9 @@ export function termOpts() {
     cursorStyle: settings.cursorStyle,
     cursorBlink: settings.cursorBlink,
     scrollback: settings.scrollback,
+    // Claude Code's dim text (tool calls, hints) is drawn faint on top of the
+    // palette; xterm lifts any cell below this ratio against its background.
+    minimumContrastRatio: 4.5,
   };
 }
 

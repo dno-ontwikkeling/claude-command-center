@@ -1,6 +1,7 @@
 'use strict';
 
 import { els } from './dom.js';
+import { ICONS } from './icons.mjs';
 import { state, agents, readLocalJson } from './state.js';
 import { openMenu } from './modals.js';
 
@@ -58,7 +59,7 @@ els.promptsBtn.addEventListener('click', (e) => {
     action: () => runSmartPrompt(p.text),
     disabled: !hasAgent,
   }));
-  items.push({ label: '⚙ Manage prompts…', action: openManager });
+  items.push({ label: 'Manage prompts…', icon: ICONS.gear, action: openManager });
   openMenu(els.promptsBtn, items);
 });
 
@@ -114,7 +115,7 @@ function displayCard(p, index) {
 
   const handle = document.createElement('span');
   handle.className = 'pm-drag';
-  handle.textContent = '⠿';
+  handle.innerHTML = ICONS.grip;
   handle.title = 'Drag to reorder';
 
   const body = document.createElement('div');
@@ -130,8 +131,8 @@ function displayCard(p, index) {
 
   const acts = document.createElement('div');
   acts.className = 'pm-acts';
-  const edit = iconBtn('✎', 'Edit', () => startEdit(p.id));
-  const del = iconBtn('🗑', 'Delete', () => {
+  const edit = iconBtn(ICONS.pencil, 'Edit', () => startEdit(p.id));
+  const del = iconBtn(ICONS.trash, 'Delete', () => {
     prompts = prompts.filter((x) => x.id !== p.id);
     save();
     renderList();
@@ -194,10 +195,10 @@ function editCard(p) {
   return row;
 }
 
-function iconBtn(glyph, title, onClick) {
+function iconBtn(svgIcon, title, onClick) {
   const b = document.createElement('button');
   b.className = 'icon-btn';
-  b.textContent = glyph;
+  b.innerHTML = svgIcon; // trusted literal from icons.mjs
   b.title = title;
   b.addEventListener('click', (e) => {
     e.stopPropagation();

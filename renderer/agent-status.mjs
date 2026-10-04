@@ -19,8 +19,28 @@ export function setStatus(id, status) {
   if (!a) return;
   const changed = a.status !== status;
   a.status = status;
+  // The needs-you band orders waiting agents oldest first.
+  if (status === 'needs-input') a.needsSince ??= Date.now();
+  else {
+    delete a.needsSince;
+    delete a.blockMessage;
+  }
   if (a.dotEl) a.dotEl.className = `dot ${status}`;
+  if (changed && FLAP_ON.has(status)) flap(a.dotEl?.closest('.agent'));
   if (changed) notifyStatusChanged();
+}
+
+// The board's one motion: a row's signal and state word step once (two frames,
+// --flap long) when it lands in a state worth noticing. Not on busy<->idle,
+// which flips on every burst of output, and never from a render: rows are
+// built without the class. prefers-reduced-motion turns it off in CSS.
+const FLAP_ON = new Set(['unseen', 'error', 'rate-limited', 'needs-input']);
+function flap(row) {
+  if (!row) return;
+  row.classList.remove('flap');
+  void row.offsetWidth; // restart the animation if it is still running
+  row.classList.add('flap');
+  row.addEventListener('animationend', () => row.classList.remove('flap'), { once: true });
 }
 
 // Manual override from the sidebar menu. A one-shot reset: clears the flags
@@ -140,6 +160,7 @@ export function handleAgentEvent({ agentId, status, sessionId, event, message })
     if (blocking) {
       a.awaitingInput = true;
       clearTimeout(a.idleTimer);
+      a.blockMessage = message || null; // before setStatus, which notifies the band
       setStatus(agentId, 'needs-input');
       notify(a, 'needs-input');
     } else {

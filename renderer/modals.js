@@ -1,6 +1,7 @@
 'use strict';
 
 import { els } from './dom.js';
+import { ICONS } from './icons.mjs';
 
 // ---------------------------------------------------------------------------
 // Kebab dropdown menu
@@ -30,6 +31,12 @@ export function openMenu(anchor, items, opts = {}) {
       b.append(iconEl, labelEl);
     } else {
       b.textContent = it.label;
+    }
+    if (it.submenu) {
+      const more = document.createElement('span');
+      more.className = 'menu-more';
+      more.innerHTML = ICONS.chevronRight;
+      b.append(more);
     }
     if (it.danger) b.classList.add('danger');
     if (it.disabled) {

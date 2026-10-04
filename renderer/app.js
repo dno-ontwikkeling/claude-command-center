@@ -97,7 +97,7 @@ els.sidebarResizer.addEventListener('mousedown', (e) => {
 });
 window.addEventListener('mousemove', (e) => {
   if (!resizing) return;
-  const w = Math.min(560, Math.max(160, e.clientX));
+  const w = Math.min(560, Math.max(260, e.clientX));
   root.style.setProperty('--sidebar-w', `${w}px`);
 });
 window.addEventListener('mouseup', () => {

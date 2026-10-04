@@ -1,6 +1,7 @@
 'use strict';
 
 import { els } from './dom.js';
+import { ICONS } from './icons.mjs';
 import { state, agents } from './state.js';
 import { parseDiff } from './diff-parse.mjs';
 
@@ -206,7 +207,7 @@ function fillTree(ul, node, depth) {
     head.style.paddingLeft = `${depth * 12 + 6}px`;
     const chev = document.createElement('span');
     chev.className = 'diff-chev';
-    chev.textContent = '▾';
+    chev.innerHTML = ICONS.chevronDown;
     const nm = document.createElement('span');
     nm.className = 'diff-dirname';
     nm.textContent = name;
@@ -218,7 +219,7 @@ function fillTree(ul, node, depth) {
 
     head.addEventListener('click', () => {
       const collapsed = li.classList.toggle('collapsed');
-      chev.textContent = collapsed ? '▸' : '▾';
+      chev.innerHTML = collapsed ? ICONS.chevronRight : ICONS.chevronDown;
     });
 
     li.append(head, childUl);
