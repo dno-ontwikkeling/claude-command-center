@@ -1,0 +1,762 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-04T15:41:08.080Z",
+  "title": "Design System: Command Center",
+  "extensions": {
+    "colorMeta": {
+      "board": {
+        "role": "neutral",
+        "displayName": "Board Slate",
+        "canonical": "oklch(18.3% 0.011 242.4)",
+        "tonalRamp": [
+          "#070c10",
+          "#1f2529",
+          "#3d4348",
+          "#5e6469",
+          "#80878d",
+          "#a5acb1",
+          "#c8cfd5",
+          "#e8f0f6"
+        ]
+      },
+      "board-raised": {
+        "role": "neutral",
+        "displayName": "Board Raised",
+        "canonical": "oklch(23.0% 0.018 245.1)",
+        "tonalRamp": [
+          "#050c12",
+          "#1d252c",
+          "#3b444b",
+          "#5b656d",
+          "#7e8891",
+          "#a2acb6",
+          "#c4cfd9",
+          "#e5f0fa"
+        ]
+      },
+      "board-hover": {
+        "role": "neutral",
+        "displayName": "Board Hover",
+        "canonical": "oklch(21.4% 0.016 244.5)",
+        "tonalRamp": [
+          "#060c11",
+          "#1e252b",
+          "#3c434a",
+          "#5c646c",
+          "#7e878f",
+          "#a3acb4",
+          "#c5cfd8",
+          "#e6f0f9"
+        ]
+      },
+      "board-line": {
+        "role": "neutral",
+        "displayName": "Board Line",
+        "canonical": "oklch(27.9% 0.023 243.4)",
+        "tonalRamp": [
+          "#040c14",
+          "#1b252e",
+          "#38444e",
+          "#59656f",
+          "#7b8893",
+          "#9fadb8",
+          "#c2d0dc",
+          "#e2f1fd"
+        ]
+      },
+      "board-fg": {
+        "role": "neutral",
+        "displayName": "Porcelain",
+        "canonical": "oklch(93.7% 0.007 233.6)",
+        "tonalRamp": [
+          "#080c0e",
+          "#212527",
+          "#3f4345",
+          "#606466",
+          "#82878a",
+          "#a7acae",
+          "#caced1",
+          "#eaeff2"
+        ]
+      },
+      "board-muted": {
+        "role": "neutral",
+        "displayName": "Board Mist",
+        "canonical": "oklch(67.6% 0.021 240.9)",
+        "tonalRamp": [
+          "#040c13",
+          "#1b252d",
+          "#39444d",
+          "#59656e",
+          "#7b8892",
+          "#a0adb7",
+          "#c2d0da",
+          "#e3f1fc"
+        ]
+      },
+      "signal": {
+        "role": "primary",
+        "displayName": "Signal Yellow",
+        "canonical": "oklch(83.4% 0.158 89.0)",
+        "tonalRamp": [
+          "#100a00",
+          "#2e2203",
+          "#524005",
+          "#796011",
+          "#a4810e",
+          "#d0a51a",
+          "#f7c738",
+          "#feedc3"
+        ]
+      },
+      "on-signal": {
+        "role": "primary",
+        "displayName": "Departure Ink",
+        "canonical": "oklch(20.6% 0.009 240.3)",
+        "tonalRamp": [
+          "#080c0e",
+          "#202528",
+          "#3e4347",
+          "#5f6468",
+          "#82878b",
+          "#a6acb0",
+          "#c9cfd3",
+          "#eaeff4"
+        ]
+      },
+      "on-signal-muted": {
+        "role": "primary",
+        "displayName": "Burnt Umber Ink",
+        "canonical": "oklch(37.0% 0.062 94.8)",
+        "tonalRamp": [
+          "#0f0b00",
+          "#2c2301",
+          "#4d4217",
+          "#6e6339",
+          "#92865b",
+          "#b7ab7e",
+          "#dacea0",
+          "#fbefc0"
+        ]
+      },
+      "select": {
+        "role": "secondary",
+        "displayName": "Gate Cyan",
+        "canonical": "oklch(75.6% 0.099 214.1)",
+        "tonalRamp": [
+          "#000e12",
+          "#032931",
+          "#054b57",
+          "#116f80",
+          "#2895aa",
+          "#55bbd1",
+          "#7bdff5",
+          "#d2f6ff"
+        ]
+      },
+      "select-light": {
+        "role": "secondary",
+        "displayName": "Gate Cyan (light surfaces)",
+        "canonical": "oklch(51.7% 0.089 218.1)",
+        "tonalRamp": [
+          "#000e13",
+          "#012933",
+          "#0c4a59",
+          "#056f85",
+          "#3c93aa",
+          "#64b9d0",
+          "#88dcf4",
+          "#d5f5ff"
+        ],
+        "cssVar": "--select (light theme)"
+      },
+      "st-quiet": {
+        "role": "neutral",
+        "displayName": "Quiet Slate",
+        "canonical": "oklch(51.4% 0.025 246.2)",
+        "tonalRamp": [
+          "#040c15",
+          "#1a252f",
+          "#38444f",
+          "#586571",
+          "#7a8895",
+          "#9fadba",
+          "#c1d0dd",
+          "#e2f1ff"
+        ]
+      },
+      "st-error": {
+        "role": "tertiary",
+        "displayName": "Fault Coral",
+        "canonical": "oklch(69.2% 0.161 29.5)",
+        "tonalRamp": [
+          "#1e0000",
+          "#4b0000",
+          "#7f0a05",
+          "#ac3125",
+          "#d65849",
+          "#fa8372",
+          "#fcbcb1",
+          "#fee9e5"
+        ]
+      },
+      "st-rate": {
+        "role": "tertiary",
+        "displayName": "Hold Lavender",
+        "canonical": "oklch(74.9% 0.128 296.1)",
+        "tonalRamp": [
+          "#100127",
+          "#2c0959",
+          "#4a2e7d",
+          "#6b51a3",
+          "#8e74ca",
+          "#b299f2",
+          "#d2c4fb",
+          "#f0ebff"
+        ]
+      },
+      "bg": {
+        "role": "neutral",
+        "displayName": "Hall Black",
+        "canonical": "oklch(16.1% 0.009 240.6)",
+        "tonalRamp": [
+          "#080c0f",
+          "#202528",
+          "#3e4347",
+          "#5f6468",
+          "#81878b",
+          "#a6acb0",
+          "#c9cfd3",
+          "#e9eff4"
+        ]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Panel Slate",
+        "canonical": "oklch(18.3% 0.011 242.4)",
+        "tonalRamp": [
+          "#070c10",
+          "#1f2529",
+          "#3d4348",
+          "#5e6469",
+          "#80878d",
+          "#a5acb1",
+          "#c8cfd5",
+          "#e8f0f6"
+        ]
+      },
+      "elevated": {
+        "role": "neutral",
+        "displayName": "Elevated Slate",
+        "canonical": "oklch(22.2% 0.016 244.4)",
+        "tonalRamp": [
+          "#060c11",
+          "#1e252b",
+          "#3c434a",
+          "#5c646c",
+          "#7f878f",
+          "#a3acb4",
+          "#c6cfd8",
+          "#e6f0f9"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(27.9% 0.023 243.4)",
+        "tonalRamp": [
+          "#040c14",
+          "#1b252e",
+          "#38444e",
+          "#59656f",
+          "#7b8893",
+          "#9fadb8",
+          "#c2d0dc",
+          "#e2f1fd"
+        ]
+      },
+      "border-strong": {
+        "role": "neutral",
+        "displayName": "Strong Line",
+        "canonical": "oklch(51.4% 0.025 246.2)",
+        "tonalRamp": [
+          "#040c15",
+          "#1a252f",
+          "#38444f",
+          "#586571",
+          "#7a8895",
+          "#9fadba",
+          "#c1d0dd",
+          "#e2f1ff"
+        ]
+      },
+      "fg": {
+        "role": "neutral",
+        "displayName": "Porcelain (stage)",
+        "canonical": "oklch(93.7% 0.007 233.6)",
+        "tonalRamp": [
+          "#080c0e",
+          "#212527",
+          "#3f4345",
+          "#606466",
+          "#82878a",
+          "#a7acae",
+          "#caced1",
+          "#eaeff2"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Mist (stage)",
+        "canonical": "oklch(67.6% 0.021 240.9)",
+        "tonalRamp": [
+          "#040c13",
+          "#1b252d",
+          "#39444d",
+          "#59656e",
+          "#7b8892",
+          "#a0adb7",
+          "#c2d0da",
+          "#e3f1fc"
+        ]
+      },
+      "danger": {
+        "role": "tertiary",
+        "displayName": "Fault Coral (stage)",
+        "canonical": "oklch(69.2% 0.161 29.5)",
+        "tonalRamp": [
+          "#1e0000",
+          "#4b0000",
+          "#7f0a05",
+          "#ac3125",
+          "#d65849",
+          "#fa8372",
+          "#fcbcb1",
+          "#fee9e5"
+        ]
+      },
+      "add": {
+        "role": "tertiary",
+        "displayName": "Ledger Green",
+        "canonical": "oklch(80.1% 0.116 153.7)",
+        "tonalRamp": [
+          "#010f05",
+          "#012d14",
+          "#0a502b",
+          "#197643",
+          "#459a65",
+          "#6cc088",
+          "#8fe4aa",
+          "#c7fed7"
+        ]
+      },
+      "del": {
+        "role": "tertiary",
+        "displayName": "Ledger Red",
+        "canonical": "oklch(71.8% 0.141 29.9)",
+        "tonalRamp": [
+          "#1f0000",
+          "#4a0401",
+          "#7c130a",
+          "#a43c2f",
+          "#cd6151",
+          "#f78675",
+          "#fdbbb0",
+          "#ffe9e5"
+        ]
+      },
+      "scrim": {
+        "role": "neutral",
+        "displayName": "Scrim",
+        "canonical": "oklch(13.1% 0.008 232.1)",
+        "tonalRamp": [
+          "#080c0e",
+          "#202527",
+          "#3e4346",
+          "#5f6467",
+          "#82878a",
+          "#a6acaf",
+          "#c9cfd2",
+          "#e9f0f3"
+        ]
+      },
+      "bg-light": {
+        "role": "neutral",
+        "displayName": "Hall Paper",
+        "canonical": "oklch(96.9% 0.004 121.6)",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#242422",
+          "#424340",
+          "#636461",
+          "#868684",
+          "#aaaba8",
+          "#cdcecb",
+          "#eeefec"
+        ]
+      },
+      "panel-light": {
+        "role": "neutral",
+        "displayName": "White Panel",
+        "canonical": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#424242",
+          "#636363",
+          "#868686",
+          "#ababab",
+          "#cecece",
+          "#eeeeee"
+        ]
+      },
+      "elevated-light": {
+        "role": "neutral",
+        "displayName": "Elevated Paper",
+        "canonical": "oklch(95.2% 0.006 128.5)",
+        "tonalRamp": [
+          "#0a0c09",
+          "#232522",
+          "#414340",
+          "#626460",
+          "#858783",
+          "#aaaba8",
+          "#cccecb",
+          "#edefeb"
+        ]
+      },
+      "border-light": {
+        "role": "neutral",
+        "displayName": "Paper Line",
+        "canonical": "oklch(89.8% 0.011 136.6)",
+        "tonalRamp": [
+          "#090c08",
+          "#222520",
+          "#40443e",
+          "#60655f",
+          "#838881",
+          "#a8aca6",
+          "#cacfc9",
+          "#ebf0e9"
+        ]
+      },
+      "border-strong-light": {
+        "role": "neutral",
+        "displayName": "Paper Strong Line",
+        "canonical": "oklch(63.9% 0.016 244.8)",
+        "tonalRamp": [
+          "#060c11",
+          "#1e252b",
+          "#3b434a",
+          "#5c646c",
+          "#7e878f",
+          "#a3acb4",
+          "#c5cfd8",
+          "#e6f0f9"
+        ]
+      },
+      "fg-light": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "oklch(20.6% 0.009 240.3)",
+        "tonalRamp": [
+          "#080c0e",
+          "#202528",
+          "#3e4347",
+          "#5f6468",
+          "#82878b",
+          "#a6acb0",
+          "#c9cfd3",
+          "#eaeff4"
+        ]
+      },
+      "muted-light": {
+        "role": "neutral",
+        "displayName": "Ink Muted",
+        "canonical": "oklch(49.4% 0.018 242.1)",
+        "tonalRamp": [
+          "#050c12",
+          "#1d252c",
+          "#3a444b",
+          "#5b656d",
+          "#7d8890",
+          "#a1acb5",
+          "#c4cfd9",
+          "#e5f0fa"
+        ]
+      },
+      "danger-light": {
+        "role": "tertiary",
+        "displayName": "Fault Coral (light)",
+        "canonical": "oklch(53.2% 0.166 30.1)",
+        "tonalRamp": [
+          "#1f0000",
+          "#490401",
+          "#7c1309",
+          "#ae2f21",
+          "#d85745",
+          "#fc826f",
+          "#fdbbb0",
+          "#ffe9e5"
+        ]
+      },
+      "add-light": {
+        "role": "tertiary",
+        "displayName": "Ledger Green (light)",
+        "canonical": "oklch(51.3% 0.119 153.3)",
+        "tonalRamp": [
+          "#000f05",
+          "#002d14",
+          "#08502a",
+          "#177641",
+          "#449b63",
+          "#6ac187",
+          "#8ee5a9",
+          "#c7ffd6"
+        ]
+      },
+      "term-bg-light": {
+        "role": "neutral",
+        "displayName": "Terminal Paper",
+        "canonical": "oklch(98.4% 0.004 106.5)",
+        "tonalRamp": [
+          "#0b0b09",
+          "#242422",
+          "#424240",
+          "#636361",
+          "#868684",
+          "#ababa8",
+          "#cececb",
+          "#efefec"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Wordmark",
+        "purpose": "The COMMAND CENTER wordmark only; uppercase."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Dialog titles and the agent label in the needs band."
+      },
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "Pass-strip values with tabular numerals."
+      },
+      "title": {
+        "displayName": "Board Title",
+        "purpose": "Project and workspace headings on the board."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Agent labels, menus, dialog text."
+      },
+      "body-sm": {
+        "displayName": "Body Small",
+        "purpose": "Pass-strip buttons, hints, band meta line, footer buttons."
+      },
+      "label": {
+        "displayName": "Tracked Label",
+        "purpose": "Uppercase section labels, pass-strip keys, the band heading (600)."
+      },
+      "state-word": {
+        "displayName": "State Word",
+        "purpose": "Uppercase FINISHED / ERROR / RATE LIMITED at the end of a board row."
+      },
+      "mono": {
+        "displayName": "Terminal Mono",
+        "purpose": "Terminal (default 12px, user-adjustable), diff lines, file paths."
+      }
+    },
+    "shadows": [
+      {
+        "name": "hollow-square",
+        "value": "inset 0 0 0 1px var(--st-dormant)",
+        "purpose": "Stroke for dormant and dead signal squares. Not elevation."
+      },
+      {
+        "name": "tab-underline",
+        "value": "inset 0 -2px 0 var(--select)",
+        "purpose": "Cyan rule under the active diff tab. Not elevation."
+      }
+    ],
+    "motion": [
+      {
+        "name": "flap",
+        "value": "90ms steps(2, end); keyframes from scaleY(0.15) opacity 0.4 to none",
+        "purpose": "Signature two-frame flap of the signal square and state word when a row lands in a loud state. Off under prefers-reduced-motion; never on busy/idle changes."
+      },
+      {
+        "name": "switch",
+        "value": "150ms (background, border-color, transform)",
+        "purpose": "Settings switch track and knob."
+      },
+      {
+        "name": "reveal",
+        "value": "opacity 100ms",
+        "purpose": "Prompt-manager row actions appearing on hover."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "pass-strip-compact",
+        "value": "860px (container query on the pass strip)",
+        "purpose": "Action buttons collapse to icons."
+      },
+      {
+        "name": "board-default-width",
+        "value": "340px (resizable)"
+      }
+    ],
+    "terminalPalettes": {
+      "source": "renderer/term-palettes.mjs",
+      "darkBackground": "#0a0e11",
+      "lightBackground": "#fafaf7",
+      "yellowDark": "#e0b252",
+      "yellowLight": "#8a6400",
+      "minimumContrastRatio": 4.5
+    }
+  },
+  "components": [
+    {
+      "name": "Needs Band",
+      "kind": "custom",
+      "refersTo": "needs-band",
+      "description": "The only yellow in the app: agents waiting on input, oldest first, up to three then +n.",
+      "html": "<div class=\"ds-band\"><div class=\"ds-band-head\">Needs you</div><button class=\"ds-band-item\"><span class=\"ds-band-label\">feat/phone-dialogs</span><span class=\"ds-band-meta\">claude-command-center · Permission to use Bash</span></button><button class=\"ds-band-item\"><span class=\"ds-band-label\">fix/scroll-replay</span><span class=\"ds-band-meta\">memorybank · Approve plan</span></button></div>",
+      "css": ".ds-band{width:312px;padding:10px 6px 6px;border-radius:4px;background:var(--signal,#f2c230);color:var(--on-signal,#14181b);font-family:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif}.ds-band-head{padding:0 8px 4px;font-family:Bahnschrift,'Segoe UI',sans-serif;font-size:11px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--on-signal-muted,#4a3f14)}.ds-band-item{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;padding:6px 8px;border:none;border-radius:3px;background:transparent;color:inherit;text-align:left;cursor:pointer;font:inherit}.ds-band-item+.ds-band-item{border-top:1px solid color-mix(in srgb,#14181b 15%,transparent);border-radius:0 0 3px 3px}.ds-band-item:hover{background:color-mix(in srgb,#14181b 8%,transparent)}.ds-band-item:focus-visible{outline:2px solid #14181b;outline-offset:-2px}.ds-band-label{font-family:Bahnschrift,'Segoe UI',sans-serif;font-size:15px;font-weight:600}.ds-band-meta{font-size:12px;color:var(--on-signal-muted,#4a3f14)}"
+    },
+    {
+      "name": "Board Rows",
+      "kind": "nav",
+      "refersTo": "agent-row",
+      "description": "Project heading and quiet agent rows: a 7px signal square and a label; a state word only for finished, error and rate limited.",
+      "html": "<ul class=\"ds-board\"><li class=\"ds-proj\">claude-command-center</li><li class=\"ds-row ds-row-active\"><i class=\"ds-sq ds-busy\"></i><span class=\"ds-lbl\">main</span></li><li class=\"ds-row\"><i class=\"ds-sq ds-unseen\"></i><span class=\"ds-lbl\">Settings QR review</span><span class=\"ds-st ds-st-unseen\">finished</span></li><li class=\"ds-row\"><i class=\"ds-sq ds-error\"></i><span class=\"ds-lbl\">chore/deps</span><span class=\"ds-st ds-st-error\">error</span></li><li class=\"ds-row\"><i class=\"ds-sq ds-rate\"></i><span class=\"ds-lbl\">main</span><span class=\"ds-st ds-st-rate\">rate limited</span></li><li class=\"ds-row ds-dormant\"><i class=\"ds-sq ds-hollow\"></i><span class=\"ds-lbl\">fix/scroll-replay</span></li></ul>",
+      "css": ".ds-board{width:340px;margin:0;padding:6px 0;list-style:none;background:#0e1317;color:#e6ebee;font-family:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;font-size:13px}.ds-proj{height:32px;display:flex;align-items:center;padding-left:28px;font-family:Bahnschrift,'Segoe UI',sans-serif;font-size:14px;font-weight:600;letter-spacing:.01em}.ds-proj:hover{background:#131a20}.ds-row{display:flex;align-items:center;gap:12px;height:30px;padding:0 10px 0 36px;cursor:pointer}.ds-row:hover{background:#131a20}.ds-row-active{background:#161e25}.ds-row-active .ds-lbl{font-weight:600}.ds-lbl{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.ds-dormant .ds-lbl{color:#8c99a3}.ds-sq{width:7px;height:7px;flex:none;border-radius:1px;background:#5c6975}.ds-busy{background:#e6ebee}.ds-unseen{background:#5bc0d6}.ds-error{background:#ef6f5e}.ds-rate{background:#b59cf5}.ds-hollow{background:transparent;box-shadow:inset 0 0 0 1px #5c6975}.ds-st{font-family:Bahnschrift,'Segoe UI',sans-serif;font-size:11px;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}.ds-st-unseen{color:#5bc0d6}.ds-st-error{color:#ef6f5e}.ds-st-rate{color:#b59cf5}.ds-row:hover .ds-st{visibility:hidden}"
+    },
+    {
+      "name": "Board Filter",
+      "kind": "chip",
+      "refersTo": "segmented-option",
+      "description": "All / Active / Sleeping segmented control on the board; the active option takes the raised tone, never cyan.",
+      "html": "<div class=\"ds-wrap\"><div class=\"ds-seg\"><button class=\"ds-seg-on\">All</button><button>Active</button><button>Sleeping</button></div></div>",
+      "css": ".ds-wrap{width:312px;padding:12px 14px;background:#0e1317}.ds-seg{display:flex;padding:2px;border:1px solid #1f2a33;border-radius:4px}.ds-seg button{flex:1;padding:5px 0;border:none;border-radius:3px;background:transparent;color:#8c99a3;font-family:Bahnschrift,'Segoe UI',sans-serif;font-size:12px;letter-spacing:.06em;cursor:pointer}.ds-seg button:hover{color:#e6ebee}.ds-seg button:focus-visible{outline:2px solid #5bc0d6;outline-offset:1px}.ds-seg .ds-seg-on{background:#161e25;color:#e6ebee}"
+    },
+    {
+      "name": "Pass Strip",
+      "kind": "custom",
+      "refersTo": "pass-button",
+      "description": "52px bar above the terminal: tracked-caps keys over Bahnschrift figures, then plain actions.",
+      "html": "<div class=\"ds-pass\"><div class=\"ds-seg2\"><span class=\"ds-k\">Agent</span><span class=\"ds-v\">main</span></div><div class=\"ds-seg2\"><span class=\"ds-k\">Ahead / Behind</span><span class=\"ds-v\">2 / 0</span></div><div class=\"ds-seg2\"><span class=\"ds-k\">Changes</span><span class=\"ds-v\"><span class=\"ds-add\">+214</span> <span class=\"ds-del\">−12</span></span></div><div class=\"ds-acts\"><button class=\"ds-pbtn\"><svg viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 12a9 9 0 1 1-3-6.7L21 8\"/><path d=\"M21 3v5h-5\"/></svg>Fetch</button><button class=\"ds-pbtn\"><svg viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"m21 21-4.3-4.3\"/></svg>Find</button></div></div>",
+      "css": ".ds-pass{display:flex;align-items:stretch;height:52px;width:640px;background:var(--panel,#0e1317);color:var(--fg,#e6ebee);border-bottom:1px solid var(--border,#1f2a33)}.ds-seg2{display:flex;flex-direction:column;justify-content:center;gap:1px;padding:0 18px;border-right:1px solid var(--border,#1f2a33)}.ds-k{font-family:Bahnschrift,'Segoe UI',sans-serif;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted,#8c99a3)}.ds-v{font-family:Bahnschrift,'Segoe UI',sans-serif;font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap}.ds-add{color:var(--add,#7fd49b)}.ds-del{color:var(--del,#ef7f6e)}.ds-acts{display:flex;align-items:center;gap:2px;margin-left:auto;padding:0 12px}.ds-pbtn{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 10px;border:1px solid transparent;border-radius:4px;background:transparent;color:inherit;font-family:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;font-size:12px;line-height:1;cursor:pointer}.ds-pbtn:hover{background:var(--elevated,#151c22)}.ds-pbtn:focus-visible{outline:2px solid var(--select,#5bc0d6);outline-offset:1px}"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Ink-on-porcelain inversion for the one confirming action in a dialog.",
+      "html": "<button class=\"ds-btn-primary\">Create agent</button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:none;border-radius:4px;background:var(--action,#e6ebee);color:var(--on-action,#0e1317);padding:8px 12px;font-family:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;font-size:13px;font-weight:600;cursor:pointer}.ds-btn-primary:hover{opacity:.88}.ds-btn-primary:focus-visible{outline:2px solid var(--select,#5bc0d6);outline-offset:1px}"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-primary-danger",
+      "description": "Primary shape filled with Fault Coral for destructive confirmation (Forget).",
+      "html": "<button class=\"ds-btn-danger\">Forget</button>",
+      "css": ".ds-btn-danger{border:none;border-radius:4px;background:var(--danger,#ef6f5e);color:var(--on-action,#0e1317);padding:8px 12px;font-family:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;font-size:13px;font-weight:600;cursor:pointer}.ds-btn-danger:hover{opacity:.88}.ds-btn-danger:focus-visible{outline:2px solid var(--select,#5bc0d6);outline-offset:1px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Hairline-outlined secondary action (Cancel, Disconnect).",
+      "html": "<button class=\"ds-btn-ghost\">Cancel</button>",
+      "css": ".ds-btn-ghost{border:1px solid var(--border,#1f2a33);border-radius:4px;background:transparent;color:var(--fg,#e6ebee);padding:8px 12px;font-family:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;font-size:13px;cursor:pointer}.ds-btn-ghost:hover{background:var(--elevated,#151c22)}.ds-btn-ghost:focus-visible{outline:2px solid var(--select,#5bc0d6);outline-offset:1px}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Dialog text input; focus swaps the outline for a cyan border.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Agent label\" />",
+      "css": ".ds-input{width:260px;background:var(--elevated,#151c22);color:var(--fg,#e6ebee);border:1px solid var(--border,#1f2a33);border-radius:4px;padding:7px 9px;font-family:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;font-size:13px}.ds-input::placeholder{color:var(--muted,#8c99a3)}.ds-input:focus{outline:none;border-color:var(--select,#5bc0d6)}"
+    },
+    {
+      "name": "Menu",
+      "kind": "card",
+      "refersTo": "menu",
+      "description": "Kebab dropdown: panel fill, strong hairline border, no shadow.",
+      "html": "<div class=\"ds-menu\"><button><svg viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 20h9\"/><path d=\"M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z\"/></svg>Rename</button><button class=\"ds-danger\"><svg viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 6h18\"/><path d=\"M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6\"/><path d=\"M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2\"/></svg>Forget</button></div>",
+      "css": ".ds-menu{display:inline-flex;flex-direction:column;min-width:150px;padding:4px;background:var(--panel,#0e1317);border:1px solid var(--border-strong,#5c6975);border-radius:4px}.ds-menu button{display:flex;align-items:center;gap:8px;text-align:left;border:none;background:transparent;color:var(--fg,#e6ebee);padding:7px 10px;border-radius:4px;font-family:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;font-size:13px;cursor:pointer}.ds-menu button:hover{background:var(--elevated,#151c22)}.ds-menu button:focus-visible{outline:2px solid var(--select,#5bc0d6);outline-offset:1px}.ds-menu .ds-danger{color:var(--danger,#ef6f5e)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Departure Hall",
+    "overview": "The agent list is an airport flight-information board: a matte slate field of quiet rows that only speak when something changes, with one yellow band reserved for \"you are needed\". Everything the board announces is set in Bahnschrift, a condensed DIN, in tracked capitals and tabular figures; running text and controls stay in Segoe UI, and the terminal keeps Cascadia Mono. The board is the same dark slate in both themes. In the light theme only the hall around it brightens: the stage, the terminal and the dialogs go light, so the board reads as a dark sign hanging in a bright room.\n\nThe system is flat and hairline-ruled. Depth comes from tonal steps (field, hover, raised) and 1px rules, never from drop shadows or card boxes. Colour is spent almost entirely on state: two hues are reserved and guarded by `test/renderer-tokens.test.mjs`, and every other surface is slate, porcelain or ink. The density suits long, full-screen sessions: 30px rows, 13px body text, 52px of chrome above a terminal that runs edge to edge.\n\nMotion is a single device. When an agent lands in a loud state, its square and state word step once, a two-frame flap with no easing, then hold still.",
+    "keyCharacteristics": [
+      "A theme-invariant slate board beside a theme-switching stage.",
+      "Signal yellow means \"needs you\" and nothing else. Cyan means selection, focus or \"finished, unseen\" and nothing else.",
+      "Rows are quiet: a 7px signal square and a label. A state word appears only for finished, error and rate limited.",
+      "Bahnschrift tracked capitals for labels, figures and names; Segoe UI for prose and buttons; Cascadia Mono for code.",
+      "Flat: tonal layers and hairlines, 4px corners, no elevation shadows.",
+      "One motion: the 90ms two-step flap."
+    ],
+    "rules": [
+      {
+        "name": "The Reserved Yellow Rule",
+        "body": "Signal yellow appears only where an agent needs input: the band, the needs square, the needs status option. A selector that uses it must name needs or band, and the token test fails the build otherwise.",
+        "section": "colors"
+      },
+      {
+        "name": "The Reserved Cyan Rule",
+        "body": "Cyan marks selection, focus, checked and unseen, and nothing else. It never decorates, never marks a heading, and never stands in for a brand colour.",
+        "section": "colors"
+      },
+      {
+        "name": "The Dark Board Rule",
+        "body": "`board`, `board-raised` and `board-fg` are identical in both themes. The light theme changes the stage, terminal and dialogs only.",
+        "section": "colors"
+      },
+      {
+        "name": "The Terminal Amber Rule",
+        "body": "Terminal ANSI yellow is a muted amber (#e0b252 dark, #8a6400 light), so terminal output never imitates the \"needs you\" signal.",
+        "section": "colors"
+      },
+      {
+        "name": "The Board Voice Rule",
+        "body": "Anything the board or the pass strip announces (names, labels, figures, state words, tabs, dialog titles) is Bahnschrift. Anything you read as a sentence or press as a button is Segoe UI. Code is Cascadia Mono.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tracked Caps Rule",
+        "body": "Uppercase text is always Bahnschrift at 11px and always tracked: 0.16 to 0.18em for labels, 0.08em for state words. Uppercase is for field names on the board, not for decoration.",
+        "section": "typography"
+      },
+      {
+        "name": "The Hairline Not Shadow Rule",
+        "body": "Nothing casts a shadow. Separate things with a 1px rule or a tonal step; lift overlays with the strong border and the scrim. Inset shadows are allowed only as strokes (hollow squares, underlines).",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep Signal Yellow (#f2c230) on needs-input only, and cyan on selection, focus, checked and unseen only. `test/renderer-tokens.test.mjs` enforces both.",
+      "Do keep the board tokens identical across themes; theme only the stage, terminal and dialogs.",
+      "Do set board and pass-strip labels, names and figures in Bahnschrift, with tabular numerals for counts.",
+      "Do separate surfaces with 1px hairlines and tonal steps (field, hover, raised).",
+      "Do use 4px corners, and 3px for an element nested inside a 4px container.",
+      "Do keep board rows to a square and a label; add a state word only for finished, error and rate limited.",
+      "Do pass the existing contrast floor: 4.5:1 for text and 3:1 for squares and strong borders, in both themes.",
+      "Do keep terminal ANSI yellow a muted amber."
+    ],
+    "donts": [
+      "Don't use drop shadows for elevation; lift overlays with the strong border and the scrim.",
+      "Don't put times, diff columns, column heads, language badges or tree lines on board rows.",
+      "Don't colour a heading, an icon or a button with yellow or cyan to make it stand out.",
+      "Don't let an agent that needs input also appear as a list row; it lives in the band.",
+      "Don't animate state changes with eased transitions; the flap is two hard frames, once.",
+      "Don't fetch web fonts or icon fonts; the fonts are Windows system fonts and icons are inline stroked SVG."
+    ]
+  }
+}
