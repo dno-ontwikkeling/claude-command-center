@@ -31,27 +31,45 @@ test('y/n prompt classifies as needs-input', () => {
   assert.equal(classifyOutput('Continue? yes/no').kind, 'needs-input');
 });
 
-test('rate-limit notice classifies as rate-limited', () => {
-  assert.equal(classifyOutput('usage limit reached').kind, 'rate-limited');
-  assert.equal(classifyOutput('rate limit reached').kind, 'rate-limited');
+// The notices Claude Code itself prints when a plan limit is hit. Each names
+// the limit and when it resets.
+test('Claude limit notices classify as rate-limited', () => {
+  for (const n of [
+    'Claude usage limit reached. Your limit will reset at 3pm (Europe/Brussels).',
+    'Claude AI usage limit reached. Your limit will reset at 10:30pm.',
+    '5-hour limit reached ∙ resets 3pm',
+    'Weekly limit reached ∙ resets Mon 9am',
+    'Opus weekly limit reached ∙ resets 9am',
+    "You've hit your limit · resets 3pm (Europe/Brussels)",
+    'You’ve hit your usage limit · resets 3pm',
+  ]) {
+    assert.equal(classifyOutput(n).kind, 'rate-limited', n);
+  }
 });
 
-test('rate-limit extracts the reset time when present', () => {
-  const r = classifyOutput('limit reached — resets at 3pm');
-  assert.equal(r.kind, 'rate-limited');
-  assert.equal(r.resetAt, '3pm');
+test('rate-limit extracts the reset time', () => {
+  assert.equal(classifyOutput('5-hour limit reached ∙ resets 3pm').resetAt, '3pm');
+  assert.equal(classifyOutput('Claude usage limit reached. Your limit will reset at 10:30pm.').resetAt, '10:30pm');
 });
 
-test('rate-limit extracts an HH:MM reset time', () => {
-  const r = classifyOutput('usage limit reached, resets 10:30pm');
-  assert.equal(r.kind, 'rate-limited');
-  assert.equal(r.resetAt, '10:30pm');
+test('rate-limit notice split by ANSI styling and cursor moves still matches', () => {
+  const styled = '[31m5-hour[1Climit[1Creached[0m ∙ [2mresets 3pm[0m';
+  assert.equal(classifyOutput(styled).kind, 'rate-limited');
 });
 
-test('rate-limit with no parseable reset time yields null resetAt', () => {
-  const r = classifyOutput('usage limit reached');
-  assert.equal(r.kind, 'rate-limited');
-  assert.equal(r.resetAt, null);
+// Text that merely talks about limits (an answer, docs, this repo's own
+// source and tests) must not flag the agent.
+test('prose mentioning limits is not a rate limit', () => {
+  for (const t of [
+    '- "usage limit reached" or "rate limit reached" means rate-limited',
+    'what happens when the usage limit is reached? Cover the 5-hour session limit',
+    'export const RATELIMIT_RE = /(?:usage|rate)\s*limit\s*reached/i;',
+    'rate limit reached',
+    'Claude usage limit reached',
+    'API Error: 429 rate_limit_error',
+  ]) {
+    assert.equal(classifyOutput(t).kind, null, t);
+  }
 });
 
 test('working wins over a question in the same chunk (priority)', () => {
@@ -61,6 +79,6 @@ test('working wins over a question in the same chunk (priority)', () => {
 });
 
 test('rate-limit wins over a question', () => {
-  const both = 'Do you want to proceed? usage limit reached';
+  const both = 'Do you want to proceed? 5-hour limit reached ∙ resets 3pm';
   assert.equal(classifyOutput(both).kind, 'rate-limited');
 });

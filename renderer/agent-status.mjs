@@ -108,8 +108,11 @@ export function detectPrompts(id, data) {
   }
 
   // Rate limit: no hook exists for this. Pin the status (markActivity skips it)
-  // until a UserPromptSubmit shows the user has resumed.
+  // until a UserPromptSubmit shows the user has resumed. Only a working agent
+  // can hit the limit: the same text on a settled agent is the TUI repainting
+  // old output (scroll, resize, refocus), not a new notice.
   if (kind === 'rate-limited') {
+    if (a.status !== 'busy') return;
     a.rateResetAt = resetAt;
     a.awaitingInput = false;
     clearTimeout(a.idleTimer);
