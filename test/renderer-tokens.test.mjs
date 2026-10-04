@@ -44,7 +44,7 @@ const PAIRS = [
   ['--board-fg', '--board', 4.5], ['--board-fg', '--board-raised', 4.5],
   ['--board-muted', '--board', 4.5], ['--board-muted', '--board-raised', 4.5],
   ['--on-signal', '--signal', 4.5], ['--on-signal-muted', '--signal', 4.5],
-  ['--board-select', '--board', 4.5], ['--st-error', '--board', 4.5], ['--st-rate', '--board', 4.5],
+  ['--board-select', '--board', 4.5], ['--st-error', '--board', 4.5], ['--st-rate', '--board', 4.5], ['--st-unseen', '--board', 4.5],
   ['--st-busy', '--board', 3], ['--st-idle', '--board', 3], ['--st-dormant', '--board', 3],
 ];
 

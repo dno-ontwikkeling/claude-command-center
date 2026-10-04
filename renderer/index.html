@@ -12,14 +12,14 @@
       <header class="bar">
         <span class="title">Command Center</span>
         <div class="actions">
-          <button id="filter-toggle" class="icon-btn" title="Filter projects" aria-expanded="false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></button>
-          <button id="collapse-all" class="icon-btn" title="Collapse all"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 11 5-5 5 5"/><path d="m7 18 5-5 5 5"/></svg></button>
+          <button id="filter-toggle" class="icon-btn" title="Filter agents" aria-expanded="false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></button>
           <button id="theme-toggle" class="icon-btn" title="Toggle theme"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v18a9 9 0 0 0 0-18Z" fill="currentColor"/></svg></button>
+          <button id="dashboard-btn" class="icon-btn" title="Dashboard: manage projects and workspaces" aria-pressed="false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
         </div>
       </header>
       <div class="sidebar-search" hidden>
         <svg class="search-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-        <input id="sidebar-filter" type="text" placeholder="Filter projects" spellcheck="false" />
+        <input id="sidebar-filter" type="text" placeholder="Filter agents" spellcheck="false" />
       </div>
       <div id="agent-filter" class="agent-filter" role="tablist" aria-label="Show agents">
         <button data-filter="all" role="tab">All</button>
@@ -30,12 +30,12 @@
       <div id="lists">
         <div class="section-head">
           <span class="section-title">Projects</span>
-          <button id="add-project" class="icon-btn" title="Add project"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+          <button id="new-project-agent" class="icon-btn" title="New agent in a project"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
         </div>
         <ul id="project-list"></ul>
         <div class="section-head">
           <span class="section-title">Workspaces</span>
-          <button id="add-workspace" class="icon-btn" title="New workspace"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+          <button id="new-ws-agent" class="icon-btn" title="New agent in a workspace"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
         </div>
         <ul id="workspace-list"></ul>
       </div>
@@ -48,7 +48,27 @@
     <div id="sidebar-resizer" title="Drag to resize"></div>
 
     <main id="stage">
-      <div id="empty" class="empty">Select a project to launch a worktree.</div>
+      <section id="dashboard" class="dashboard" aria-label="Dashboard" hidden>
+        <div class="dash-bar">
+          <div id="dash-summary" class="dash-summary"></div>
+          <div class="sb-actions">
+            <button id="dash-add-project" class="sb-btn" title="Add a git repository"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="sb-label">Add project</span></button>
+            <button id="dash-add-workspace" class="sb-btn" title="Add a plain folder as a workspace"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="sb-label">New workspace</span></button>
+          </div>
+        </div>
+        <div class="dash-body">
+          <section class="dash-sec">
+            <h2 class="dash-title">Projects</h2>
+            <p class="dash-hint">Git repositories. Each agent opens in its own worktree.</p>
+            <ul id="dash-projects" class="dash-list"></ul>
+          </section>
+          <section class="dash-sec">
+            <h2 class="dash-title">Workspaces</h2>
+            <p class="dash-hint">Plain folders. Agents start in the folder itself.</p>
+            <ul id="dash-workspaces" class="dash-list"></ul>
+          </section>
+        </div>
+      </section>
       <div id="stage-bar" hidden>
         <div class="pass-seg"><span class="ps-k">Project</span><span id="sb-project" class="ps-v"></span></div>
         <div class="pass-seg"><span class="ps-k">Agent</span><span id="sb-branch" class="ps-v sb-branch"></span></div>

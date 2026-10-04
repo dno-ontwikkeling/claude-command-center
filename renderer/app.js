@@ -6,7 +6,9 @@
 import { agents, state, loadDormant, onAgentsChanged } from './state.js';
 import { els } from './dom.js';
 import { initTheme } from './settings.js';
-import { refreshProjects, renderSidebar } from './sidebar.js';
+import { renderSidebar } from './sidebar.js';
+import { refreshProjects } from './dashboard.js';
+import { syncView } from './view.js';
 import { refreshAllAgentsGit } from './agent-git.mjs';
 import { startRemoteSync } from './agents.js';
 import { installGlobalHandlers, log } from './logger.js';
@@ -38,6 +40,7 @@ onAgentsChanged(() => {
   renderSidebar();
   syncWatch();
 });
+syncView(); // no agent yet: the stage opens on the dashboard
 loadDormant(); // resumable sessions from the previous run, shown as dormant rows
 startRemoteSync(); // first agents snapshot for the phone app, dormant rows included
 refreshProjects().then(syncWatch);

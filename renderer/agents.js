@@ -9,6 +9,7 @@ import { settings, termOpts } from './settings.js';
 import { confirmDialog, promptText, closeMenu } from './modals.js';
 import { updateStageBar, openSearch } from './stage.js';
 import { setStatus, forceStatus, markActivity, detectPrompts, handleAgentEvent } from './agent-status.mjs';
+import { setDashboard, syncView } from './view.js';
 
 export { forceStatus };
 
@@ -265,7 +266,6 @@ export function resume(id, opts = {}) {
 export function removeDormant(id) {
   dormant.delete(id);
   persistAgents();
-  if (agents.size === 0 && dormant.size === 0) els.empty.style.display = '';
   notifyAgentsChanged();
 }
 
@@ -275,7 +275,6 @@ export function removeDormant(id) {
 export function pruneDormantForDir(dir, skipRender = false) {
   for (const [id] of dormantForDir(dir)) dormant.delete(id);
   persistAgents();
-  if (agents.size === 0 && dormant.size === 0) els.empty.style.display = '';
   if (!skipRender) notifyAgentsChanged();
 }
 
@@ -370,11 +369,11 @@ function cleanupAgent(id, skipRender = false) {
   if (state.activeId === id) {
     state.activeId = null;
     updateStageBar();
+    syncView(); // no agent to show: the dashboard takes the stage
   }
   // Reset the label counter once a project has no agents left, so a relaunch
   // starts back at "Agent 1" instead of climbing forever.
   if (agentsForDirCount(a.dir) === 0) agentSeq.delete(a.dir);
-  if (agents.size === 0 && dormant.size === 0) els.empty.style.display = '';
   if (!skipRender) notifyAgentsChanged();
 }
 
@@ -396,6 +395,7 @@ function convertToDormant(id, skipRender = false) {
   if (state.activeId === id) {
     state.activeId = null;
     updateStageBar();
+    syncView(); // no agent to show: the dashboard takes the stage
   }
   persistAgents();
   if (!skipRender) notifyAgentsChanged();
@@ -436,7 +436,7 @@ export function removeAgent(id, skipRender = false) {
 
 export function activate(id) {
   state.activeId = id;
-  els.empty.style.display = 'none';
+  setDashboard(false);
   for (const [aid, a] of agents) {
     a.el.classList.toggle('active', aid === id);
   }

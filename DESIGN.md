@@ -14,8 +14,10 @@ colors:
   select: "#5bc0d6"
   select-light: "#12748a"
   st-quiet: "#5c6975"
-  st-error: "#ef6f5e"
-  st-rate: "#b59cf5"
+  st-busy: "#3d7bff"
+  st-unseen: "#b59cf5"
+  st-error: "#f25555"
+  st-rate: "#f0883e"
   bg: "#0a0e11"
   panel: "#0e1317"
   elevated: "#151c22"
@@ -90,7 +92,6 @@ spacing:
   gap: "12px"
   modal: "16px"
   board-inset: "22px"
-  row-indent: "36px"
 components:
   needs-band:
     backgroundColor: "{colors.signal}"
@@ -101,8 +102,8 @@ components:
     backgroundColor: "{colors.board}"
     textColor: "{colors.board-fg}"
     typography: "{typography.body}"
-    height: "30px"
-    padding: "0 10px 0 36px"
+    height: "48px"
+    padding: "0 12px 0 22px"
   agent-row-hover:
     backgroundColor: "{colors.board-hover}"
   agent-row-active:
@@ -165,19 +166,19 @@ components:
 
 **Creative North Star: "The Departure Hall"**
 
-The agent list is an airport flight-information board: a matte slate field of quiet rows that only speak when something changes, with one yellow band reserved for "you are needed". Everything the board announces is set in Bahnschrift, a condensed DIN, in tracked capitals and tabular figures; running text and controls stay in Segoe UI, and the terminal keeps Cascadia Mono. The board is the same dark slate in both themes. In the light theme only the hall around it brightens: the stage, the terminal and the dialogs go light, so the board reads as a dark sign hanging in a bright room.
+The agent list is an airport flight-information board: a matte slate field of rows, one per agent, each announcing its project, its branch and its state, with one yellow band reserved for "you are needed". Everything the board announces is set in Bahnschrift, a condensed DIN, in tracked capitals and tabular figures; running text and controls stay in Segoe UI, and the terminal keeps Cascadia Mono. The board is the same dark slate in both themes. In the light theme only the hall around it brightens: the stage, the terminal and the dialogs go light, so the board reads as a dark sign hanging in a bright room.
 
-The system is flat and hairline-ruled. Depth comes from tonal steps (field, hover, raised) and 1px rules, never from drop shadows or card boxes. Colour is spent almost entirely on state: two hues are reserved and guarded by `test/renderer-tokens.test.mjs`, and every other surface is slate, porcelain or ink. The density suits long, full-screen sessions: 30px rows, 13px body text, 52px of chrome above a terminal that runs edge to edge.
+The system is flat and hairline-ruled. Depth comes from tonal steps (field, hover, raised) and 1px rules, never from drop shadows or card boxes. Colour is spent almost entirely on state: two hues are reserved and guarded by `test/renderer-tokens.test.mjs`, and every other surface is slate, porcelain or ink. The density suits long, full-screen sessions: 48px two-line rows, 13px body text, 52px of chrome above a terminal that runs edge to edge. The board lists agents only; projects and workspaces are managed on the dashboard, a page that takes the stage.
 
-Motion is a single device. When an agent lands in a loud state, its square and state word step once, a two-frame flap with no easing, then hold still.
+Motion is two devices. When an agent lands in a loud state, its square and state word step once, a two-frame flap with no easing. The All / Active / Sleeping pill slides to the chosen option over 200ms on a strong ease-in-out. Everything else holds still.
 
 **Key Characteristics:**
 - A theme-invariant slate board beside a theme-switching stage.
-- Signal yellow means "needs you" and nothing else. Cyan means selection, focus or "finished, unseen" and nothing else.
-- Rows are quiet: a 7px signal square and a label. A state word appears only for finished, error and rate limited.
+- Signal yellow means "needs you" and nothing else. Cyan means selection and focus and nothing else.
+- Each row is a 7px signal square, the project name over the branch, and a state word for every state. No times.
 - Bahnschrift tracked capitals for labels, figures and names; Segoe UI for prose and buttons; Cascadia Mono for code.
 - Flat: tonal layers and hairlines, 4px corners, no elevation shadows.
-- One motion: the 90ms two-step flap.
+- Two motions: the 90ms two-step flap, and the 200ms slide of the filter pill.
 
 ## Colors
 
@@ -187,11 +188,13 @@ A matte slate and porcelain palette with two reserved signal hues and a small se
 - **Signal Yellow** (#f2c230): the "Needs you" band, the needs-input signal square, and the needs entry in the Set status menu. Text on it is **Departure Ink** (#14181b), with **Burnt Umber Ink** (#4a3f14) for the band heading, the meta line and "+n".
 
 ### Secondary
-- **Gate Cyan** (#5bc0d6 dark, #12748a on light surfaces): selection and focus only. Used for the focus ring, focused input borders, the checked switch and checkbox accent, the active diff tab underline, prompt-manager drop targets, the resizer while dragging, the search toggle when it is on, and the "finished" (unseen) word and square on the board.
+- **Gate Cyan** (#5bc0d6 dark, #12748a on light surfaces): selection and focus only. Used for the focus ring, focused input borders, the checked switch and checkbox accent, the active diff tab underline, prompt-manager drop targets, the resizer while dragging, and the search toggle when it is on.
 
 ### Tertiary
-- **Fault Coral** (#ef6f5e dark, #b93a2b light): the error state word and square on the board, danger buttons, destructive menu items and error text in dialogs.
-- **Hold Lavender** (#b59cf5): the rate-limited state word and square. It appears on the board only.
+- **Fault Coral** (#ef6f5e dark, #b93a2b light): danger buttons, destructive menu items and error text in dialogs.
+- **Finished Lavender** (#b59cf5): the finished (unseen) state word and square.
+- **Hold Orange** (#f0883e): the rate-limited state word and square.
+- **Fault Red** (#f25555): the error state word and square. Red, not orange, so a crashed agent never reads as one waiting out a rate limit.
 - **Ledger Green** (#7fd49b dark, #1d7a45 light) and **Ledger Red** (#ef7f6e dark, #b93a2b light): added and removed counts in the pass strip, diff lines and worktree badges. These are git colours, not state colours.
 
 ### Neutral
@@ -199,8 +202,9 @@ A matte slate and porcelain palette with two reserved signal hues and a small se
 - **Board Raised** (#161e25): the selected row, the active segmented option, the board search field and icon-button hover.
 - **Board Hover** (#131a20): row and heading hover on the board, one step above the field.
 - **Board Line** (#1f2a33): board hairlines (sidebar edge, segmented outline, search outline, the rule above the "below" marker). The dark-theme `border` uses the same value.
-- **Porcelain** (#e6ebee): board text, dark-theme stage text, and the busy signal square.
-- **Board Mist** (#8c99a3): muted board text, section labels, inactive segmented options, icon buttons. The dark-theme `muted` uses the same value.
+- **Porcelain** (#e6ebee): board text and dark-theme stage text.
+- **Transit Blue** (#3d7bff): the busy signal square and the WORKING state word. A true blue, kept well clear of Gate Cyan so "working" never reads as "finished".
+- **Board Mist** (#8c99a3): muted board text, the branch line and the calm state words (IDLE, SLEEPING, ENDED), section labels, inactive segmented options, icon buttons. The dark-theme `muted` uses the same value.
 - **Quiet Slate** (#5c6975): the idle, done, dormant and dead squares (dormant and dead as 1px outlines), and the dark-theme strong border on menus and dialogs.
 - **Hall Black** (#0a0e11): the dark stage and terminal background.
 - **Elevated Slate** (#151c22): dark-theme hover fills, inputs, active tabs, sticky heads.
@@ -210,7 +214,7 @@ A matte slate and porcelain palette with two reserved signal hues and a small se
 ### Named Rules
 **The Reserved Yellow Rule.** Signal yellow appears only where an agent needs input: the band, the needs square, the needs status option. A selector that uses it must name needs or band, and the token test fails the build otherwise.
 
-**The Reserved Cyan Rule.** Cyan marks selection, focus, checked and unseen, and nothing else. It never decorates, never marks a heading, and never stands in for a brand colour.
+**The Reserved Cyan Rule.** Cyan marks selection, focus and checked, and nothing else. It never decorates, never marks a heading, and never stands in for a brand colour.
 
 **The Dark Board Rule.** `board`, `board-raised` and `board-fg` are identical in both themes. The light theme changes the stage, terminal and dialogs only.
 
@@ -228,11 +232,11 @@ A matte slate and porcelain palette with two reserved signal hues and a small se
 - **Display** (Bahnschrift 600, 14px, 0.16em, uppercase): the "COMMAND CENTER" wordmark only.
 - **Headline** (Bahnschrift 600, 15px, 0.02em): dialog titles, and the agent label in the needs band (no tracking).
 - **Figure** (Bahnschrift 400, 15px, tabular numerals): pass-strip values such as project, agent, "2 / 0" and "+214 −12".
-- **Title** (Bahnschrift 600, 14px, 0.01em): project and workspace headings on the board. A collapsed heading drops to 400 in Board Mist.
-- **Body** (Segoe UI 400, 13px): agent labels, menus, dialog text. The confirm message uses line-height 1.5.
+- **Title** (Bahnschrift 600, 15px, 0.01em): the project name on each board row and each dashboard row. A sleeping row sets it in Board Mist.
+- **Body** (Segoe UI 400, 13px): menus, dialog text. The branch line under a row title is 12px in Board Mist. The confirm message uses line-height 1.5.
 - **Body Small** (Segoe UI 400, 12px): buttons in the pass strip, hints, the needs-band meta line, footer buttons. Segmented options and settings tabs use Bahnschrift at this size with 0.04 to 0.06em tracking.
 - **Label** (Bahnschrift 400, 11px, 0.16 to 0.18em, uppercase): section labels (PROJECTS, WORKSPACES), pass-strip keys (PROJECT, AGENT, AHEAD / BEHIND, CHANGES), and the band heading at 600 weight.
-- **State Word** (Bahnschrift 400, 11px, 0.08em, uppercase): FINISHED, ERROR, RATE LIMITED at the end of a board row.
+- **State Word** (Bahnschrift 400, 11px, 0.08em, uppercase): WORKING, IDLE, NEEDS YOU, FINISHED, ERROR, RATE LIMITED, ENDED, SLEEPING at the end of a board row.
 - **Mono** (Cascadia Mono 400, 12px): terminal default (user-adjustable), diff lines at line-height 1.5, file paths.
 
 ### Named Rules
@@ -244,11 +248,14 @@ A matte slate and porcelain palette with two reserved signal hues and a small se
 
 The window is a two-column grid: the board on the left (340px by default, resizable through a 6px splitter on its edge) and the stage filling the rest. The stage opens with the 52px pass strip, a row of segments split by hairlines (Project, Agent, Ahead / Behind, Changes), then the actions pushed right (Visual Studio split button, Fetch, Pull, Diff, Find). Under the strip the terminal runs edge to edge on its own background, with a 10px top, 18px left and 14px bottom gutter set as offsets so the terminal fit stays exact.
 
-The spacing unit is 8px, with half (4px) and one-and-a-half (12px) steps inside dialogs. On the board, the wordmark, section labels and project headings share a 22px left inset; agent rows indent to 36px under their project; the segmented control, search field, needs band and "below" marker sit 14px from the board edges. Board rows are 30px high and project headings 32px. Section labels get 18px above them.
+The spacing unit is 8px, with half (4px) and one-and-a-half (12px) steps inside dialogs. On the board, the wordmark, section labels and agent rows share a 22px left inset; the segmented control, search field, needs band and "below" marker sit 14px from the board edges. Board rows are 48px high, ruled by Board Line hairlines. Section labels get 18px above them.
 
-The board never scrolls its chrome: the header, filter, needs band and footer stay put, and only the project lists scroll. When a loud row (needs, error, finished) scrolls out of view, a "N error below" marker sits on the list's bottom edge and jumps to it. Scrollbars are hidden everywhere.
+The board never scrolls its chrome: the header, filter, needs band and footer stay put, and only the agent lists scroll. When a loud row (needs, error, finished) scrolls out of view, a "N error below" marker sits on the list's bottom edge and jumps to it. Scrollbars are hidden everywhere.
 
 At narrow stage widths (a container query at 860px on the pass strip) the action buttons collapse to icons and keep their titles. The project segment is the first to give up width.
+
+### Dashboard
+The dashboard replaces the terminal on the stage while it is open, and fills the stage whenever no agent is active. It opens with a 52px bar in the pass-strip style (Projects, Workspaces, Running, Sleeping, Needs you as Label keys over Figure values, then Add project and New workspace pushed right). Below, Projects and Workspaces each get a Label heading, a one-line hint and a hairline-ruled list, capped at 960px wide with a 32px side gutter. A row is the name in Title Bahnschrift over its path in 12px Cascadia Mono, then one signal square per agent (each opens or resumes that agent) with a "2 running · 1 sleeping" count, then Open worktree (projects) or New agent (workspaces) and a ⋮ menu with Open in Explorer and Forget. Rows reorder by drag; the grip shows on hover.
 
 ## Elevation & Depth
 
@@ -263,7 +270,7 @@ The system is flat. Depth is tonal: on the board, field, then hover, then raised
 
 ## Shapes
 
-Corners are a near-square 4px everywhere: buttons, inputs, menus, dialogs, the needs band, segmented controls. Elements nested inside a 4px container (segmented options, needs-band items) use 3px. The signal square is a 7px square with a 1px radius, 5px in the collapsed-project strip. Icons are stroked SVG on a 24-unit grid at 1.8 stroke width with round caps, sized 14px by default and drawn in `currentColor`. The settings switch track is the only fully rounded shape.
+Corners are a near-square 4px everywhere: buttons, inputs, menus, dialogs, the needs band, segmented controls. Elements nested inside a 4px container (segmented options, needs-band items) use 3px. The signal square is a 7px square with a 1px radius. Icons are stroked SVG on a 24-unit grid at 1.8 stroke width with round caps, sized 14px by default and drawn in `currentColor`. The settings switch track is the only fully rounded shape.
 
 ## Components
 
@@ -277,7 +284,7 @@ Plain and native; the label carries them, not the fill.
 - **Focus:** a 2px cyan outline offset by 1px on every focusable element. Inside the yellow band, the outline turns Departure Ink and insets by 2px.
 
 ### Segmented control
-The All / Active / Sleeping filter and the settings tabs. A 1px outline with 2 to 3px padding; options are Bahnschrift 12px, lightly tracked, muted at rest. The active option fills with the raised tone (board) or the elevated tone (dialogs) and turns full-strength text. No cyan.
+The All / Active / Sleeping filter and the settings tabs. A 1px outline with 2 to 3px padding; options are Bahnschrift 12px, lightly tracked, muted at rest. The active option fills with the raised tone (board) or the elevated tone (dialogs) and turns full-strength text. No cyan. On the board's All / Active / Sleeping filter the fill is a single pill that slides between options over 200ms with `cubic-bezier(0.77, 0, 0.175, 1)` (`--ease-in-out`), a transition so a second click retargets mid-slide, off under reduced motion and not run on first paint.
 
 ### Inputs / Fields
 - **Style:** 1px border, 4px corners, the elevated fill inside dialogs (panel fill in the worktree picker), 7px 9px padding (9px 12px at 14px in the picker search).
@@ -291,17 +298,16 @@ The All / Active / Sleeping filter and the settings tabs. A 1px outline with 2 t
 - **Lists inside dialogs** (prompts, worktrees) are rows ruled by bottom hairlines with an elevated hover, not cards.
 
 ### Navigation (the board)
-- **Header:** the wordmark, then search, collapse-all and theme icon buttons.
-- **Project heading:** Title Bahnschrift. On hover, the chevron appears, the per-agent mini squares hide, and "+ New agent" (a 24px outlined button) and the ⋮ menu are revealed.
-- **Agent row:** 30px, a 7px signal square, a 12px gap, the label in Segoe UI. Hover fills with the hover tone; the selected row fills with the raised tone and sets its label at 600. On hover the state word hides to make room for the ⋮ menu. A dormant row mutes its label.
-- **Collapsed project:** the name in Board Mist at 400, followed by one 5px square per agent.
+- **Header:** the wordmark, then search, theme and dashboard icon buttons. The dashboard icon turns cyan while the dashboard is open.
+- **Sections:** PROJECTS and WORKSPACES Label headings, each with a + that opens a menu of that section's folders (picking one starts an agent there) and a Manage link to the dashboard.
+- **Agent row:** 48px, a 7px signal square, a 14px gap, the project name in Title Bahnschrift over the custom name or branch in 12px Board Mist, then the state word. Rows are ruled by a Board Line hairline. Hover fills with the hover tone; the selected row fills with the raised tone. On hover the state word hides to make room for the ⋮ menu. A sleeping row mutes its title.
 - **Footer:** Prompts and Settings as muted icon-and-label buttons.
 
 ### Needs Band (signature)
 The only yellow in the app. A Signal Yellow block, 4px corners, under the filter. The heading "NEEDS YOU" is Label Bahnschrift at 600 in Burnt Umber Ink. Each waiting agent is a full-width button: the agent label in Headline Bahnschrift, then "project · what it asks" in 12px Segoe UI. Agents stack oldest first, split by a 15% ink hairline, up to three, then "+n". An agent needing input is removed from its list row while it waits in the band, except the active agent, which keeps its row so a session that opens on a prompt (folder trust, resume picker) stays where you launched it.
 
 ### Signal square and flap (signature)
-Nine states map to six fills: busy in Porcelain; idle and done in Quiet Slate; dormant and dead as Quiet Slate outlines; needs in Signal Yellow; unseen in Cyan; error in Fault Coral; rate limited in Hold Lavender. When a row lands in a loud state, the square and the state word run the flap: `scaleY(0.15)` and 40% opacity to rest over 90ms in `steps(2, end)`, once. It is turned off under reduced motion. Busy and idle changes never flap.
+Nine states map to seven fills: busy in Transit Blue; idle and done in Quiet Slate; dormant and dead as Quiet Slate outlines; needs in Signal Yellow; unseen in Finished Lavender; error in Fault Red; rate limited in Hold Orange. The state word takes the same colour, except the calm words (idle, ended, sleeping), which use Board Mist. When a row lands in a loud state, the square and the state word run the flap: `scaleY(0.15)` and 40% opacity to rest over 90ms in `steps(2, end)`, once. It is turned off under reduced motion. Busy and idle changes never flap.
 
 ### Pass strip
 A 52px panel bar with a hairline bottom edge. Each segment stacks a Label key over a Figure value, padded 18px, divided by hairlines. Changes show "+n" in Ledger Green and "−n" in Ledger Red.
@@ -309,19 +315,20 @@ A 52px panel bar with a hairline bottom edge. Each segment stacks a Label key ov
 ## Do's and Don'ts
 
 ### Do:
-- **Do** keep Signal Yellow (#f2c230) on needs-input only, and cyan on selection, focus, checked and unseen only. `test/renderer-tokens.test.mjs` enforces both.
+- **Do** keep Signal Yellow (#f2c230) on needs-input only, and cyan on selection, focus and checked only. `test/renderer-tokens.test.mjs` enforces both.
 - **Do** keep the board tokens identical across themes; theme only the stage, terminal and dialogs.
 - **Do** set board and pass-strip labels, names and figures in Bahnschrift, with tabular numerals for counts.
 - **Do** separate surfaces with 1px hairlines and tonal steps (field, hover, raised).
 - **Do** use 4px corners, and 3px for an element nested inside a 4px container.
-- **Do** keep board rows to a square and a label; add a state word only for finished, error and rate limited.
+- **Do** keep board rows to a square, the project name over the branch, and a state word.
 - **Do** pass the existing contrast floor: 4.5:1 for text and 3:1 for squares and strong borders, in both themes.
 - **Do** keep terminal ANSI yellow a muted amber.
 
 ### Don't:
 - **Don't** use drop shadows for elevation; lift overlays with the strong border and the scrim.
 - **Don't** put times, diff columns, column heads, language badges or tree lines on board rows.
+- **Don't** put project or workspace management on the board; it belongs on the dashboard.
 - **Don't** colour a heading, an icon or a button with yellow or cyan to make it stand out.
 - **Don't** let an agent that needs input also appear as a list row; it lives in the band. The active agent is the one exception.
-- **Don't** animate state changes with eased transitions; the flap is two hard frames, once.
+- **Don't** animate state changes with eased transitions; the flap is two hard frames, once. The filter pill's slide is the one eased movement.
 - **Don't** fetch web fonts or icon fonts; the fonts are Windows system fonts and icons are inline stroked SVG.

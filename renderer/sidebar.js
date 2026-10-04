@@ -2,23 +2,20 @@
 
 import { els } from './dom.js';
 import { ICONS } from './icons.mjs';
-import { state, agents, dormant, agentsForDir, dormantForDir, readLocalJson, onStatusChanged } from './state.js';
+import { state, agents, dormant, agentsForDir, dormantForDir, onStatusChanged } from './state.js';
 import { bandModel } from './needs-band.mjs';
-import { openMenu, promptText, confirmDialog } from './modals.js';
+import { openMenu, confirmDialog } from './modals.js';
 import { refreshAgentGit } from './agent-git.mjs';
-import { activate, killAndWait, removeAgent, renameAgent, sleepAgent, forgetAgent, resume, pruneDormantForDir, reorderAgent, forceStatus, spawn } from './agents.js';
+import { activate, renameAgent, sleepAgent, forgetAgent, resume, reorderAgent, forceStatus, spawn } from './agents.js';
 import { newAgent } from './worktree.js';
+import { setDashboard } from './view.js';
 
 // ---------------------------------------------------------------------------
-// Projects + Workspaces sidebar
-//
-// Projects are git repos: clicking launches a worktree via the picker.
-// Workspaces are plain scratch folders: clicking launches an agent straight in
-// the folder, no git. Both host the same agent/dormant rows, built by the
-// shared helpers below.
+// The board: agents only. Every live and sleeping agent is one row (project
+// name over its branch, then a state word), grouped under Projects and
+// Workspaces. Managing the projects and workspaces themselves lives on the
+// dashboard (dashboard.js).
 // ---------------------------------------------------------------------------
-
-// Short badge per detected project type (see detectProjectType in main.js).
 
 // Forget from the menu: confirm (and for a worktree, whether to delete its
 // folder and branch), then forgetAgent; a git refusal offers a force remove.
@@ -59,39 +56,13 @@ async function forgetFlow(id) {
 const statusDot = (cls) =>
   `<svg class="st-dot ${cls}" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><circle cx="12" cy="12" r="6" fill="currentColor"/></svg>`;
 
-// Collapsed items (by dir) — persisted so the tree state survives a restart.
-// Shared across projects and workspaces (dirs are unique).
-const COLLAPSED_KEY = 'collapsedProjects';
-const collapsed = new Set(readLocalJson(COLLAPSED_KEY, []));
-
-function toggleCollapse(dir) {
-  if (collapsed.has(dir)) collapsed.delete(dir);
-  else collapsed.add(dir);
-  localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed]));
-  renderSidebar();
-}
-
-function saveCollapsed() {
-  localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed]));
-}
-
-// Collapse-all / expand-all toggle: if anything is open, collapse everything;
-// otherwise expand everything. Operates on both projects and workspaces.
-function toggleCollapseAll() {
-  const dirs = [
-    ...state.projectsData.map((p) => p.dir),
-    ...state.workspacesData.map((w) => w.dir),
-  ];
-  const anyOpen = dirs.some((d) => !collapsed.has(d));
-  collapsed.clear();
-  if (anyOpen) for (const d of dirs) collapsed.add(d);
-  saveCollapsed();
-  renderSidebar();
-}
-
-// Board row label: custom name, else branch, else generated label. No branch
-// glyph, so branch and custom labels share one left edge.
+// The row's second line: custom name, else branch, else generated label.
 export const rowLabel = (x) => x.customLabel || x.branch || x.label;
+
+export function projectName(dir) {
+  const p = state.projectsData.find((x) => x.dir === dir) || state.workspacesData.find((x) => x.dir === dir);
+  return p ? p.name : dir.split(/[\\/]/).filter(Boolean).pop();
+}
 
 // Live name filter. Empty string shows everything. Filtering toggles row
 // visibility (see applyFilter) rather than rebuilding the sidebar, so keystrokes
@@ -99,45 +70,56 @@ export const rowLabel = (x) => x.customLabel || x.branch || x.label;
 let filterText = '';
 
 // ---------------------------------------------------------------------------
-// Shared row builders (used by both projects and workspaces)
+// Rows
 // ---------------------------------------------------------------------------
 
-function buildAgentRow(id, a) {
+// Shared skeleton: signal square, project name over the label, state word, ⋮.
+// The state word's text comes from CSS keyed on the square's class, so it
+// follows setStatus without a re-render.
+function rowShell(id, x, dotClass) {
   const row = document.createElement('li');
   row.className = 'agent';
   row.dataset.id = id;
   if (id === state.activeId) row.classList.add('active');
 
   const dot = document.createElement('span');
-  dot.className = `dot ${a.status}`;
-  a.dotEl = dot;
+  dot.className = `dot ${dotClass}`;
 
-  const label = document.createElement('span');
-  label.className = 'agent-label';
-  label.textContent = rowLabel(a);
-  label.title = a.cwd;
-  a.labelEl = label; // refreshAgentGit updates the branch label in place
+  const text = document.createElement('span');
+  text.className = 'agent-text';
+  text.title = x.cwd;
+  const title = document.createElement('span');
+  title.className = 'agent-title';
+  title.textContent = projectName(x.dir);
+  const sub = document.createElement('span');
+  sub.className = 'agent-sub';
+  sub.textContent = rowLabel(x);
+  text.append(title, sub);
+  row.dataset.name = `${title.textContent} ${sub.textContent}`.toLowerCase();
 
-  // Short state word ("finished", "error", "rate limited"). Empty for the
-  // calm states; the text comes from CSS keyed on the dot's class, so it
-  // follows setStatus without a re-render. The diff stat lives in the stage
-  // pass strip for the active agent only.
   const word = document.createElement('span');
   word.className = 'agent-state';
 
+  const kebab = document.createElement('button');
+  kebab.className = 'kebab';
+  kebab.innerHTML = ICONS.kebab;
+
+  row.append(dot, text, word, kebab);
+  return { row, dot, sub, kebab };
+}
+
+function buildAgentRow(id, a) {
+  const { row, dot, sub, kebab } = rowShell(id, a, a.status);
+  a.dotEl = dot;
+  a.labelEl = sub; // refreshAgentGit updates the branch label in place
+  kebab.title = 'Agent options';
+
   // Lazily populate the git cache the first time this agent's row is built (a
   // new spawn). Existing agents already have `_gitFetched`, so later renders
-  // triggered by collapse/reorder/refresh don't re-hit git here.
+  // don't re-hit git here.
   if (!a._gitFetched) refreshAgentGit(id, a);
 
-  const rowKebab = document.createElement('button');
-  rowKebab.className = 'kebab';
-  rowKebab.innerHTML = ICONS.kebab;
-  rowKebab.title = 'Agent options';
-
-  row.append(dot, label, word, rowKebab);
-
-  // Drag to reorder within the project/workspace.
+  // Drag to reorder within the same project/workspace.
   row.draggable = true;
   row.addEventListener('dragstart', (e) => {
     e.dataTransfer.setData('text/plain', id);
@@ -156,17 +138,17 @@ function buildAgentRow(id, a) {
   });
 
   row.addEventListener('click', (e) => {
-    if (e.target === rowKebab) return;
+    if (e.target === kebab) return;
     activate(id);
   });
   // Double-click the label to rename (same flow as the kebab "Rename").
-  label.addEventListener('dblclick', (e) => {
+  sub.addEventListener('dblclick', (e) => {
     e.stopPropagation();
     renameAgent(id);
   });
-  rowKebab.addEventListener('click', (e) => {
+  kebab.addEventListener('click', (e) => {
     e.stopPropagation();
-    const items = [
+    openMenu(kebab, [
       { label: 'Rename', icon: ICONS.pencil, action: () => renameAgent(id) },
       { label: 'Sleep', icon: ICONS.moon, action: () => sleepAgent(id) },
       {
@@ -179,45 +161,26 @@ function buildAgentRow(id, a) {
           { label: 'Done', icon: statusDot('st-done'), action: () => forceStatus(id, 'done') },
         ],
       },
-    ];
-    items.push({ label: 'Forget', icon: ICONS.xCircle, danger: true, action: () => forgetFlow(id) });
-    openMenu(rowKebab, items);
+      { label: 'Forget', icon: ICONS.xCircle, danger: true, action: () => forgetFlow(id) },
+    ]);
   });
 
   return row;
 }
 
 function buildDormantRow(id, d) {
-  const row = document.createElement('li');
-  row.className = 'agent dormant';
-  row.dataset.id = id;
+  const { row, kebab } = rowShell(id, d, 'dormant');
+  row.classList.add('dormant');
   row.title = 'Resume this session';
-
-  const dot = document.createElement('span');
-  dot.className = 'dot dormant';
-
-  const label = document.createElement('span');
-  label.className = 'agent-label';
-  label.textContent = rowLabel(d);
-  label.title = d.cwd;
-
-  const rowKebab = document.createElement('button');
-  rowKebab.className = 'kebab';
-  rowKebab.innerHTML = ICONS.kebab;
-  rowKebab.title = 'Session options';
-
-  const word = document.createElement('span');
-  word.className = 'agent-state';
-
-  row.append(dot, label, word, rowKebab);
+  kebab.title = 'Session options';
 
   row.addEventListener('click', (e) => {
-    if (e.target === rowKebab) return;
+    if (e.target === kebab) return;
     resume(id);
   });
-  rowKebab.addEventListener('click', (e) => {
+  kebab.addEventListener('click', (e) => {
     e.stopPropagation();
-    openMenu(rowKebab, [
+    openMenu(kebab, [
       { label: 'Rename', icon: ICONS.pencil, action: () => renameAgent(id) },
       { label: 'Resume', icon: ICONS.play, action: () => resume(id) },
       { label: 'Forget', icon: ICONS.xCircle, danger: true, action: () => forgetFlow(id) },
@@ -227,8 +190,11 @@ function buildDormantRow(id, d) {
   return row;
 }
 
+// ---------------------------------------------------------------------------
 // Agent filter: all | active (running) | sleeping (tracked, not running).
 // Persisted, same choices as the phone app.
+// ---------------------------------------------------------------------------
+
 const AGENT_FILTER_KEY = 'agentFilter';
 let agentFilter = (() => {
   try {
@@ -238,11 +204,13 @@ let agentFilter = (() => {
   }
 })();
 function syncFilterButtons() {
-  for (const b of els.agentFilter.querySelectorAll('button')) {
+  const buttons = [...els.agentFilter.querySelectorAll('button')];
+  buttons.forEach((b, i) => {
     const on = b.dataset.filter === agentFilter;
     b.classList.toggle('on', on);
     b.setAttribute('aria-selected', String(on));
-  }
+    if (on) els.agentFilter.dataset.i = String(i); // positions the pill (CSS)
+  });
 }
 els.agentFilter.addEventListener('click', (e) => {
   const b = e.target.closest('button[data-filter]');
@@ -257,141 +225,56 @@ els.agentFilter.addEventListener('click', (e) => {
   renderSidebar();
 });
 syncFilterButtons();
+// Arm the pill's slide only once the saved choice has been painted in place.
+requestAnimationFrame(() => requestAnimationFrame(() => els.agentFilter.classList.add('animated')));
 
-// Append every agent + dormant row for `dir` (per the filter) into a fresh <ul>.
-function buildAgentList(dir) {
-  const sub = document.createElement('ul');
-  sub.className = 'agents';
-  if (agentFilter !== 'sleeping') for (const [id, a] of agentsForDir(dir)) sub.appendChild(buildAgentRow(id, a));
-  if (agentFilter !== 'active') for (const [id, d] of dormantForDir(dir)) sub.appendChild(buildDormantRow(id, d));
-  return sub;
-}
-
-// Common item header (chevron + type icon + name + collapse count + add + kebab).
-// A plain header click toggles collapse; `onAddAgent` fires from the + button;
-// `menuItems` builds the kebab menu.
-function buildItemHeader(p, { dragType, onReorder, onAddAgent, menuItems }) {
-  const item = document.createElement('li');
-  item.className = 'project-item';
-  // Stashed for applyFilter so it can toggle visibility without a rebuild.
-  item.dataset.name = p.name.toLowerCase();
-
-  const isCollapsed = collapsed.has(p.dir);
-  if (isCollapsed) item.classList.add('collapsed');
-
-  const header = document.createElement('div');
-  header.className = 'project';
-  header.dataset.dir = p.dir;
-
-  const chevron = document.createElement('span');
-  chevron.className = 'chevron';
-  chevron.innerHTML = isCollapsed ? ICONS.chevronRight : ICONS.chevronDown;
-  chevron.title = isCollapsed ? 'Expand' : 'Collapse';
-
-  const name = document.createElement('span');
-  name.className = 'name';
-  name.textContent = p.name;
-  name.title = p.dir;
-
-  const addBtn = document.createElement('button');
-  addBtn.className = 'add-agent';
-  addBtn.innerHTML = `${ICONS.plus}<span>New agent</span>`;
-  addBtn.title = 'New agent';
-
-  const kebab = document.createElement('button');
-  kebab.className = 'kebab';
-  kebab.innerHTML = ICONS.kebab;
-  kebab.title = 'Options';
-
-  header.append(chevron, name);
-
-  // Collapsed: one tiny signal square per agent, so a problem inside a folded
-  // project still shows. The squares are the agents' own dot class names.
-  const rows = [...agentsForDir(p.dir).map(([, a]) => a.status), ...dormantForDir(p.dir).map(() => 'dormant')];
-  if (isCollapsed && rows.length) {
-    const mini = document.createElement('span');
-    mini.className = 'mini';
-    mini.title = `${rows.length} hidden`;
-    for (const st of rows) {
-      const sq = document.createElement('i');
-      sq.className = `dot ${st}`;
-      mini.append(sq);
-    }
-    header.append(mini);
+// Rows for the given dirs, in dir order then agent order, per the filter.
+function rowsFor(dirs) {
+  const rows = [];
+  for (const dir of dirs) {
+    if (agentFilter !== 'sleeping') for (const [id, a] of agentsForDir(dir)) rows.push(buildAgentRow(id, a));
+    if (agentFilter !== 'active') for (const [id, d] of dormantForDir(dir)) rows.push(buildDormantRow(id, d));
   }
-  header.append(addBtn, kebab);
-  item.appendChild(header);
-
-  // Drag the header to reorder within its own section (distinct dataTransfer
-  // type keeps projects, workspaces and agent rows from cross-dropping).
-  header.draggable = true;
-  header.addEventListener('dragstart', (e) => {
-    e.dataTransfer.setData(dragType, p.dir);
-    e.dataTransfer.effectAllowed = 'move';
-    item.classList.add('dragging');
-    e.stopPropagation();
-  });
-  header.addEventListener('dragend', () => item.classList.remove('dragging'));
-  item.addEventListener('dragover', (e) => {
-    if (![...e.dataTransfer.types].includes(dragType)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  });
-  item.addEventListener('drop', (e) => {
-    const dragged = e.dataTransfer.getData(dragType);
-    if (!dragged || dragged === p.dir) return;
-    e.preventDefault();
-    onReorder(dragged, p.dir);
-  });
-
-  // Plain header click toggles collapse (no longer opens/spawns anything).
-  // The chevron falls through to here; addBtn/kebab stopPropagation in their
-  // own handlers, so this never fires for them.
-  header.addEventListener('click', () => toggleCollapse(p.dir));
-  addBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    onAddAgent();
-  });
-  kebab.addEventListener('click', (e) => {
-    e.stopPropagation();
-    openMenu(kebab, menuItems());
-  });
-
-  return item;
+  return rows;
 }
 
-// ---------------------------------------------------------------------------
-// Reordering
-// ---------------------------------------------------------------------------
-
-async function reorderProject(draggedDir, targetDir) {
-  const dirs = state.projectsData.map((p) => p.dir).filter((d) => d !== draggedDir);
-  const at = dirs.indexOf(targetDir);
-  if (at < 0) return;
-  dirs.splice(at, 0, draggedDir);
-  state.projectsData = await window.api.reorderProjects(dirs);
-  renderSidebar();
+function emptyRow(text) {
+  const li = document.createElement('li');
+  li.className = 'list-empty';
+  li.textContent = text;
+  return li;
 }
 
-async function reorderWorkspace(draggedDir, targetDir) {
-  const dirs = state.workspacesData.map((w) => w.dir).filter((d) => d !== draggedDir);
-  const at = dirs.indexOf(targetDir);
-  if (at < 0) return;
-  dirs.splice(at, 0, draggedDir);
-  state.workspacesData = await window.api.reorderWorkspaces(dirs);
-  renderSidebar();
-}
+const EMPTY_TEXT = { all: 'No agents', active: 'No running agents', sleeping: 'No sleeping agents' };
 
 // ---------------------------------------------------------------------------
 // Render
 // ---------------------------------------------------------------------------
 
 export function renderSidebar() {
-  renderProjects();
-  renderWorkspaces();
+  const projectDirs = state.projectsData.map((p) => p.dir);
+  const wsDirs = state.workspacesData.map((w) => w.dir);
+  // An agent whose folder is no longer listed (forgotten while running) still
+  // gets a row under Projects, so nothing live goes missing.
+  const known = new Set([...projectDirs, ...wsDirs]);
+  const orphanDirs = [...new Set([...agents.values(), ...dormant.values()].map((a) => a.dir))].filter((d) => !known.has(d));
+
+  const p = rowsFor([...projectDirs, ...orphanDirs]);
+  els.list.replaceChildren(...(p.length ? p : [emptyRow(EMPTY_TEXT[agentFilter])]));
+  const w = rowsFor(wsDirs);
+  els.wsList.replaceChildren(...(w.length ? w : [emptyRow(EMPTY_TEXT[agentFilter])]));
+
   applyFilter();
   renderBand();
   requestAnimationFrame(updateBelowMarker);
+}
+
+// Toggle each row's visibility against the name filter. Cheap DOM-only pass
+// (no data rebuild, no git spawns), so it's safe to run on every keystroke.
+function applyFilter() {
+  for (const row of [...els.list.querySelectorAll('.agent'), ...els.wsList.querySelectorAll('.agent')]) {
+    row.hidden = filterText ? !row.dataset.name.includes(filterText) : false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -399,11 +282,6 @@ export function renderSidebar() {
 // (their rows hide themselves). It ignores the name filter and All / Active /
 // Sleeping on purpose, so a waiting agent can never be filtered out of sight.
 // ---------------------------------------------------------------------------
-
-function projectName(dir) {
-  const p = state.projectsData.find((x) => x.dir === dir) || state.workspacesData.find((x) => x.dir === dir);
-  return p ? p.name : null;
-}
 
 // "Claude needs your permission to use Bash" -> "Permission to use Bash".
 const askText = (message) => (message ? message.replace(/^claude needs your permission/i, 'Permission') : 'Waiting for your input');
@@ -442,24 +320,6 @@ function renderBand() {
   }
 }
 
-// Collapsed headings carry one square per agent; keep them in step with live
-// status changes without a full re-render.
-function refreshMinis() {
-  for (const item of [...els.list.children, ...els.wsList.children]) {
-    const mini = item.querySelector(':scope > .project > .mini');
-    if (!mini) continue;
-    const dir = item.querySelector(':scope > .project').dataset.dir;
-    const states = [...agentsForDir(dir).map(([, a]) => a.status), ...dormantForDir(dir).map(() => 'dormant')];
-    mini.replaceChildren(
-      ...states.map((st) => {
-        const sq = document.createElement('i');
-        sq.className = `dot ${st}`;
-        return sq;
-      })
-    );
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Loud rows below the fold: on a short window the list scrolls, and a finished,
 // error or rate-limited row out of view would be silent. A marker on the list's
@@ -494,138 +354,42 @@ window.addEventListener('resize', updateBelowMarker);
 
 onStatusChanged(() => {
   renderBand();
-  refreshMinis();
   updateBelowMarker();
 });
 
-// Toggle each item's visibility against the current filter. Cheap DOM-only pass
-// (no data rebuild, no git spawns), so it's safe to run on every keystroke.
-function applyFilter() {
-  for (const item of [...els.list.children, ...els.wsList.children]) {
-    const name = item.dataset.name || '';
-    item.hidden = filterText ? !name.includes(filterText) : false;
-  }
-}
-
-function renderProjects() {
-  els.list.innerHTML = '';
-  for (const p of state.projectsData) {
-    const addAgent = () => newAgent(p);
-    const item = buildItemHeader(p, {
-      dragType: 'application/x-cc-project',
-      onReorder: reorderProject,
-      onAddAgent: addAgent,
-      menuItems: () => [
-        { label: 'Open worktree', icon: ICONS.branch, action: addAgent },
-        { label: 'Forget project', icon: ICONS.minusCircle, danger: true, action: () => removeProject(p.dir) },
-      ],
-    });
-    item.appendChild(buildAgentList(p.dir));
-    els.list.appendChild(item);
-  }
-}
-
-function renderWorkspaces() {
-  els.wsList.innerHTML = '';
-  for (const w of state.workspacesData) {
-    const addAgent = () => spawn(w.dir, w.dir, null, true);
-    const item = buildItemHeader(w, {
-      dragType: 'application/x-cc-workspace',
-      onReorder: reorderWorkspace,
-      onAddAgent: addAgent,
-      menuItems: () => [
-        { label: 'New agent', icon: ICONS.plus, action: addAgent },
-        { label: 'Open in Explorer', icon: ICONS.folder, action: () => window.api.openInExplorer(w.dir) },
-        { label: 'Forget workspace', icon: ICONS.minusCircle, danger: true, action: () => removeWorkspace(w.dir) },
-      ],
-    });
-    item.appendChild(buildAgentList(w.dir));
-    els.wsList.appendChild(item);
-  }
-}
-
 // ---------------------------------------------------------------------------
-// Data refresh + mutations
+// Section "+": start an agent in one of the listed projects / workspaces. The
+// lists themselves are managed on the dashboard, which the menu links to.
 // ---------------------------------------------------------------------------
 
-export async function refreshProjects() {
-  const [projects, workspaces] = await Promise.all([
-    window.api.listProjects(),
-    window.api.listWorkspaces(),
-  ]);
-  state.projectsData = projects;
-  state.workspacesData = workspaces;
-  renderSidebar();
-}
-
-async function removeProject(dir) {
-  const ok = await confirmDialog(
-    'Forget project',
-    'This removes the project from Command Center. The folder on disk is left untouched.',
-    { okLabel: 'Forget', danger: true }
-  );
-  if (!ok) return;
-  for (const [id] of agentsForDir(dir)) removeAgent(id, true);
-  pruneDormantForDir(dir, true);
-  state.projectsData = await window.api.removeProject(dir);
-  if (collapsed.delete(dir)) saveCollapsed(); // don't leak a stale entry into localStorage forever
-  renderSidebar();
-}
-
-async function removeWorkspace(dir) {
-  const { ok, checked: deleteFolder } = await confirmDialog(
-    'Forget workspace',
-    'This removes the workspace from Command Center. The folder on disk is left untouched unless you choose to delete it below.',
-    { okLabel: 'Forget', danger: true, checkbox: `Also delete ${dir} and all its contents (cannot be undone)` }
-  );
-  if (!ok) return;
-  const ids = [...agentsForDir(dir)].map(([id]) => id);
-  // Agents hold the folder as cwd; on Windows it can't be deleted until they exit.
-  if (deleteFolder) await Promise.all(ids.map(killAndWait));
-  for (const id of ids) removeAgent(id, true);
-  pruneDormantForDir(dir, true);
-  const res = await window.api.removeWorkspace(dir, { deleteFolder });
-  state.workspacesData = res.workspaces;
-  if (collapsed.delete(dir)) saveCollapsed(); // don't leak a stale entry into localStorage forever
-  renderSidebar();
-  if (res.error) confirmDialog('Delete folder', res.error, { alert: true });
-}
-
-async function createWorkspace() {
-  // Step 1: pick a folder (existing folders welcome; the picker also offers
-  // "New folder"). Step 2: name it + decide whether to use that folder as-is
-  // or nest a fresh subfolder under it.
-  const picked = await window.api.pickWorkspaceFolder();
-  if (!picked || picked.canceled || !picked.path) return;
-  const base = picked.path.split(/[/\\]/).filter(Boolean).pop() || 'workspace';
-  const ans = await promptText('New workspace', 'workspace name', {
-    value: base,
-    checkbox: 'Use selected folder as-is (don’t create a subfolder)',
+function openNewAgentMenu(anchor, kind) {
+  const isWs = kind === 'workspace';
+  const list = isWs ? state.workspacesData : state.projectsData;
+  const items = list.map((x) => ({
+    label: x.name,
+    icon: isWs ? ICONS.folder : ICONS.branch,
+    action: () => (isWs ? spawn(x.dir, x.dir, null, true) : newAgent(x)),
+  }));
+  items.push({
+    label: isWs ? 'Manage workspaces' : 'Manage projects',
+    icon: ICONS.gear,
+    action: () => setDashboard(true),
   });
-  if (!ans) return;
-  const res = await window.api.createWorkspace({
-    parent: picked.path,
-    name: ans.text,
-    useParent: ans.checked,
-  });
-  if (res.canceled) return;
-  if (res.error) {
-    await confirmDialog('Workspace creation failed', res.error, { alert: true });
-    return;
-  }
-  await refreshProjects();
-  // Launch an agent in the workspace straight away.
-  spawn(res.dir, res.dir, null, true);
+  openMenu(anchor, items);
 }
 
-els.addBtn.addEventListener('click', async () => {
-  state.projectsData = await window.api.addProject();
-  renderSidebar();
+els.newProjectAgent.addEventListener('click', (e) => {
+  e.stopPropagation();
+  openNewAgentMenu(els.newProjectAgent, 'project');
+});
+els.newWsAgent.addEventListener('click', (e) => {
+  e.stopPropagation();
+  openNewAgentMenu(els.newWsAgent, 'workspace');
 });
 
-els.addWsBtn.addEventListener('click', createWorkspace);
-
-els.collapseAllBtn.addEventListener('click', toggleCollapseAll);
+// ---------------------------------------------------------------------------
+// Name filter field
+// ---------------------------------------------------------------------------
 
 // Debounce the filter so a fast typist doesn't fire an applyFilter per keystroke.
 let filterTimer = null;

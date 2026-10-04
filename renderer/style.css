@@ -18,15 +18,15 @@
   --on-signal-muted: #4a3f14;
 
   /* agent states, drawn on the board */
-  --st-busy: #e6ebee;
+  --st-busy: #3d7bff;
   --st-idle: #5c6975;
   --st-done: #5c6975;
   --st-dormant: #5c6975;
   --st-dead: #5c6975;
-  --st-unseen: var(--board-select);
+  --st-unseen: #b59cf5;
   --st-needs: var(--signal);
-  --st-error: #ef6f5e;
-  --st-rate: #b59cf5;
+  --st-error: #f25555;
+  --st-rate: #f0883e;
 
   /* stage, terminal, modals */
   --bg: #0a0e11;
@@ -76,6 +76,7 @@
   --space: 8px;
   --radius: 4px;
   --flap: 90ms;
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1); /* on-screen movement */
   --pass-h: 52px;
 }
 
@@ -124,7 +125,6 @@ textarea {
 /* icons (renderer/icons.mjs) sit inside buttons; clicks must land on the
    button itself — the menu closer checks e.target for the .kebab class */
 button svg,
-.chevron svg,
 .diff-chev svg,
 .pm-drag svg {
   pointer-events: none;
@@ -245,6 +245,7 @@ button svg,
 }
 
 .agent-filter {
+  position: relative;
   display: flex;
   margin: 0 14px 12px;
   padding: 2px;
@@ -252,7 +253,41 @@ button svg,
   border-radius: var(--radius);
 }
 
+/* the selected pill: one element that slides between the three options (data-i
+   is the selected index). A transition, so a second click mid-slide retargets
+   from where the pill is; only armed after first paint so a saved choice does
+   not slide in on load. */
+.agent-filter::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px) / 3);
+  border-radius: 3px;
+  background: var(--board-raised);
+}
+
+.agent-filter[data-i='1']::before {
+  transform: translateX(100%);
+}
+
+.agent-filter[data-i='2']::before {
+  transform: translateX(200%);
+}
+
+.agent-filter.animated::before {
+  transition: transform 200ms var(--ease-in-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-filter.animated::before {
+    transition: none;
+  }
+}
+
 .agent-filter button {
+  position: relative; /* paint above the pill */
   flex: 1;
   padding: 5px 0;
   border: none;
@@ -270,7 +305,6 @@ button svg,
 }
 
 .agent-filter button.on {
-  background: var(--board-raised);
   color: var(--board-fg);
 }
 
@@ -303,89 +337,6 @@ button svg,
   padding: 0;
 }
 
-/* project / workspace heading */
-.project {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 10px 0 6px;
-  font-family: var(--display);
-  cursor: pointer;
-  user-select: none;
-}
-
-.project:hover {
-  background: var(--board-hover);
-}
-
-.chevron {
-  width: 16px;
-  flex: none;
-  display: flex;
-  justify-content: center;
-  color: var(--board-muted);
-  opacity: 0;
-}
-
-.project:hover .chevron,
-.project-item.collapsed .chevron {
-  opacity: 1;
-}
-
-.project .name {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-
-.project-item.collapsed .project .name {
-  font-weight: 400;
-  color: var(--board-muted);
-}
-
-.project-item.collapsed .agents {
-  display: none;
-}
-
-/* collapsed: one tiny signal square per agent */
-.mini {
-  display: flex;
-  gap: 3px;
-  margin-left: auto;
-  padding-right: 4px;
-}
-
-.mini .dot {
-  width: 5px;
-  height: 5px;
-}
-
-.add-agent {
-  display: none;
-  align-items: center;
-  gap: 6px;
-  height: 24px;
-  margin-left: auto;
-  padding: 0 9px;
-  border: 1px solid var(--board-line);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--board-fg);
-  font-family: var(--ui);
-  font-size: var(--t-sm);
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.add-agent:hover {
-  border-color: var(--board-muted);
-}
-
 .kebab {
   display: none;
   width: 24px;
@@ -406,28 +357,20 @@ button svg,
   color: var(--board-fg);
 }
 
-.project:hover .mini,
-.project:focus-within .mini {
-  display: none;
-}
-
-.project:hover .add-agent,
-.project:focus-within .add-agent,
-.project:hover .kebab,
-.project:focus-within .kebab,
 .agent:hover .kebab,
 .agent:focus-within .kebab {
   display: inline-flex;
 }
 
-/* agent row */
+/* agent row: square, project name over its branch, state word */
 .agent {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 12px;
-  height: 30px;
-  padding: 0 10px 0 36px;
+  gap: 14px;
+  height: 48px;
+  padding: 0 12px 0 22px;
+  border-bottom: 1px solid var(--board-line);
   cursor: pointer;
 }
 
@@ -439,10 +382,6 @@ button svg,
   background: var(--board-raised);
 }
 
-.agent.active .agent-label {
-  font-weight: 600;
-}
-
 /* an agent waiting on you lives in the yellow band, not in the list; the
    active one keeps its row, or a new session opening on a prompt (folder
    trust, resume picker) vanishes from the list while you look at it */
@@ -450,29 +389,72 @@ button svg,
   display: none;
 }
 
-.agent-label {
+.agent-text {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.agent-title,
+.agent-sub {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-.agent.dormant .agent-label {
+.agent-title {
+  font-family: var(--display);
+  font-size: var(--t-lg);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.agent-sub {
+  font-size: var(--t-sm);
   color: var(--board-muted);
 }
 
+.agent.dormant .agent-title {
+  color: var(--board-muted);
+}
+
+.list-empty {
+  padding: 10px 22px 12px;
+  font-size: var(--t-sm);
+  color: var(--board-muted);
+}
+
+/* state word: every state speaks, in its square's colour; the calm ones
+   (idle, sleeping, ended) in Board Mist */
 .agent-state {
   font-family: var(--display);
   font-size: var(--t-label);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   white-space: nowrap;
+  color: var(--board-muted);
 }
 
 .agent:hover .agent-state,
 .agent:focus-within .agent-state {
   display: none;
+}
+
+.agent:has(.dot.busy) .agent-state::after {
+  content: 'working';
+  color: var(--st-busy);
+}
+
+.agent:has(.dot.idle) .agent-state::after,
+.agent:has(.dot.done) .agent-state::after {
+  content: 'idle';
+}
+
+.agent:has(.dot.needs-input) .agent-state::after {
+  content: 'needs you';
+  color: var(--st-needs);
 }
 
 .agent:has(.dot.unseen) .agent-state::after {
@@ -490,8 +472,16 @@ button svg,
   color: var(--st-rate);
 }
 
+.agent:has(.dot.dead) .agent-state::after {
+  content: 'ended';
+}
+
+.agent:has(.dot.dormant) .agent-state::after {
+  content: 'sleeping';
+}
+
 .agent.dragging,
-.project-item.dragging {
+.dash-row.dragging {
   opacity: 0.4;
 }
 
@@ -807,12 +797,183 @@ body.resizing #terminals {
   overflow: hidden;
 }
 
-.empty {
+/* ---- dashboard: projects and workspaces, on the stage ----
+   Shown instead of the terminal while open, and whenever no agent is active. */
+#stage.show-dash > :not(#dashboard) {
+  display: none;
+}
+
+.dashboard {
   position: absolute;
   inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.dashboard[hidden] {
+  display: none;
+}
+
+.dash-bar {
+  flex: none;
+  height: var(--pass-h);
+  display: flex;
+  align-items: stretch;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  container-type: inline-size;
+}
+
+.dash-summary {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.dash-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 32px 32px;
+}
+
+.dash-sec {
+  max-width: 960px;
+}
+
+.dash-title {
+  margin: 26px 0 2px;
+  font-family: var(--display);
+  font-size: var(--t-label);
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dash-hint {
+  margin: 0 0 10px;
+  font-size: var(--t-sm);
+  color: var(--muted);
+}
+
+.dash-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+}
+
+.dash-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 60px;
+  padding: 8px 8px 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.dash-row:hover {
+  background: var(--elevated);
+}
+
+.dash-grip {
+  width: 18px;
+  flex: none;
+  display: flex;
+  justify-content: center;
+  color: var(--muted);
+  cursor: grab;
+  opacity: 0;
+}
+
+.dash-row:hover .dash-grip {
+  opacity: 1;
+}
+
+.dash-main {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dash-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--display);
+  font-size: var(--t-lg);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.dash-path {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+  font-size: var(--t-sm);
+  color: var(--muted);
+}
+
+.dash-agents {
+  flex: 0 1 220px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dash-squares {
+  width: 70px;
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.dash-sq {
+  width: 15px;
+  height: 15px;
   display: grid;
   place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.dash-sq:hover {
+  background: var(--border);
+}
+
+.dash-count {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--t-sm);
   color: var(--muted);
+}
+
+.dash-add {
+  flex: none;
+  border-color: var(--border);
+}
+
+.dash-empty {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+}
+
+@container (max-width: 640px) {
+  .dash-bar .sb-label {
+    display: none;
+  }
 }
 
 #terminals,
