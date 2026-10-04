@@ -298,7 +298,7 @@ The All / Active / Sleeping filter and the settings tabs. A 1px outline with 2 t
 - **Footer:** Prompts and Settings as muted icon-and-label buttons.
 
 ### Needs Band (signature)
-The only yellow in the app. A Signal Yellow block, 4px corners, under the filter. The heading "NEEDS YOU" is Label Bahnschrift at 600 in Burnt Umber Ink. Each waiting agent is a full-width button: the agent label in Headline Bahnschrift, then "project · what it asks" in 12px Segoe UI. Agents stack oldest first, split by a 15% ink hairline, up to three, then "+n". An agent needing input is removed from its list row while it waits in the band.
+The only yellow in the app. A Signal Yellow block, 4px corners, under the filter. The heading "NEEDS YOU" is Label Bahnschrift at 600 in Burnt Umber Ink. Each waiting agent is a full-width button: the agent label in Headline Bahnschrift, then "project · what it asks" in 12px Segoe UI. Agents stack oldest first, split by a 15% ink hairline, up to three, then "+n". An agent needing input is removed from its list row while it waits in the band, except the active agent, which keeps its row so a session that opens on a prompt (folder trust, resume picker) stays where you launched it.
 
 ### Signal square and flap (signature)
 Nine states map to six fills: busy in Porcelain; idle and done in Quiet Slate; dormant and dead as Quiet Slate outlines; needs in Signal Yellow; unseen in Cyan; error in Fault Coral; rate limited in Hold Lavender. When a row lands in a loud state, the square and the state word run the flap: `scaleY(0.15)` and 40% opacity to rest over 90ms in `steps(2, end)`, once. It is turned off under reduced motion. Busy and idle changes never flap.
@@ -322,6 +322,6 @@ A 52px panel bar with a hairline bottom edge. Each segment stacks a Label key ov
 - **Don't** use drop shadows for elevation; lift overlays with the strong border and the scrim.
 - **Don't** put times, diff columns, column heads, language badges or tree lines on board rows.
 - **Don't** colour a heading, an icon or a button with yellow or cyan to make it stand out.
-- **Don't** let an agent that needs input also appear as a list row; it lives in the band.
+- **Don't** let an agent that needs input also appear as a list row; it lives in the band. The active agent is the one exception.
 - **Don't** animate state changes with eased transitions; the flap is two hard frames, once.
 - **Don't** fetch web fonts or icon fonts; the fonts are Windows system fonts and icons are inline stroked SVG.

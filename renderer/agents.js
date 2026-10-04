@@ -440,7 +440,7 @@ export function activate(id) {
   for (const [aid, a] of agents) {
     a.el.classList.toggle('active', aid === id);
   }
-  for (const row of els.list.querySelectorAll('.agent')) {
+  for (const row of [...els.list.querySelectorAll('.agent'), ...els.wsList.querySelectorAll('.agent')]) {
     row.classList.toggle('active', row.dataset.id === id);
   }
   const a = agents.get(id);

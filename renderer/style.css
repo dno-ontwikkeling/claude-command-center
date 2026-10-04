@@ -443,8 +443,10 @@ button svg,
   font-weight: 600;
 }
 
-/* an agent waiting on you lives in the yellow band, not in the list */
-.agent:has(.dot.needs-input) {
+/* an agent waiting on you lives in the yellow band, not in the list; the
+   active one keeps its row, or a new session opening on a prompt (folder
+   trust, resume picker) vanishes from the list while you look at it */
+.agent:not(.active):has(.dot.needs-input) {
   display: none;
 }
 
