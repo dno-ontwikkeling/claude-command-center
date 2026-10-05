@@ -16,6 +16,42 @@ const DOC_KINDS = ['plans', 'reviews'];
 const DOC_EXTS = new Set(['.md', '.html']);
 const MAX_DOC_BYTES = 2 * 1024 * 1024;
 
+// Folders shown when a project has no docFolders of its own.
+const DEFAULT_FOLDERS = Object.freeze(['plans', 'reviews']);
+const MAX_FOLDERS = 20;
+
+// Validate a per-project folder list (from the Folders overlay or a stored
+// record). Entries are relative to the project, '/' separated, '.' for the root.
+// Anything that could leave the project is rejected, as is a folder named
+// `archive`: each folder's archive/ is listed automatically, so allowing it as
+// a folder of its own would list the same files twice. Never throws.
+// Returns { ok: true, folders } or { ok: false, error }.
+function normalizeFolders(input) {
+  if (!Array.isArray(input)) return { ok: false, error: 'Folders must be a list' };
+  const out = [];
+  const seen = new Set();
+  for (const raw of input) {
+    if (typeof raw !== 'string') return { ok: false, error: 'Invalid folder' };
+    const f = raw.trim().replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\.\//, '') || '.';
+    const segs = f.split('/');
+    const escapes =
+      f.startsWith('/') ||
+      /^[a-z]:/i.test(f) ||
+      f.includes('\0') ||
+      (f !== '.' && segs.some((s) => s === '' || s === '.' || s === '..'));
+    if (escapes) return { ok: false, error: `Folder must be inside the project: ${raw}` };
+    if (segs[segs.length - 1].toLowerCase() === 'archive') {
+      return { ok: false, error: 'archive/ folders are listed automatically' };
+    }
+    const key = f.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(f);
+  }
+  if (out.length > MAX_FOLDERS) return { ok: false, error: `At most ${MAX_FOLDERS} folders` };
+  return { ok: true, folders: out.length ? out : [...DEFAULT_FOLDERS] };
+}
+
 // All .md/.html files directly inside <cwd>/plans and <cwd>/reviews, newest first.
 // Missing or unreadable folders just contribute nothing.
 async function listDocs(cwd) {
@@ -81,4 +117,4 @@ async function readDoc(cwd, rel) {
   }
 }
 
-module.exports = { listDocs, readDoc };
+module.exports = { listDocs, readDoc, normalizeFolders, DEFAULT_FOLDERS };

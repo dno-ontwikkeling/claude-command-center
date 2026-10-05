@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { listDocs, readDoc } = require('../docs');
+const { listDocs, readDoc, normalizeFolders, DEFAULT_FOLDERS } = require('../docs');
 
 function tmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'cc-docs-'));
@@ -18,6 +18,60 @@ function write(cwd, rel, content, mtimeSec) {
   if (mtimeSec !== undefined) fs.utimesSync(file, mtimeSec, mtimeSec);
   return file;
 }
+
+// --- normalizeFolders -------------------------------------------------------
+
+test('normalizeFolders: keeps plain relative folders and the root', () => {
+  assert.deepEqual(normalizeFolders(['plans', 'docs/api', '.']), { ok: true, folders: ['plans', 'docs/api', '.'] });
+});
+
+test('normalizeFolders: normalizes separators, trailing slashes, ./ and blank', () => {
+  assert.deepEqual(normalizeFolders(['docs\\api', 'plans/', './reviews', '  ', '']).folders, [
+    'docs/api',
+    'plans',
+    'reviews',
+    '.',
+  ]);
+});
+
+test('normalizeFolders: rejects anything that leaves the project', () => {
+  for (const bad of ['..', 'a/../b', '../x', 'plans/./x', 'C:\\x', 'c:x', '/abs', '\\\\srv\\share', 'a\0b', 'a//b']) {
+    const res = normalizeFolders([bad]);
+    assert.equal(res.ok, false, JSON.stringify(bad));
+    assert.equal(typeof res.error, 'string');
+  }
+});
+
+test('normalizeFolders: rejects archive folders, which are listed automatically', () => {
+  for (const bad of ['archive', 'plans/archive', 'Plans/Archive']) {
+    assert.equal(normalizeFolders([bad]).ok, false, bad);
+  }
+  assert.equal(normalizeFolders(['archives', 'archive-old']).ok, true);
+});
+
+test('normalizeFolders: dedupes case-insensitively, keeping the first spelling', () => {
+  assert.deepEqual(normalizeFolders(['Plans', 'plans', 'docs\\API', 'docs/api']).folders, ['Plans', 'docs/API']);
+});
+
+test('normalizeFolders: caps the list at 20 folders', () => {
+  const twenty = Array.from({ length: 20 }, (_, i) => `f${i}`);
+  assert.equal(normalizeFolders(twenty).ok, true);
+  assert.equal(normalizeFolders([...twenty, 'f20']).ok, false);
+});
+
+test('normalizeFolders: empty list means the defaults', () => {
+  assert.deepEqual(DEFAULT_FOLDERS, ['plans', 'reviews']);
+  const res = normalizeFolders([]);
+  assert.deepEqual(res, { ok: true, folders: ['plans', 'reviews'] });
+  res.folders.push('x');
+  assert.deepEqual(DEFAULT_FOLDERS, ['plans', 'reviews'], 'returned list must be a copy');
+});
+
+test('normalizeFolders: rejects non-arrays and non-string entries', () => {
+  for (const bad of [undefined, null, 'plans', {}, [1], [null]]) {
+    assert.equal(normalizeFolders(bad).ok, false, JSON.stringify(bad));
+  }
+});
 
 // --- listDocs ---------------------------------------------------------------
 
