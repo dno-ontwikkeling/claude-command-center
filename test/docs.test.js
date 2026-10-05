@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { listDocs, readDoc, normalizeFolders, DEFAULT_FOLDERS } = require('../docs');
+const { listDocs, readDoc, normalizeFolders, DEFAULT_FOLDERS, docFoldersFor, withDocFolders } = require('../docs');
 
 function tmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'cc-docs-'));
@@ -71,6 +71,82 @@ test('normalizeFolders: rejects non-arrays and non-string entries', () => {
   for (const bad of [undefined, null, 'plans', {}, [1], [null]]) {
     assert.equal(normalizeFolders(bad).ok, false, JSON.stringify(bad));
   }
+});
+
+// --- docFoldersFor / withDocFolders -----------------------------------------
+
+const PROJ = path.resolve('/work/app');
+const OTHER = path.resolve('/work/lib');
+
+test('docFoldersFor: a record without docFolders, or no record, gives the defaults', () => {
+  assert.deepEqual(docFoldersFor([{ dir: PROJ, name: 'app' }], PROJ), { folders: ['plans', 'reviews'], invalid: false });
+  assert.deepEqual(docFoldersFor([], PROJ), { folders: ['plans', 'reviews'], invalid: false });
+});
+
+test('docFoldersFor: returns the stored folders of the matching record', () => {
+  const records = [
+    { dir: OTHER, name: 'lib', docFolders: ['notes'] },
+    { dir: PROJ, name: 'app', docFolders: ['docs', '.'] },
+  ];
+  assert.deepEqual(docFoldersFor(records, PROJ), { folders: ['docs', '.'], invalid: false });
+});
+
+test('docFoldersFor: a corrupt stored list falls back to the defaults and is flagged', () => {
+  for (const bad of [['../..'], 'plans', [42], ['archive']]) {
+    const res = docFoldersFor([{ dir: PROJ, name: 'app', docFolders: bad }], PROJ);
+    assert.deepEqual(res, { folders: ['plans', 'reviews'], invalid: true }, JSON.stringify(bad));
+  }
+});
+
+test('docFoldersFor: matches a dir spelled with other separators (and case on Windows)', () => {
+  const records = [{ dir: PROJ, name: 'app', docFolders: ['docs'] }];
+  assert.deepEqual(docFoldersFor(records, PROJ.split(path.sep).join('/')).folders, ['docs']);
+  if (process.platform === 'win32') assert.deepEqual(docFoldersFor(records, PROJ.toUpperCase()).folders, ['docs']);
+});
+
+test('withDocFolders: sets the field on the matching record only and leaves the input untouched', () => {
+  const records = [
+    { dir: OTHER, name: 'lib' },
+    { dir: PROJ, name: 'app' },
+  ];
+  const snapshot = JSON.stringify(records);
+  const res = withDocFolders(records, PROJ, ['docs', '.']);
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.records, [
+    { dir: OTHER, name: 'lib' },
+    { dir: PROJ, name: 'app', docFolders: ['docs', '.'] },
+  ]);
+  assert.equal(JSON.stringify(records), snapshot);
+  assert.strictEqual(res.records[0], records[0], 'untouched records are reused');
+});
+
+test('withDocFolders: saving the defaults removes the field', () => {
+  const res = withDocFolders([{ dir: PROJ, name: 'app', docFolders: ['docs'] }], PROJ, ['plans', 'reviews']);
+  assert.deepEqual(res.records, [{ dir: PROJ, name: 'app' }]);
+  assert.ok(!('docFolders' in res.records[0]));
+});
+
+test('withDocFolders: an unknown dir is an error', () => {
+  const res = withDocFolders([{ dir: OTHER, name: 'lib' }], PROJ, ['docs']);
+  assert.equal(res.ok, false);
+  assert.equal(typeof res.error, 'string');
+});
+
+test('cleanup: removing a project record drops its folders; re-adding starts on the defaults', () => {
+  const saved = withDocFolders([{ dir: PROJ, name: 'app' }, { dir: OTHER, name: 'lib' }], PROJ, ['docs']).records;
+  // same filter as the projects:remove / workspaces:remove handlers in main.js
+  const removed = saved.filter((p) => p.dir !== PROJ);
+  assert.ok(!JSON.stringify(removed).includes('docFolders'), 'nothing left behind');
+  assert.deepEqual(docFoldersFor(removed, PROJ).folders, ['plans', 'reviews']);
+  const readded = [...removed, { dir: PROJ, name: 'app' }];
+  assert.deepEqual(docFoldersFor(readded, PROJ).folders, ['plans', 'reviews']);
+});
+
+test('cleanup: the same holds for a workspace-shaped record', () => {
+  const ws = { dir: PROJ, name: 'scratch', created: 1 };
+  const saved = withDocFolders([ws], PROJ, ['.']).records;
+  assert.deepEqual(docFoldersFor(saved, PROJ).folders, ['.']);
+  assert.deepEqual(docFoldersFor(saved.filter((w) => w.dir !== PROJ), PROJ).folders, ['plans', 'reviews']);
 });
 
 // --- listDocs ---------------------------------------------------------------

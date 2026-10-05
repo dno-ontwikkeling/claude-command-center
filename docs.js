@@ -52,6 +52,44 @@ function normalizeFolders(input) {
   return { ok: true, folders: out.length ? out : [...DEFAULT_FOLDERS] };
 }
 
+// Same comparison as main.js normPath: resolved, case-insensitive on Windows.
+function samePath(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const norm = (p) => {
+    const r = path.resolve(p);
+    return process.platform === 'win32' ? r.toLowerCase() : r;
+  };
+  return norm(a) === norm(b);
+}
+
+// The doc folders of the project/workspace record for `dir`. The config lives
+// on the record itself (projects.json / workspaces.json), so removing the
+// record removes the config with it. A stored list is re-validated on every
+// read: a hand-edited or corrupt value falls back to the defaults and comes
+// back flagged `invalid` so the caller can log it.
+function docFoldersFor(records, dir) {
+  const rec = records.find((r) => samePath(r.dir, dir));
+  if (!rec || rec.docFolders === undefined) return { folders: [...DEFAULT_FOLDERS], invalid: false };
+  const n = normalizeFolders(rec.docFolders);
+  return n.ok ? { folders: n.folders, invalid: false } : { folders: [...DEFAULT_FOLDERS], invalid: true };
+}
+
+// A copy of `records` with `folders` stored on the record for `dir`. Saving
+// the defaults drops the field, so an untouched project stays byte-identical.
+// `folders` must already be normalized. Returns { ok, records } or { ok, error }.
+function withDocFolders(records, dir, folders) {
+  if (!records.some((r) => samePath(r.dir, dir))) return { ok: false, error: 'Unknown project' };
+  const isDefault = folders.length === DEFAULT_FOLDERS.length && folders.every((f, i) => f === DEFAULT_FOLDERS[i]);
+  return {
+    ok: true,
+    records: records.map((r) => {
+      if (!samePath(r.dir, dir)) return r;
+      const { docFolders: _old, ...rest } = r;
+      return isDefault ? rest : { ...rest, docFolders: [...folders] };
+    }),
+  };
+}
+
 // All .md/.html files directly inside <cwd>/plans and <cwd>/reviews, newest first.
 // Missing or unreadable folders just contribute nothing.
 async function listDocs(cwd) {
@@ -117,4 +155,4 @@ async function readDoc(cwd, rel) {
   }
 }
 
-module.exports = { listDocs, readDoc, normalizeFolders, DEFAULT_FOLDERS };
+module.exports = { listDocs, readDoc, normalizeFolders, DEFAULT_FOLDERS, docFoldersFor, withDocFolders };
