@@ -21,10 +21,20 @@ with a status dot that reflects what the agent is doing right now.
   - `needs-input` — blocked on a permission / prompt (the one to watch)
   - `idle` — turn finished, waiting for you
   - `dead` — session ended
-- **Docs panel** — a **Docs** button in the stage bar opens a read-only panel
-  beside the terminal with the active agent's `plans/` and `reviews/` files
-  (`.md` and `.html`), newest first. Pick one from the dropdown (type to filter);
-  edits and new files show up within about a second. Desktop only.
+- **Docs panel** — a **Docs** button in the stage bar opens a panel beside the
+  terminal with the active agent's docs (`.md` and `.html`), newest first. Pick
+  one from the dropdown (type to filter); edits and new files show up within
+  about a second. Desktop only.
+  - **Folders** — `plans/` and `reviews/` by default. **⋮ → Folders…** picks
+    other folders per project or workspace (for example `docs`, or the project
+    root for `README.md` and friends); every worktree of the project uses the
+    same list. Each folder's `archive/` is listed as a collapsed **Archived**
+    group. The list is stored with the project in the app, so forgetting the
+    project removes it; nothing is written into your repo.
+  - **Actions** on the shown doc (**⋮**): **Archive** (move into the folder's
+    `archive/`) / **Restore**, **Open in VS Code**, **Show in Explorer**, and
+    **Move to Recycle Bin** (asks first). A name clash gets a ` (2)` suffix;
+    nothing is ever overwritten or permanently deleted.
 - **Light / dark theme** — follows OS by default, toggle in the sidebar.
 - **Remote access from your phone** (opt-in) — a sideloaded Android app shows
   the same agents and status, opens their terminals, has the same agent menu,

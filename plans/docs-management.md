@@ -1,7 +1,9 @@
 ---
-status: approved
+status: completed
 approved_at: "2026-10-05T17:44:21.835Z"
-updated: "2026-10-05T17:44:21.835Z"
+updated: "2026-10-05T18:21:27.855Z"
+started_at: "2026-10-05T17:46:50.056Z"
+completed_at: "2026-10-05T18:21:27.854Z"
 ---
 # Plan: Docs management in the Docs panel
 
@@ -293,17 +295,33 @@ export function openFoldersDialog(agent, current, onSaved) {
 - **Validation:** `npm test && npm run typecheck`; screenshots both themes in log.
 
 ## Acceptance Criteria
-- [ ] Folders… sets per-project folders, shared by all worktrees; defaults when unset.
-- [ ] Each folder lists direct `.md`/`.html` + collapsed Archived; `.` = root only.
-- [ ] Archive/Restore never overwrite; panel follows the moved doc.
-- [ ] Trash goes to Recycle Bin after danger confirm; failure leaves file + alerts.
-- [ ] Open in editor and Reveal work for the shown doc.
-- [ ] Forgetting a project/workspace leaves no `docFolders`; re-add = defaults (unit-tested).
-- [ ] Guard rejects unconfigured folders, `..`, absolute, other extensions, file or folder symlink escapes.
-- [ ] `npm test` and `npm run typecheck` pass.
+- [x] Folders… sets per-project folders, shared by all worktrees; defaults when unset.
+- [x] Each folder lists direct `.md`/`.html` + collapsed Archived; `.` = root only.
+- [x] Archive/Restore never overwrite; panel follows the moved doc.
+- [x] Trash goes to Recycle Bin after danger confirm; failure leaves file + alerts.
+- [x] Open in editor and Reveal work for the shown doc.
+- [x] Forgetting a project/workspace leaves no `docFolders`; re-add = defaults (unit-tested).
+- [x] Guard rejects unconfigured folders, `..`, absolute, other extensions, file or folder symlink escapes.
+- [x] `npm test` and `npm run typecheck` pass.
 
 ## Checklist (non-TDD cleanup)
-- [ ] `types/ipc.d.ts` matches handlers
-- [ ] README / PRODUCT / DESIGN updated
-- [ ] No absolute paths in logs
-- [ ] Commit the needs-band fixes separately first
+- [x] `types/ipc.d.ts` matches handlers
+- [x] README / PRODUCT / DESIGN updated
+- [x] No absolute paths in logs
+- [x] Commit the needs-band fixes separately first
+
+## Log
+- 2026-10-05 Stories 001-009 — done (one commit each, `closes #<id>`). Unit tests 281 → 325, typecheck clean throughout.
+  - Order changed: 009 (Folders overlay) before 008 (panel menu) so the Folders… item had a real target.
+  - Added beyond the plan: the destination `archive/` is realpath-checked after mkdir (an `archive` junction could move a file out of the project; test + mutation check); `docs:action` dispatch moved into `docs.docAction` with injected OS calls because `npm run typecheck` only covers `preload.js` vs `types/ipc.d.ts`, not `main.js` or the renderer (5 tests); log lines redact quoted fs paths.
+- 2026-10-05 Step 10 — real app, driven over CDP (`scripts/e2e-docs/`), isolated `--user-data-dir`, throwaway HOME, fixture repo + linked worktree.
+  - Passed: panel opens on the newest doc; default groups Plans / Archived (2, collapsed) / Reviews; ⋮ menu items and danger styling; Folders… overlay lists folders, removing a row + Save writes `docFolders: ["plans"]` to `projects.json` and reloads the panel; Cancel saves nothing; `docs:folders-set` rejects `plans/archive`, `../..` and an unknown dir; with `plans, reviews, docs, .` the picker shows Plans / Archived / Reviews / Docs / Root; Archived toggle expands with muted rows; archiving `plans/a.md` with `plans/archive/a.md` present gives `plans/archive/a (2).md`, the panel follows it and opens Archived; Restore moves it back (keeps the `(2)` name); Move to Recycle Bin asks first with Cancel focused, the file is in the Recycle Bin with its original folder, the panel falls back to the newest doc; Open in VS Code launched `Code.exe <repo>\README.md`; Show in Explorer logged ok; the worktree agent uses the project's folders with its own files; the dashboard closes the panel; empty state + Choose folders… opens the overlay; Forget project leaves `projects.json` = `[]`; a re-added record (`{dir, name}`) shows the defaults; light and dark screenshots of picker, Archived, menu, overlay, empty state.
+  - Fixed during the run: Add folder icon sat above its label (`.btn-ghost` is not a flex box) → `#df-add` inline-flex; re-checked in both themes.
+  - Main log lines: `docs archive plans/a.md`, `docs restore plans/archive/a (2).md`, `docs trash plans/a (2).md`, `docs open README.md`, `docs reveal README.md` — relative paths only.
+
+## Not proven
+- **Add folder through the native folder picker**: CDP cannot drive the OS dialog. The `docs:pick-folder` clamp (reject outside cwd, `''` → `.`) is code-reviewed only; folders were added through the same `setDocFolders` IPC that Save uses.
+- **Re-add through the dashboard**: same native dialog; simulated by writing the record `addProjectDir` writes.
+- **The 1 s poll picking up an external config change**: the test window was hidden (screen locked), and the poll pauses by design while hidden; reopening the panel showed the change. Doc edits on disk were already proven live in `plans/docs-viewer-panel.md`.
+- **A failed trash / rename alert** (locked file, no Recycle Bin): unit-tested in `docs.docAction` / `moveDoc`, not provoked in the real app.
+- **Workspaces**: config + cleanup are unit-tested on workspace-shaped records; no workspace was used in the real-app run.

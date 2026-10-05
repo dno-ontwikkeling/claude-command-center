@@ -2560,6 +2560,13 @@ body.resizing #terminals {
   flex: 1;
 }
 
+/* .btn-ghost is not a flex box: keep the + icon on the label's line */
+#df-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 /* Docs panel: an Archived group heading is its own collapse toggle */
 .docs-list .docs-group-toggle {
   display: flex;

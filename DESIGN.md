@@ -304,9 +304,12 @@ The All / Active / Sleeping filter and the settings tabs. A 1px outline with 2 t
 - **Footer:** Prompts and Settings as muted icon-and-label buttons.
 
 ### Docs panel
-A read-only column on the right of the stage, opened by the Docs button in the stage bar and never on its own. It uses the Departure Hall stage tokens, not the dark board: `--panel` fill, a 1px `--border` hairline on its left edge, and a draggable edge that sets the width.
-- **Header:** a dropdown button on the `--elevated` hover tone showing the current document, with a type-to-filter field inside the menu.
-- **Menu:** groups Plans and Reviews, labelled in `--display` Label type in `--muted`; each row shows the file name with its age on the right, and the selected row carries a `--select` bar and nothing else.
+A column on the right of the stage, opened by the Docs button in the stage bar and never on its own. It uses the Departure Hall stage tokens, not the dark board: `--panel` fill, a 1px `--border` hairline on its left edge, and a draggable edge that sets the width.
+- **Header:** a dropdown button on the `--elevated` hover tone showing the current document, with a type-to-filter field inside the menu, then a ⋮ icon button and the close button.
+- **Menu:** one group per configured folder in the project's order (the project root is labelled Root), labelled in `--display` Label type in `--muted`; each row shows the file name with its age on the right, and the selected row carries a `--select` bar and nothing else. A folder's Archived group follows it as a chevron toggle with its count, collapsed by default and open while the filter has text or the shown doc is archived; archived file names are `--muted`.
+- **⋮ menu:** the shared kebab menu with icons: Archive or Restore, Open in VS Code, Show in Explorer, Folders…, then Move to Recycle Bin as the danger item, which asks first with Cancel focused.
+- **Folders overlay:** the Manage prompts modal pattern: a hint line, folder rows (folder icon, name, trash button) on the prompts list, then Add folder on the left and Cancel / Save on the right. Errors show inline in `--danger` and the overlay stays open.
+- **Empty state:** "No documents in the configured folders." in `--muted` with a ghost Choose folders… button.
 - **Body:** the document in a sandboxed frame with scripts off.
 
 ### Needs Band (signature)
