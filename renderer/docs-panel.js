@@ -2,7 +2,7 @@
 
 import { els } from './dom.js';
 import { state, agents } from './state.js';
-import { groupDocs, filterDocs, docsSignature, buildFrame } from './docs-view.mjs';
+import { groupDocs, filterDocs, docsSignature, buildFrame, newestDoc } from './docs-view.mjs';
 
 // ---------------------------------------------------------------------------
 // Docs panel — plans and reviews of the active agent's folder, rendered in a
@@ -23,6 +23,7 @@ const remembered = new Map(); // cwd -> rel of the doc last shown there (in memo
 let open = false;
 let cwd = null; // folder the panel currently shows
 let list = []; // DocEntry[] for cwd
+let folders = ['plans', 'reviews']; // configured folders for cwd's project, in display order
 let sig = ''; // docsSignature(list)
 let currentRel = null; // doc shown in the frame
 let currentStamp = ''; // `${mtimeMs}|${size}` of the shown doc when it was read
@@ -119,9 +120,7 @@ async function showDoc(rel) {
 function pickDefault() {
   const mem = remembered.get(cwd);
   if (mem && list.some((d) => d.rel === mem)) return mem;
-  const groups = groupDocs(list);
-  let newest = null;
-  for (const g of groups) for (const d of g.docs) if (!newest || d.mtimeMs > newest.mtimeMs) newest = d;
+  const newest = newestDoc(list) || list[0] || null; // only archived docs left: still show one
   return newest ? newest.rel : null;
 }
 
@@ -136,7 +135,7 @@ function applyList(next) {
 // ---------------------------------------------------------------------------
 
 function renderPicker() {
-  const groups = groupDocs(filterDocs(list, els.docsFilter.value));
+  const groups = groupDocs(filterDocs(list, els.docsFilter.value), folders);
   const items = [];
   for (const g of groups) {
     const head = document.createElement('li');

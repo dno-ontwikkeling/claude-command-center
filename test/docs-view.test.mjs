@@ -1,13 +1,23 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { groupDocs, filterDocs, docsSignature, buildFrame } from '../renderer/docs-view.mjs';
+import {
+  groupDocs,
+  filterDocs,
+  docsSignature,
+  buildFrame,
+  folderLabel,
+  newestDoc,
+} from '../renderer/docs-view.mjs';
 
-const doc = (rel, mtimeMs, size = 100) => ({
-  rel,
-  kind: rel.startsWith('reviews/') ? 'reviews' : 'plans',
-  mtimeMs,
-  size,
-});
+// Same shape as docs.js listDocs: folder and archived derived from the path.
+const doc = (rel, mtimeMs, size = 100) => {
+  const dirs = rel.split('/').slice(0, -1);
+  const archived = dirs[dirs.length - 1] === 'archive';
+  if (archived) dirs.pop();
+  return { rel, folder: dirs.join('/') || '.', archived, mtimeMs, size };
+};
+
+const FOLDERS = ['plans', 'reviews'];
 
 const LIST = [
   doc('plans/alpha.md', 100),
@@ -16,25 +26,62 @@ const LIST = [
   doc('reviews/delta.md', 50),
 ];
 
-test('groupDocs gives Plans before Reviews, each newest first', () => {
-  const groups = groupDocs(LIST);
+test('groupDocs gives the folders in config order, each newest first', () => {
+  const groups = groupDocs(LIST, FOLDERS);
   assert.deepEqual(groups.map((g) => g.label), ['Plans', 'Reviews']);
-  assert.deepEqual(groups.map((g) => g.kind), ['plans', 'reviews']);
+  assert.deepEqual(groups.map((g) => g.folder), ['plans', 'reviews']);
+  assert.deepEqual(groups.map((g) => g.archived), [false, false]);
   assert.deepEqual(groups[0].docs.map((d) => d.rel), ['plans/gamma.md', 'plans/alpha.md']);
   assert.deepEqual(groups[1].docs.map((d) => d.rel), ['reviews/Beta-Review.md', 'reviews/delta.md']);
+  assert.deepEqual(groupDocs(LIST, ['reviews', 'plans']).map((g) => g.folder), ['reviews', 'plans']);
+});
+
+test('groupDocs puts each folder\'s Archived group right after it', () => {
+  const list = [...LIST, doc('plans/archive/old.md', 999), doc('README.md', 5), doc('archive/RELEASE.md', 1)];
+  const groups = groupDocs(list, ['plans', 'reviews', '.']);
+  assert.deepEqual(
+    groups.map((g) => [g.label, g.folder, g.archived]),
+    [
+      ['Plans', 'plans', false],
+      ['Archived', 'plans', true],
+      ['Reviews', 'reviews', false],
+      ['Root', '.', false],
+      ['Archived', '.', true],
+    ],
+  );
+  assert.deepEqual(groups[1].docs.map((d) => d.rel), ['plans/archive/old.md']);
 });
 
 test('groupDocs omits empty groups', () => {
-  const groups = groupDocs([doc('reviews/only.md', 1)]);
+  const groups = groupDocs([doc('reviews/only.md', 1)], FOLDERS);
   assert.equal(groups.length, 1);
   assert.equal(groups[0].label, 'Reviews');
-  assert.deepEqual(groupDocs([]), []);
+  assert.deepEqual(groupDocs([], FOLDERS), []);
 });
 
 test('groupDocs does not mutate its input', () => {
   const input = [doc('plans/a.md', 1), doc('plans/b.md', 2)];
-  groupDocs(input);
+  groupDocs(input, FOLDERS);
   assert.deepEqual(input.map((d) => d.rel), ['plans/a.md', 'plans/b.md']);
+});
+
+test('folderLabel names the root and capitalizes folders', () => {
+  assert.equal(folderLabel('.'), 'Root');
+  assert.equal(folderLabel('plans'), 'Plans');
+  assert.equal(folderLabel('docs/api'), 'Docs/api');
+});
+
+test('newestDoc picks the newest non-archived doc', () => {
+  const list = [doc('plans/archive/newest.md', 900), ...LIST];
+  assert.equal(newestDoc(list).rel, 'reviews/Beta-Review.md');
+  assert.equal(newestDoc([doc('plans/archive/only.md', 1)]), null);
+  assert.equal(newestDoc([]), null);
+});
+
+test('docsSignature changes when a doc moves into or out of archive', () => {
+  const base = docsSignature(LIST);
+  const flipped = LIST.map((d, i) => (i === 0 ? { ...d, archived: true } : d));
+  assert.notEqual(docsSignature(flipped), base);
 });
 
 test('filterDocs matches the file name case-insensitively', () => {
