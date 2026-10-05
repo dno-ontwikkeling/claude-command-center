@@ -117,19 +117,23 @@
       </div>
       <div id="terminals"></div>
       <div id="docs-resizer" title="Drag to resize" hidden></div>
-      <section id="docs-panel" class="docs-panel" aria-label="Plans and reviews" hidden>
+      <section id="docs-panel" class="docs-panel" aria-label="Docs" hidden>
         <header class="docs-head">
           <button id="docs-picker" class="docs-picker" type="button" aria-haspopup="listbox" aria-expanded="false" title="Choose a document">
             <span id="docs-picker-label" class="docs-picker-label"></span>
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
           </button>
+          <button id="docs-actions" class="icon-btn" type="button" title="Document actions" aria-haspopup="menu"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
           <button id="docs-close" class="icon-btn" type="button" title="Close"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
           <div id="docs-popup" class="docs-popup" hidden>
             <input id="docs-filter" class="docs-filter" type="text" placeholder="Filter documents" autocomplete="off" spellcheck="false" />
             <ul id="docs-list" class="docs-list" role="listbox" aria-label="Documents"></ul>
           </div>
         </header>
-        <p id="docs-empty" class="docs-empty" hidden>No plans or reviews in this folder yet.</p>
+        <div id="docs-empty" class="docs-empty" hidden>
+          <p id="docs-empty-text">No documents in the configured folders.</p>
+          <button id="docs-empty-folders" class="btn-ghost" type="button">Choose folders…</button>
+        </div>
         <iframe id="docs-frame" class="docs-frame" title="Document" sandbox="allow-popups"></iframe>
       </section>
     </main>

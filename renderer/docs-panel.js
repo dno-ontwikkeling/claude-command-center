@@ -1,14 +1,19 @@
 'use strict';
 
 import { els } from './dom.js';
-import { state, agents } from './state.js';
+import { state, agents, dormant, onAgentsChanged } from './state.js';
+import { openMenu, confirmDialog } from './modals.js';
+import { ICONS } from './icons.mjs';
 import { groupDocs, filterDocs, docsSignature, buildFrame, newestDoc } from './docs-view.mjs';
+import { openFoldersDialog } from './docs-folders.js';
 
 // ---------------------------------------------------------------------------
-// Docs panel — plans and reviews of the active agent's folder, rendered in a
-// sandboxed iframe on the stage's right edge. Opens only on a user click; polls
-// once a second while open so edits show up live. This module must not import
-// stage.js (stage.js calls syncDocsPanel from updateStageBar).
+// Docs panel — the docs in the active agent's configured folders (plans and
+// reviews unless the project says otherwise), rendered in a sandboxed iframe
+// on the stage's right edge. Opens only on a user click; polls once a second
+// while open so edits show up live. The ⋮ menu archives, restores, opens,
+// reveals or trashes the shown doc and edits the folder list. This module must
+// not import stage.js (stage.js calls syncDocsPanel from updateStageBar).
 // ---------------------------------------------------------------------------
 
 const WIDTH_KEY = 'docsWidth';
@@ -32,6 +37,8 @@ let lastHtml = null; // body html last put into the frame
 let listReq = 0; // guards stale listDocs results
 let docReq = 0; // guards stale readDoc results
 let timer = null;
+let busy = false; // a doc action is in flight: the poll waits and the menu's moves are disabled
+const expanded = new Set(); // folders whose Archived group is open (for cwd, this session)
 
 function activeAgent() {
   return (state.activeId && agents.get(state.activeId)) || null;
@@ -104,6 +111,7 @@ async function showDoc(rel) {
   currentRel = rel;
   currentStamp = entry ? `${entry.mtimeMs}|${entry.size}` : '';
   remembered.set(c, rel);
+  if (entry?.archived) expanded.add(entry.folder); // keep the shown doc visible in the picker
   els.docsPickerLabel.textContent = baseName(rel);
   renderPicker();
   let res;
@@ -143,20 +151,43 @@ function applyList(res) {
 // Picker
 // ---------------------------------------------------------------------------
 
+// An Archived group heading doubles as its collapse toggle.
+function archivedToggle(g, open) {
+  const head = document.createElement('li');
+  head.className = 'docs-group docs-group-toggle';
+  head.tabIndex = -1;
+  head.dataset.folder = g.folder;
+  head.setAttribute('aria-expanded', String(open));
+  head.innerHTML = open ? ICONS.chevronDown : ICONS.chevronRight; // trusted literal
+  const label = document.createElement('span');
+  label.textContent = `${g.label} (${g.docs.length})`;
+  head.append(label);
+  return head;
+}
+
 function renderPicker() {
+  const filtering = els.docsFilter.value.trim() !== '';
   const groups = groupDocs(filterDocs(list, els.docsFilter.value), folders);
   const items = [];
   for (const g of groups) {
-    const head = document.createElement('li');
-    head.setAttribute('role', 'presentation');
-    head.className = 'docs-group';
-    head.textContent = g.label;
-    items.push(head);
+    // Archived groups start collapsed; a filter search opens them all.
+    const open = !g.archived || filtering || expanded.has(g.folder);
+    if (g.archived) {
+      items.push(archivedToggle(g, open));
+      if (!open) continue;
+    } else {
+      const head = document.createElement('li');
+      head.setAttribute('role', 'presentation');
+      head.className = 'docs-group';
+      head.textContent = g.label;
+      items.push(head);
+    }
     for (const d of g.docs) {
       const li = document.createElement('li');
       li.setAttribute('role', 'option');
       li.tabIndex = -1;
       li.dataset.rel = d.rel;
+      if (d.archived) li.classList.add('docs-archived');
       li.setAttribute('aria-selected', String(d.rel === currentRel));
       const name = document.createElement('span');
       name.className = 'docs-name';
@@ -188,11 +219,23 @@ function closePopup() {
   els.docsPicker.setAttribute('aria-expanded', 'false');
 }
 
+// Keyboard stops in the list: docs and the Archived toggles.
 function options() {
-  return [...els.docsList.querySelectorAll('[role="option"]')];
+  return [...els.docsList.querySelectorAll('[role="option"], .docs-group-toggle')];
+}
+
+function toggleArchived(folder) {
+  if (expanded.has(folder)) expanded.delete(folder);
+  else expanded.add(folder);
+  renderPicker();
+  els.docsList.querySelector(`.docs-group-toggle[data-folder="${CSS.escape(folder)}"]`)?.focus();
 }
 
 function selectOption(li) {
+  if (li.classList.contains('docs-group-toggle')) {
+    toggleArchived(li.dataset.folder);
+    return;
+  }
   closePopup();
   els.docsPicker.focus();
   if (li.dataset.rel !== currentRel) showDoc(li.dataset.rel);
@@ -223,7 +266,7 @@ els.docsPopup.addEventListener('keydown', (e) => {
 });
 
 els.docsList.addEventListener('click', (e) => {
-  const li = e.target instanceof Element ? e.target.closest('[role="option"]') : null;
+  const li = e.target instanceof Element ? e.target.closest('[role="option"], .docs-group-toggle') : null;
   if (li) selectOption(li);
 });
 
@@ -284,7 +327,7 @@ async function loadFolder() {
 }
 
 async function poll() {
-  if (!open || document.visibilityState !== 'visible' || !activeAgent()) return;
+  if (busy || !open || document.visibilityState !== 'visible' || !activeAgent()) return;
   const c = cwd;
   const id = ++listReq;
   let next;
@@ -309,6 +352,84 @@ async function poll() {
     showDoc(entry.rel);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Actions — the ⋮ menu acts on the shown doc
+// ---------------------------------------------------------------------------
+
+function currentEntry() {
+  return currentRel === null ? null : list.find((d) => d.rel === currentRel) || null;
+}
+
+async function runAction(action) {
+  const a = activeAgent();
+  if (busy || !currentRel || !a) return;
+  busy = true;
+  ++listReq; // drop a poll result that started before the move
+  const c = cwd;
+  const rel = currentRel;
+  let res;
+  try {
+    res = await window.api.docAction({ cwd: c, dir, rel, action });
+  } catch (err) {
+    res = { ok: false, error: err && err.message ? err.message : 'The action failed.' };
+  } finally {
+    busy = false;
+  }
+  if (c !== cwd || !open) return; // switched agent or closed meanwhile
+  if (!res || !res.ok) {
+    await confirmDialog('Docs', (res && res.error) || 'The action failed.', { alert: true });
+    loadFolder(); // the file may have vanished: show what is there now
+    return;
+  }
+  if (action === 'open' || action === 'reveal') return; // nothing moved
+  if (res.rel) remembered.set(c, res.rel); // archive/restore: follow the doc
+  else remembered.delete(c); // trash: fall back to the newest doc
+  loadFolder();
+}
+
+async function confirmTrash() {
+  if (!currentRel) return;
+  const ok = await confirmDialog(
+    'Move to Recycle Bin',
+    `Move ${baseName(currentRel)} to the Recycle Bin? You can restore it from there.`,
+    { okLabel: 'Move to Recycle Bin', danger: true }
+  );
+  if (ok) runAction('trash');
+}
+
+function editFolders() {
+  const a = activeAgent();
+  if (!a) return;
+  openFoldersDialog(a, folders, () => {
+    if (open && a.cwd === cwd) loadFolder();
+  });
+}
+
+els.docsActions.addEventListener('click', (e) => {
+  e.stopPropagation(); // the document click listener in modals.js would close the menu at once
+  closePopup();
+  const d = currentEntry();
+  const noMove = !d || busy;
+  openMenu(els.docsActions, [
+    d && d.archived
+      ? { label: 'Restore', icon: ICONS.refresh, disabled: noMove, action: () => runAction('restore') }
+      : { label: 'Archive', icon: ICONS.archive, disabled: noMove, action: () => runAction('archive') },
+    { label: 'Open in VS Code', icon: ICONS.pencil, disabled: !d, action: () => runAction('open') },
+    { label: 'Show in Explorer', icon: ICONS.folder, disabled: !d, action: () => runAction('reveal') },
+    { label: 'Folders…', icon: ICONS.gear, action: editFolders },
+    { label: 'Move to Recycle Bin', icon: ICONS.trash, danger: true, disabled: noMove, action: confirmTrash },
+  ]);
+});
+
+els.docsEmptyFolders.addEventListener('click', editFolders);
+
+// Forget the remembered doc of any folder no live or sleeping agent uses any
+// more (project or workspace forgotten, worktree deleted, agent forgotten).
+onAgentsChanged(() => {
+  const inUse = new Set([...agents.values(), ...dormant.values()].map((a) => a.cwd));
+  for (const c of remembered.keys()) if (!inUse.has(c)) remembered.delete(c);
+});
 
 // ---------------------------------------------------------------------------
 // Open / close
@@ -342,6 +463,7 @@ function setOpen(next) {
     const a = activeAgent();
     cwd = a.cwd;
     dir = a.dir;
+    expanded.clear();
     loadFolder();
   } else {
     cwd = null;
@@ -374,6 +496,7 @@ export function syncDocsPanel() {
   if (a.cwd !== cwd) {
     cwd = a.cwd;
     dir = a.dir;
+    expanded.clear();
     loadFolder();
   }
 }

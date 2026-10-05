@@ -2559,3 +2559,30 @@ body.resizing #terminals {
 .df-spacer {
   flex: 1;
 }
+
+/* Docs panel: an Archived group heading is its own collapse toggle */
+.docs-list .docs-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-left: 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.docs-list .docs-group-toggle:hover {
+  color: var(--fg);
+  background: none;
+}
+
+.docs-group-toggle svg {
+  flex: none;
+}
+
+.docs-list li.docs-archived .docs-name {
+  color: var(--muted);
+}
+
+.docs-empty p {
+  margin: 0 0 12px;
+}
