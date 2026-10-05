@@ -303,6 +303,12 @@ The All / Active / Sleeping filter and the settings tabs. A 1px outline with 2 t
 - **Agent row:** 48px, a 7px signal square, a 14px gap, the project name in Title Bahnschrift over the custom name or branch in 12px Board Mist, then the state word. Rows are ruled by a Board Line hairline. Hover fills with the hover tone; the selected row fills with the raised tone. On hover the state word hides to make room for the ⋮ menu. A sleeping row mutes its title.
 - **Footer:** Prompts and Settings as muted icon-and-label buttons.
 
+### Docs panel
+A read-only column on the right of the stage, opened by the Docs button in the stage bar and never on its own. It uses the Departure Hall stage tokens, not the dark board: `--panel` fill, a 1px `--border` hairline on its left edge, and a draggable edge that sets the width.
+- **Header:** a dropdown button on the `--elevated` hover tone showing the current document, with a type-to-filter field inside the menu.
+- **Menu:** groups Plans and Reviews, labelled in `--display` Label type in `--muted`; each row shows the file name with its age on the right, and the selected row carries a `--select` bar and nothing else.
+- **Body:** the document in a sandboxed frame with scripts off.
+
 ### Needs Band (signature)
 The only yellow in the app. A Signal Yellow block, 4px corners, under the filter. The heading "NEEDS YOU" is Label Bahnschrift at 600 in Burnt Umber Ink. Each waiting agent is a full-width button: the agent label in Headline Bahnschrift, then "project · what it asks" in 12px Segoe UI. Agents stack oldest first, split by a 15% ink hairline, up to three, then "+n". An agent needing input is removed from its list row while it waits in the band, except the active agent, which keeps its row so a session that opens on a prompt (folder trust, resume picker) stays where you launched it.
 
