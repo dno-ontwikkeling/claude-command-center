@@ -156,7 +156,7 @@ test('listDocs: returns [] when plans/ and reviews/ are missing', async () => {
   assert.deepEqual(await listDocs(cwd), []);
 });
 
-test('listDocs: lists .md and .html from plans/ and reviews/ with rel, kind, mtimeMs, size', async () => {
+test('listDocs: lists .md and .html from plans/ and reviews/ with rel, folder, archived, mtimeMs, size', async () => {
   const cwd = tmp();
   write(cwd, 'plans/a.md', '# A', 1000);
   write(cwd, 'reviews/b.html', '<p>b</p>', 2000);
@@ -166,8 +166,10 @@ test('listDocs: lists .md and .html from plans/ and reviews/ with rel, kind, mti
   const b = list.find((d) => d.rel === 'reviews/b.html');
   assert.ok(a, 'plans/a.md listed');
   assert.ok(b, 'reviews/b.html listed');
-  assert.equal(a.kind, 'plans');
-  assert.equal(b.kind, 'reviews');
+  assert.equal(a.folder, 'plans');
+  assert.equal(b.folder, 'reviews');
+  assert.equal(a.archived, false);
+  assert.equal(b.archived, false);
   assert.equal(a.size, 3);
   assert.equal(b.size, 8);
   assert.equal(a.mtimeMs, 1000 * 1000);
@@ -203,7 +205,61 @@ test('listDocs: works when only one of the folders exists', async () => {
   write(cwd, 'reviews/only.md', '# only', 1000);
   const list = await listDocs(cwd);
   assert.deepEqual(list.map((d) => d.rel), ['reviews/only.md']);
-  assert.equal(list[0].kind, 'reviews');
+  assert.equal(list[0].folder, 'reviews');
+});
+
+test('listDocs: includes each folder\'s archive/ as archived entries', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/a.md', 'x', 2000);
+  write(cwd, 'plans/archive/old.md', 'x', 1000);
+  write(cwd, 'plans/archive/nested/deep.md', 'x', 1000);
+  write(cwd, 'plans/sub/skip.md', 'x', 1000);
+  const list = await listDocs(cwd);
+  assert.deepEqual(
+    list.map(({ rel, folder, archived }) => ({ rel, folder, archived })),
+    [
+      { rel: 'plans/a.md', folder: 'plans', archived: false },
+      { rel: 'plans/archive/old.md', folder: 'plans', archived: true },
+    ],
+  );
+});
+
+test('listDocs: "." lists only root files, its archive/ included', async () => {
+  const cwd = tmp();
+  write(cwd, 'README.md', 'x', 3000);
+  write(cwd, 'DESIGN.html', 'x', 2000);
+  write(cwd, 'archive/old.md', 'x', 1000);
+  write(cwd, 'plans/a.md', 'x', 1000);
+  write(cwd, 'node_modules/pkg/README.md', 'x', 1000);
+  const list = await listDocs(cwd, ['.']);
+  assert.deepEqual(
+    list.map(({ rel, folder, archived }) => ({ rel, folder, archived })),
+    [
+      { rel: 'README.md', folder: '.', archived: false },
+      { rel: 'DESIGN.html', folder: '.', archived: false },
+      { rel: 'archive/old.md', folder: '.', archived: true },
+    ],
+  );
+});
+
+test('listDocs: configured folders, nested ones and missing ones', async () => {
+  const cwd = tmp();
+  write(cwd, 'docs/guide.md', 'x', 2000);
+  write(cwd, 'docs/api/ref.md', 'x', 1000);
+  write(cwd, 'plans/a.md', 'x', 1000);
+  const list = await listDocs(cwd, ['docs', 'docs/api', 'missing']);
+  assert.deepEqual(list.map((d) => [d.rel, d.folder]), [
+    ['docs/guide.md', 'docs'],
+    ['docs/api/ref.md', 'docs/api'],
+  ]);
+});
+
+test('listDocs: caps a folder at 500 entries', async () => {
+  const cwd = tmp();
+  fs.mkdirSync(path.join(cwd, 'plans'));
+  for (let i = 0; i < 501; i++) fs.writeFileSync(path.join(cwd, 'plans', `p${i}.md`), 'x');
+  const list = await listDocs(cwd);
+  assert.equal(list.length, 500);
 });
 
 // --- readDoc: success -------------------------------------------------------

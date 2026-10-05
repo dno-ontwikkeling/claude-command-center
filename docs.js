@@ -15,6 +15,8 @@ const { marked } = require('marked');
 const DOC_KINDS = ['plans', 'reviews'];
 const DOC_EXTS = new Set(['.md', '.html']);
 const MAX_DOC_BYTES = 2 * 1024 * 1024;
+const MAX_PER_DIR = 500;
+const MAX_TOTAL = 1000;
 
 // Folders shown when a project has no docFolders of its own.
 const DEFAULT_FOLDERS = Object.freeze(['plans', 'reviews']);
@@ -90,25 +92,39 @@ function withDocFolders(records, dir, folders) {
   };
 }
 
-// All .md/.html files directly inside <cwd>/plans and <cwd>/reviews, newest first.
-// Missing or unreadable folders just contribute nothing.
-async function listDocs(cwd) {
+// Path of a doc relative to cwd, '/' separated: relFor('plans', true, 'a.md')
+// is 'plans/archive/a.md', relFor('.', false, 'README.md') is 'README.md'.
+function relFor(folder, archived, name) {
+  return [folder === '.' ? '' : folder, archived ? 'archive' : '', name].filter(Boolean).join('/');
+}
+
+// All .md/.html files directly inside each folder and inside its archive/,
+// newest first. Never recursive, so '.' lists root files only. Missing or
+// unreadable folders contribute nothing. Capped per directory and in total:
+// the panel polls this once a second.
+async function listDocs(cwd, folders = DEFAULT_FOLDERS) {
   const out = [];
-  for (const kind of DOC_KINDS) {
-    let names;
-    try {
-      names = await fs.promises.readdir(path.join(cwd, kind));
-    } catch {
-      continue;
-    }
-    for (const name of names) {
-      if (!DOC_EXTS.has(path.extname(name).toLowerCase())) continue;
+  for (const folder of folders) {
+    for (const archived of [false, true]) {
+      const dir = path.join(cwd, relFor(folder, archived, ''));
+      let entries;
       try {
-        const st = await fs.promises.stat(path.join(cwd, kind, name));
-        if (!st.isFile()) continue;
-        out.push({ rel: `${kind}/${name}`, kind, mtimeMs: st.mtimeMs, size: st.size });
+        entries = await fs.promises.readdir(dir, { withFileTypes: true });
       } catch {
-        // vanished or broken symlink: skip
+        continue;
+      }
+      let n = 0;
+      for (const e of entries) {
+        if (n >= MAX_PER_DIR || out.length >= MAX_TOTAL) break;
+        if (e.isDirectory() || !DOC_EXTS.has(path.extname(e.name).toLowerCase())) continue;
+        try {
+          const st = await fs.promises.stat(path.join(dir, e.name));
+          if (!st.isFile()) continue;
+          out.push({ rel: relFor(folder, archived, e.name), folder, archived, mtimeMs: st.mtimeMs, size: st.size });
+          n++;
+        } catch {
+          // vanished or broken symlink: skip
+        }
       }
     }
   }
