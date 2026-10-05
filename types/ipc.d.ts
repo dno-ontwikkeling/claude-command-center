@@ -36,6 +36,15 @@ export type DiffResult =
       error: string;
     };
 
+export interface DocEntry {
+  rel: string;
+  kind: 'plans' | 'reviews';
+  mtimeMs: number;
+  size: number;
+}
+
+export type DocResult = { ok: true; html: string } | { ok: false; error: string };
+
 export interface DiffStat {
   added: number;
   removed: number;
@@ -188,6 +197,8 @@ export interface Api {
   gitPull(cwd: string): Promise<OpResult>;
   gitDiffStat(cwd: string): Promise<DiffStat>;
   gitDiff(cwd: string, mode: 'wip' | 'branch'): Promise<DiffResult>;
+  listDocs(cwd: string): Promise<DocEntry[]>;
+  readDoc(cwd: string, rel: string): Promise<DocResult>;
   gitBranch(cwd: string): Promise<string | null>;
   gitDeleteBranch(dir: string, branch: string, opts?: { noPrompt?: boolean }): Promise<DeleteBranchResult>;
   openExternal(url: string): Promise<void>;

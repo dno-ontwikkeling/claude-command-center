@@ -170,7 +170,8 @@ function worktreeRow(p, w, close) {
 
   li.addEventListener('click', () => {
     close();
-    spawn(p.dir, w.path, w.branch, w.isMain);
+    // git only flags the main tree; every other worktree is a separate folder.
+    spawn(p.dir, w.path, w.branch, !!w.isMain);
   });
   return li;
 }

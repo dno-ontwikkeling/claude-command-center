@@ -38,6 +38,8 @@ const api = {
   gitPull: (cwd) => ipcRenderer.invoke('git:pull', cwd),
   gitDiffStat: (cwd) => ipcRenderer.invoke('git:diffstat', cwd),
   gitDiff: (cwd, mode) => ipcRenderer.invoke('git:diff', { cwd, mode }),
+  listDocs: (cwd) => ipcRenderer.invoke('docs:list', cwd),
+  readDoc: (cwd, rel) => ipcRenderer.invoke('docs:read', { cwd, rel }),
   gitBranch: (cwd) => ipcRenderer.invoke('git:branch', cwd),
   gitDeleteBranch: (dir, branch, { noPrompt = false } = {}) =>
     ipcRenderer.invoke('git:delete-branch', { dir, branch, noPrompt }),

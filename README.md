@@ -21,6 +21,10 @@ with a status dot that reflects what the agent is doing right now.
   - `needs-input` — blocked on a permission / prompt (the one to watch)
   - `idle` — turn finished, waiting for you
   - `dead` — session ended
+- **Docs panel** — a **Docs** button in the stage bar opens a read-only panel
+  beside the terminal with the active agent's `plans/` and `reviews/` files
+  (`.md` and `.html`), newest first. Pick one from the dropdown (type to filter);
+  edits and new files show up within about a second. Desktop only.
 - **Light / dark theme** — follows OS by default, toggle in the sidebar.
 - **Remote access from your phone** (opt-in) — a sideloaded Android app shows
   the same agents and status, opens their terminals, has the same agent menu,

@@ -44,6 +44,7 @@ const { createRingBuffer } = require('./ringbuffer');
 const { createConnectionHandler, createSizeTracker, createModeTracker } = require('./remoteproto');
 const transcript = require('./transcript');
 const remotefs = require('./remotefs');
+const docs = require('./docs');
 const { createRemoteServer } = require('./remoteserver');
 const { loadOrCreateCert, regenerateCert } = require('./remotecert');
 const remoteAuth = require('./remoteauth');
@@ -929,6 +930,10 @@ function registerIpc() {
 
   ipcMain.handle('git:diffstat', (_e, cwd) => gitDiffStat(cwd));
   ipcMain.handle('git:diff', (_e, { cwd, mode }) => gitDiff(cwd, mode));
+  ipcMain.handle('docs:list', (_e, cwd) => (isKnownDir(cwd) ? docs.listDocs(cwd) : []));
+  ipcMain.handle('docs:read', (_e, { cwd, rel } = {}) =>
+    isKnownDir(cwd) ? docs.readDoc(cwd, rel) : { ok: false, error: 'Unknown folder' }
+  );
 
   registerRemoteIpc();
 }
@@ -1502,9 +1507,13 @@ function createWindow() {
     },
   });
   // Never let window.open (or a target=_blank link) spawn a second, unmanaged
-  // BrowserWindow — terminal links already route through open-external
-  // (shell.openExternal), so there is no legitimate use of a new window here.
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  // BrowserWindow — there is no legitimate use of a new window here. http(s)
+  // targets go to the system browser instead (links in the docs viewer frame,
+  // whose <base> is target=_blank, land here); everything else is dropped.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
   // Block any renderer-initiated top-level navigation (e.g. a compromised
   // renderer setting window.location). The only real navigation — the initial
   // loadFile below — is issued from the main process and does not fire this

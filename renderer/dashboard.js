@@ -219,16 +219,41 @@ async function reorderWorkspace(draggedDir, targetDir) {
 }
 
 async function removeProject(dir) {
-  const ok = await confirmDialog(
+  // Every linked worktree on disk, not just the tracked ones. The main checkout
+  // (the project folder itself) is never deleted.
+  const linked = (await window.api.listWorktrees(dir)).filter((w) => !w.isMain);
+  const answer = await confirmDialog(
     'Forget project',
-    'This removes the project from Command Center. The folder on disk is left untouched.',
-    { okLabel: 'Forget', danger: true }
+    'This removes the project from Command Center. The project folder is left untouched.',
+    {
+      okLabel: 'Forget',
+      danger: true,
+      checkbox: linked.length
+        ? `Also delete ${linked.length} worktree folder${linked.length > 1 ? 's' : ''}:\n${linked.map((w) => w.path).join('\n')}`
+        : null,
+    }
   );
+  // checkbox makes confirmDialog resolve { ok, checked }; otherwise a boolean.
+  const ok = typeof answer === 'object' ? answer.ok : answer;
+  const deleteWorktrees = typeof answer === 'object' ? answer.checked : false;
   if (!ok) return;
-  for (const [id] of agentsForDir(dir)) removeAgent(id, true);
+  const ids = [...agentsForDir(dir)].map(([id]) => id);
+  // Agents hold the worktree as cwd; on Windows it can't be deleted until they exit.
+  if (deleteWorktrees) await Promise.all(ids.map(killAndWait));
+  for (const id of ids) removeAgent(id, true);
   pruneDormantForDir(dir, true);
+  // Removal needs the project still registered, so it runs before removeProject.
+  // Git refuses dirty/locked worktrees (no force): those stay on disk and are reported.
+  const errors = [];
+  if (deleteWorktrees) {
+    for (const w of linked) {
+      const res = await window.api.removeWorktree(dir, w.path, false);
+      if (res.error) errors.push(`${w.path}\n${res.error}`);
+    }
+  }
   state.projectsData = await window.api.removeProject(dir);
   renderAll();
+  if (errors.length) confirmDialog('Delete worktrees', errors.join('\n\n'), { alert: true });
 }
 
 async function removeWorkspace(dir) {

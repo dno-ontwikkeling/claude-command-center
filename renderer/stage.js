@@ -3,6 +3,7 @@
 import { els } from './dom.js';
 import { state, agents } from './state.js';
 import { confirmDialog, openMenu } from './modals.js';
+import { syncDocsPanel } from './docs-panel.js';
 
 // ---------------------------------------------------------------------------
 // Stage toolbar — shows the active agent's branch and per-agent actions
@@ -16,6 +17,7 @@ import { confirmDialog, openMenu } from './modals.js';
 const gitInFlight = new Set();
 
 export function updateStageBar() {
+  syncDocsPanel(); // close or reload the docs panel for the newly active agent
   const a = state.activeId && agents.get(state.activeId);
   if (!a) {
     els.stageBar.hidden = true;

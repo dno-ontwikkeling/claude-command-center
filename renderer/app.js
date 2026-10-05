@@ -10,11 +10,13 @@ import { renderSidebar } from './sidebar.js';
 import { refreshProjects } from './dashboard.js';
 import { syncView } from './view.js';
 import { refreshAllAgentsGit } from './agent-git.mjs';
+import { setStatus } from './agent-status.mjs';
 import { startRemoteSync } from './agents.js';
 import { installGlobalHandlers, log } from './logger.js';
 import './stage.js'; // stage toolbar + find-in-terminal wiring
 import './diff.js'; // GitKraken-style diff viewer wiring
 import './prompts.js'; // smart prompts button wiring
+import './docs-panel.js'; // plans and reviews panel wiring
 
 // ---------------------------------------------------------------------------
 // Boot
@@ -72,6 +74,12 @@ setInterval(() => {
   if (document.visibilityState === 'visible') refreshAllForeground();
 }, 15000);
 window.addEventListener('focus', refreshAllForeground);
+// An agent that finished while the window was unfocused is "unseen"; coming
+// back to it is viewing it, same as activating its row.
+window.addEventListener('focus', () => {
+  const a = agents.get(state.activeId);
+  if (a && a.status === 'unseen') setStatus(state.activeId, 'done');
+});
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') refreshAllForeground();
 });

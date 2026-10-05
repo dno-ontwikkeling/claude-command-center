@@ -22,7 +22,8 @@ import { setDashboard } from './view.js';
 async function forgetFlow(id) {
   const a = agents.get(id) || dormant.get(id);
   if (!a) return;
-  const worktree = a.isMain === false;
+  // Agents saved before isMain was normalised have it undefined for worktrees.
+  const worktree = !a.isMain;
   const answer = await confirmDialog(
     'Forget agent',
     'This stops the session and removes it from Command Center.' + (worktree ? '' : ' Files on disk are left untouched.'),
