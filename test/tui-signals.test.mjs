@@ -1,6 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyOutput } from '../renderer/tui-signals.mjs';
+import { classifyOutput, isAnswerKey } from '../renderer/tui-signals.mjs';
+
+test('keys that answer a prompt: Enter, lone Esc, a digit, y/n', () => {
+  for (const k of ['\r', '\x1b', '1', '9', 'y', 'N']) assert.equal(isAnswerKey(k), true, JSON.stringify(k));
+});
+
+test('navigation, typing and mouse input do not answer a prompt', () => {
+  for (const k of ['\x1b[A', '\x1b[B', '\t', 'a', 'yes', '0', '', '\x1b[<0;10;5M']) {
+    assert.equal(isAnswerKey(k), false, JSON.stringify(k));
+  }
+});
 
 test('plain output is not a signal', () => {
   assert.deepEqual(classifyOutput('just some normal log output\n'), { kind: null, resetAt: null });

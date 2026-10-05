@@ -280,7 +280,7 @@ function applyFilter() {
 
 // ---------------------------------------------------------------------------
 // "Needs you" band: every agent blocked on you, oldest first, above the list
-// (their rows hide themselves). It ignores the name filter and All / Active /
+// (their rows stay in the list too). It ignores the name filter and All / Active /
 // Sleeping on purpose, so a waiting agent can never be filtered out of sight.
 // ---------------------------------------------------------------------------
 

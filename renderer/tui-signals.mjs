@@ -35,6 +35,16 @@ export function toPlainText(data) {
 }
 
 /**
+ * True when a keystroke sent to the pty answers a blocking prompt: Enter, a lone
+ * Esc (not an arrow or other escape sequence), a menu digit, or y/n. Arrow keys
+ * only move the selection, so they leave the agent blocked.
+ * @param {string} data one onData chunk from xterm
+ */
+export function isAnswerKey(data) {
+  return data === '\r' || data === '\x1b' || /^[1-9yYnN]$/.test(data);
+}
+
+/**
  * Classify a chunk of terminal output. Priority matches the live handler:
  * working (spinner) wins, then rate-limit, then a blocking question.
  * @returns {{ kind: 'working'|'rate-limited'|'needs-input'|null, resetAt: string|null }}

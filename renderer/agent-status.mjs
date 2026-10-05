@@ -12,7 +12,11 @@
 import { agents, state, displayLabel, persistAgents, notifyStatusChanged } from './state.js';
 import { settings } from './settings.js';
 import { beep } from './sound.js';
-import { classifyOutput } from './tui-signals.mjs';
+import { classifyOutput, isAnswerKey } from './tui-signals.mjs';
+
+// After you answer a prompt the TUI redraws, and the old question text can show
+// up in that redraw. Output sniffing ignores a needs-input match for this long.
+const ANSWER_GRACE_MS = 1500;
 
 export function setStatus(id, status) {
   const a = agents.get(id);
@@ -124,10 +128,24 @@ export function detectPrompts(id, data) {
   // activity tracker won't flip back to busy on the TUI's constant redraws;
   // the existing UserPromptSubmit handler clears it.
   if (kind === 'needs-input') {
+    if (a.answeredAt && Date.now() - a.answeredAt < ANSWER_GRACE_MS) return;
     a.awaitingInput = true;
     clearTimeout(a.idleTimer);
     setStatus(id, 'needs-input');
   }
+}
+
+// You answered a blocking prompt in the terminal. No hook fires for that (after
+// a permission is granted the next one is PostToolUse, which we don't hook), so
+// without this the agent stays in the needs-you band until its next tool call.
+// Lift it now; markActivity's idle timer settles it if the agent goes quiet.
+export function noteUserInput(id, data) {
+  const a = agents.get(id);
+  if (!a || a.status !== 'needs-input' || !isAnswerKey(data)) return;
+  a.awaitingInput = false;
+  a.answeredAt = Date.now();
+  setStatus(id, 'busy');
+  markActivity(id);
 }
 
 // Hooks own the states activity can't infer: needs-input (blocked) and dead.
