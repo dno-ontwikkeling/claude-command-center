@@ -8,7 +8,7 @@ import { buildRemoteSnapshot, createSnapshotPusher } from './remote-sync.mjs';
 import { settings, termOpts } from './settings.js';
 import { confirmDialog, promptText, closeMenu } from './modals.js';
 import { updateStageBar, openSearch } from './stage.js';
-import { setStatus, forceStatus, markActivity, detectPrompts, handleAgentEvent } from './agent-status.mjs';
+import { setStatus, forceStatus, markActivity, detectPrompts, handleAgentEvent, noteUserInput } from './agent-status.mjs';
 import { setDashboard, syncView } from './view.js';
 
 export { forceStatus };
@@ -180,6 +180,7 @@ export function spawn(dir, cwd, branch, isMain, restore = null, opts = {}) {
       // Real typed input invalidates the cached selection, so a later Ctrl+C
       // sends SIGINT instead of re-copying a stale selection.
       lastSelection = '';
+      noteUserInput(id, data);
     }
     window.api.sendInput(id, data);
   });

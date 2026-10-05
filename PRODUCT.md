@@ -25,7 +25,7 @@ Status comes from Claude Code lifecycle hooks, not from scraping terminal output
 ## Operating Context
 
 - Projects and workspaces (git worktrees) live in a sidebar list. Each agent has a status dot with nine states: busy, idle, needs-input, rate-limited, done, unseen, error, dead, dormant.
-- The stage shows the selected agent's xterm.js terminal and a git action bar: open in editor, fetch, pull, diff, find, Docs. The Docs button toggles a read-only panel on the right of the terminal that renders the agent folder's plans and reviews (.md and .html); it never opens by itself.
+- The stage shows the selected agent's xterm.js terminal and a git action bar: open in editor, fetch, pull, diff, find, Docs. The Docs button toggles a panel on the right of the terminal that renders the agent folder's docs (.md and .html): plans and reviews by default, or the folders chosen per project or workspace, each with its archive/ as a collapsed Archived group. Its ⋮ menu archives or restores, opens in VS Code, shows in Explorer or moves to the Recycle Bin the shown doc, and edits the folder list. It never opens by itself.
 - Overlays: settings (General, Terminal, Notifications, Remote), worktree picker, confirm, prompt, smart-prompts manager.
 - Agent menu: Rename, Sleep/Resume, Forget. List filter: All / Active / Sleeping.
 - Supporting features: diff viewer, Docs panel, sounds and notifications, remote pairing.

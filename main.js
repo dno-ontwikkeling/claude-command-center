@@ -930,13 +930,83 @@ function registerIpc() {
 
   ipcMain.handle('git:diffstat', (_e, cwd) => gitDiffStat(cwd));
   ipcMain.handle('git:diff', (_e, { cwd, mode }) => gitDiff(cwd, mode));
-  ipcMain.handle('docs:list', (_e, cwd) => (isKnownDir(cwd) ? docs.listDocs(cwd) : []));
-  ipcMain.handle('docs:read', (_e, { cwd, rel } = {}) =>
-    isKnownDir(cwd) ? docs.readDoc(cwd, rel) : { ok: false, error: 'Unknown folder' }
+  // Docs panel. Every handler gates on isKnownDir(cwd); `dir` (the agent's
+  // project root) only selects which record's docFolders apply and is never
+  // touched on disk. All paths go through docs.resolveDoc before any fs access.
+  ipcMain.handle('docs:list', async (_e, { cwd, dir } = {}) => {
+    if (!isKnownDir(cwd)) return { folders: [], docs: [] };
+    const folders = docFoldersForDir(dir);
+    return { folders, docs: await docs.listDocs(cwd, folders) };
+  });
+  ipcMain.handle('docs:read', (_e, { cwd, dir, rel } = {}) =>
+    isKnownDir(cwd) ? docs.readDoc(cwd, docFoldersForDir(dir), rel) : { ok: false, error: 'Unknown folder' }
   );
+  ipcMain.handle('docs:folders-set', (_e, { dir, folders } = {}) => {
+    const n = docs.normalizeFolders(folders);
+    if (!n.ok) return n;
+    // The config lives on the project or workspace record, so forgetting the
+    // project (projects:remove / workspaces:remove) drops it with the record.
+    const stores = [
+      [loadProjects, saveProjects],
+      [loadWorkspaces, saveWorkspaces],
+    ];
+    try {
+      for (const [load, save] of stores) {
+        const r = docs.withDocFolders(load(), dir, n.folders);
+        if (r.ok) {
+          save(r.records);
+          return { ok: true, folders: n.folders };
+        }
+      }
+    } catch (err) {
+      return { ok: false, error: errMsg(err) }; // corrupt store or failed write, already surfaced
+    }
+    return { ok: false, error: 'Unknown project' };
+  });
+  ipcMain.handle('docs:pick-folder', async (_e, cwd) => {
+    if (!isKnownDir(cwd)) return { error: 'Unknown folder' };
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      title: 'Choose a docs folder',
+      defaultPath: cwd,
+      properties: ['openDirectory'],
+    });
+    if (canceled || !filePaths[0]) return { canceled: true };
+    const rel = path.relative(cwd, filePaths[0]);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return { error: 'Pick a folder inside this project.' };
+    return { rel: rel.split(path.sep).join('/') || '.' };
+  });
+  ipcMain.handle('docs:action', async (_e, { cwd, dir, rel, action } = {}) => {
+    if (!isKnownDir(cwd)) return { ok: false, error: 'Unknown folder' };
+    const res = await docs.docAction(cwd, docFoldersForDir(dir), rel, action, DOC_OS_OPS);
+    const line = `${action} ${typeof rel === 'string' ? rel : '?'}`; // rel only: no absolute paths in logs
+    if (res.ok) log.info('docs', line);
+    // fs errors quote absolute paths ("rename 'C:\...'"): keep them out of the log
+    else log.warn('docs', `${line} failed: ${String(res.error).replace(/'[^']*'/g, "'…'")}`);
+    return res;
+  });
 
   registerRemoteIpc();
 }
+
+// Doc folders for the project or workspace record at `dir`, defaults when it
+// has none. A corrupt stored list is ignored (and logged), never trusted.
+function docFoldersForDir(dir) {
+  try {
+    const { folders, invalid } = docs.docFoldersFor([...loadProjects(), ...loadWorkspaces()], dir);
+    if (invalid) log.warn('docs', 'ignoring invalid docFolders, using the defaults');
+    return folders;
+  } catch {
+    return [...docs.DEFAULT_FOLDERS]; // corrupt store: already surfaced by warnCorruptOnce
+  }
+}
+
+// OS calls for docs.docAction: Recycle Bin, Explorer, and the injection-safe
+// VS Code launcher from editors.js.
+const DOC_OS_OPS = {
+  trashItem: (file) => shell.trashItem(file),
+  showItemInFolder: (file) => shell.showItemInFolder(file),
+  openInEditor: (file) => openInVSCode(file),
+};
 
 // ---------------------------------------------------------------------------
 // Shared handlers — used by both the desktop IPC above and the remote rpc table
