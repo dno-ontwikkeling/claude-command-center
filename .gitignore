@@ -5,3 +5,10 @@ bundled/*
 !bundled/.gitkeep
 *.log
 .claude/
+
+# Tooling scratch
+.playwright-mcp/
+.workflow/
+.impeccable/mocks/
+.impeccable/questions/
+.impeccable/review/
