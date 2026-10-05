@@ -5,7 +5,15 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { listDocs, readDoc, normalizeFolders, DEFAULT_FOLDERS, docFoldersFor, withDocFolders } = require('../docs');
+const {
+  listDocs,
+  readDoc,
+  resolveDoc,
+  normalizeFolders,
+  DEFAULT_FOLDERS,
+  docFoldersFor,
+  withDocFolders,
+} = require('../docs');
 
 function tmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'cc-docs-'));
@@ -267,7 +275,7 @@ test('listDocs: caps a folder at 500 entries', async () => {
 test('readDoc: renders markdown to html', async () => {
   const cwd = tmp();
   write(cwd, 'plans/a.md', '# Title\n\n- one\n- two\n');
-  const res = await readDoc(cwd, 'plans/a.md');
+  const res = await readDoc(cwd, undefined, 'plans/a.md');
   assert.equal(res.ok, true);
   assert.match(res.html, /<h1[^>]*>Title<\/h1>/);
   assert.match(res.html, /<li>one<\/li>/);
@@ -277,17 +285,17 @@ test('readDoc: passes html through unchanged', async () => {
   const cwd = tmp();
   const html = '<!doctype html><html><body><h2 id="x">Hi</h2></body></html>';
   write(cwd, 'reviews/r.html', html);
-  const res = await readDoc(cwd, 'reviews/r.html');
+  const res = await readDoc(cwd, undefined, 'reviews/r.html');
   assert.equal(res.ok, true);
   assert.equal(res.html, html);
 });
 
 // --- readDoc: rejections ----------------------------------------------------
 
-async function assertRejected(cwd, rel) {
+async function assertRejected(cwd, rel, folders) {
   let res;
   await assert.doesNotReject(async () => {
-    res = await readDoc(cwd, rel);
+    res = await readDoc(cwd, folders, rel);
   });
   assert.equal(res.ok, false, `expected ${JSON.stringify(rel)} to be rejected`);
   assert.equal(typeof res.error, 'string');
@@ -361,6 +369,77 @@ test('readDoc: rejects files over 2 MB', async () => {
 test('readDoc: accepts a file of exactly 2 MB', async () => {
   const cwd = tmp();
   write(cwd, 'plans/edge.html', Buffer.alloc(2 * 1024 * 1024, 'a'));
-  const res = await readDoc(cwd, 'plans/edge.html');
+  const res = await readDoc(cwd, undefined, 'plans/edge.html');
   assert.equal(res.ok, true);
+});
+
+// --- resolveDoc / readDoc with configured folders ---------------------------
+
+test('readDoc: a root doc opens when "." is configured, not by default', async () => {
+  const cwd = tmp();
+  write(cwd, 'README.md', '# Readme');
+  const res = await readDoc(cwd, ['.'], 'README.md');
+  assert.equal(res.ok, true);
+  assert.match(res.html, /<h1[^>]*>Readme<\/h1>/);
+  await assertRejected(cwd, 'README.md');
+});
+
+test('readDoc: archived docs open; other subfolders do not', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/archive/old.md', '# old');
+  write(cwd, 'plans/sub/x.md', '# x');
+  write(cwd, 'archive/root-old.md', '# r');
+  assert.equal((await readDoc(cwd, undefined, 'plans/archive/old.md')).ok, true);
+  assert.equal((await readDoc(cwd, ['.'], 'archive/root-old.md')).ok, true);
+  await assertRejected(cwd, 'plans/sub/x.md');
+  await assertRejected(cwd, 'plans/archive/../sub/x.md');
+});
+
+test('readDoc: a folder that is not configured is rejected', async () => {
+  const cwd = tmp();
+  write(cwd, 'docs/guide.md', '# g');
+  write(cwd, 'plans/a.md', '# a');
+  assert.equal((await readDoc(cwd, ['docs'], 'docs/guide.md')).ok, true);
+  await assertRejected(cwd, 'docs/guide.md');
+  await assertRejected(cwd, 'plans/a.md', ['docs']);
+});
+
+test('readDoc: nested configured folders resolve to the right folder', async () => {
+  const cwd = tmp();
+  write(cwd, 'docs/api/ref.md', '# ref');
+  assert.equal((await readDoc(cwd, ['docs/api'], 'docs/api/ref.md')).ok, true);
+  await assertRejected(cwd, 'docs/api/ref.md', ['docs']);
+});
+
+test('readDoc: a vanished file says so instead of throwing', async () => {
+  const cwd = tmp();
+  fs.mkdirSync(path.join(cwd, 'plans'));
+  const res = await readDoc(cwd, undefined, 'plans/gone.md');
+  assert.equal(res.ok, false);
+  assert.match(res.error, /gone\.md no longer exists/);
+});
+
+test('readDoc: a configured folder that links outside the project is rejected', async (t) => {
+  const cwd = tmp();
+  const outside = tmp();
+  fs.writeFileSync(path.join(outside, 'secret.md'), '# secret');
+  try {
+    fs.symlinkSync(outside, path.join(cwd, 'docs'), 'junction');
+  } catch (e) {
+    t.skip(`links not permitted: ${e.code || e.message}`);
+    return;
+  }
+  await assertRejected(cwd, 'docs/secret.md', ['docs']);
+});
+
+test('resolveDoc: returns the file, folder, archived flag and name', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/archive/old.md', 'x');
+  const res = await resolveDoc(cwd, undefined, 'plans/archive/old.md');
+  assert.equal(res.ok, true);
+  assert.equal(res.folder, 'plans');
+  assert.equal(res.archived, true);
+  assert.equal(res.name, 'old.md');
+  // .native, like fs.promises.realpath: it expands Windows 8.3 short names
+  assert.equal(res.file, fs.realpathSync.native(path.join(cwd, 'plans', 'archive', 'old.md')));
 });

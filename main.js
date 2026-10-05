@@ -932,7 +932,7 @@ function registerIpc() {
   ipcMain.handle('git:diff', (_e, { cwd, mode }) => gitDiff(cwd, mode));
   ipcMain.handle('docs:list', (_e, cwd) => (isKnownDir(cwd) ? docs.listDocs(cwd) : []));
   ipcMain.handle('docs:read', (_e, { cwd, rel } = {}) =>
-    isKnownDir(cwd) ? docs.readDoc(cwd, rel) : { ok: false, error: 'Unknown folder' }
+    isKnownDir(cwd) ? docs.readDoc(cwd, undefined, rel) : { ok: false, error: 'Unknown folder' }
   );
 
   registerRemoteIpc();

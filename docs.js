@@ -12,7 +12,6 @@ const fs = require('fs');
 const path = require('path');
 const { marked } = require('marked');
 
-const DOC_KINDS = ['plans', 'reviews'];
 const DOC_EXTS = new Set(['.md', '.html']);
 const MAX_DOC_BYTES = 2 * 1024 * 1024;
 const MAX_PER_DIR = 500;
@@ -138,37 +137,71 @@ function isInside(parent, child) {
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
-// Read one doc. Returns { ok: true, html } (markdown rendered, html unchanged)
-// or { ok: false, error }. Never throws.
-async function readDoc(cwd, rel) {
+const OUTSIDE = 'File is outside the docs folders';
+
+// The one path guard. Every read and every action resolves `rel` here first.
+// `rel` must be '<folder>/<name>' or '<folder>/archive/<name>' for a configured
+// folder ('<name>' / 'archive/<name>' for '.'), with a .md/.html name. Real
+// paths must nest: the folder inside cwd, the archive/ inside the folder, the
+// file inside its directory, so no symlink or junction anywhere on the way can
+// lead out. Returns { ok: true, file, folder, archived, name, folderReal } or
+// { ok: false, error }. Never throws.
+async function resolveDoc(cwd, folders = DEFAULT_FOLDERS, rel) {
   try {
     if (typeof rel !== 'string' || !rel) return { ok: false, error: 'Invalid path' };
     // Accept both separators so a backslash form of '..' cannot slip through.
     const parts = rel.split(/[\\/]/);
-    if (parts.length !== 2 || !DOC_KINDS.includes(parts[0])) {
-      return { ok: false, error: 'Only files in plans/ or reviews/ can be opened' };
-    }
-    const [kind, name] = parts;
-    if (!name || name === '.' || name === '..' || /[:\0]/.test(name)) {
+    const name = parts.pop();
+    if (!name || name === '.' || name === '..' || /[:\0]/.test(name) || parts.includes('..')) {
       return { ok: false, error: 'Invalid file name' };
     }
-    const ext = path.extname(name).toLowerCase();
-    if (!DOC_EXTS.has(ext)) return { ok: false, error: 'Only .md and .html files can be opened' };
-
-    const root = await fs.promises.realpath(path.join(cwd, kind));
-    const file = await fs.promises.realpath(path.join(cwd, kind, name));
-    if (!isInside(root, file) || file === root) {
-      return { ok: false, error: 'File is outside the docs folder' };
+    if (!DOC_EXTS.has(path.extname(name).toLowerCase())) {
+      return { ok: false, error: 'Only .md and .html files can be opened' };
     }
-    const st = await fs.promises.stat(file);
+    let folder = folders.find((f) => f === (parts.join('/') || '.'));
+    let archived = false;
+    if (!folder && parts[parts.length - 1] === 'archive') {
+      folder = folders.find((f) => f === (parts.slice(0, -1).join('/') || '.'));
+      archived = !!folder;
+    }
+    if (!folder) return { ok: false, error: OUTSIDE };
+
+    const root = await fs.promises.realpath(cwd);
+    const folderReal = await fs.promises.realpath(path.join(root, folder));
+    if (!isInside(root, folderReal)) return { ok: false, error: OUTSIDE };
+    const dirReal = archived ? await fs.promises.realpath(path.join(folderReal, 'archive')) : folderReal;
+    if (!isInside(folderReal, dirReal)) return { ok: false, error: OUTSIDE };
+    const file = await fs.promises.realpath(path.join(dirReal, name));
+    if (!isInside(dirReal, file) || file === dirReal) return { ok: false, error: OUTSIDE };
+    return { ok: true, file, folder, archived, name, folderReal };
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return { ok: false, error: `${path.basename(String(rel))} no longer exists` };
+    return { ok: false, error: (e && e.message) || 'Could not open file' };
+  }
+}
+
+// Read one doc. Returns { ok: true, html } (markdown rendered, html unchanged)
+// or { ok: false, error }. Never throws.
+async function readDoc(cwd, folders, rel) {
+  const r = await resolveDoc(cwd, folders, rel);
+  if (!r.ok) return r;
+  try {
+    const st = await fs.promises.stat(r.file);
     if (!st.isFile()) return { ok: false, error: 'Not a file' };
     if (st.size > MAX_DOC_BYTES) return { ok: false, error: 'File is larger than 2 MB' };
-
-    const text = await fs.promises.readFile(file, 'utf8');
-    return { ok: true, html: ext === '.md' ? marked.parse(text) : text };
+    const text = await fs.promises.readFile(r.file, 'utf8');
+    return { ok: true, html: path.extname(r.name).toLowerCase() === '.md' ? marked.parse(text) : text };
   } catch (e) {
     return { ok: false, error: (e && e.message) || 'Could not read file' };
   }
 }
 
-module.exports = { listDocs, readDoc, normalizeFolders, DEFAULT_FOLDERS, docFoldersFor, withDocFolders };
+module.exports = {
+  listDocs,
+  readDoc,
+  resolveDoc,
+  normalizeFolders,
+  DEFAULT_FOLDERS,
+  docFoldersFor,
+  withDocFolders,
+};
