@@ -1,8 +1,14 @@
 # Handoff: docs management (branch `feat/docs-management`)
 
 Date: 2026-10-05. Written at the end of an unattended session so you can pick
-this up on another PC. Branch is pushed to `origin` (your fork) only; nothing
-was pushed to `upstream` and no PR was opened.
+this up on another PC. Branch is pushed to `origin` as a side branch; no PR
+was opened and `main` is untouched.
+
+> Heads-up: GitHub reported that `OlivierDeNeef/claude-command-center` **moved
+> to `dno-ontwikkeling/claude-command-center`**, so `origin` now redirects to
+> the same repo as `upstream`. The branch therefore lives in the org repo:
+> https://github.com/dno-ontwikkeling/claude-command-center/tree/feat/docs-management
+> Consider `git remote set-url origin https://github.com/dno-ontwikkeling/claude-command-center.git`.
 
 ## State
 
