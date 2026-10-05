@@ -9,6 +9,8 @@ const {
   listDocs,
   readDoc,
   resolveDoc,
+  archiveDoc,
+  restoreDoc,
   normalizeFolders,
   DEFAULT_FOLDERS,
   docFoldersFor,
@@ -442,4 +444,96 @@ test('resolveDoc: returns the file, folder, archived flag and name', async () =>
   assert.equal(res.name, 'old.md');
   // .native, like fs.promises.realpath: it expands Windows 8.3 short names
   assert.equal(res.file, fs.realpathSync.native(path.join(cwd, 'plans', 'archive', 'old.md')));
+});
+
+// --- archiveDoc / restoreDoc ------------------------------------------------
+
+const read = (cwd, rel) => fs.readFileSync(path.join(cwd, ...rel.split('/')), 'utf8');
+const exists = (cwd, rel) => fs.existsSync(path.join(cwd, ...rel.split('/')));
+
+test('archiveDoc: moves the doc into <folder>/archive/, creating it', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/a.md', 'A');
+  const res = await archiveDoc(cwd, undefined, 'plans/a.md');
+  assert.deepEqual(res, { ok: true, rel: 'plans/archive/a.md' });
+  assert.equal(exists(cwd, 'plans/a.md'), false);
+  assert.equal(read(cwd, 'plans/archive/a.md'), 'A');
+});
+
+test('archiveDoc: a name clash picks a free name and never overwrites', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/archive/a.md', 'first');
+  write(cwd, 'plans/a.md', 'second');
+  assert.deepEqual(await archiveDoc(cwd, undefined, 'plans/a.md'), { ok: true, rel: 'plans/archive/a (2).md' });
+  write(cwd, 'plans/a.md', 'third');
+  assert.deepEqual(await archiveDoc(cwd, undefined, 'plans/a.md'), { ok: true, rel: 'plans/archive/a (3).md' });
+  assert.equal(read(cwd, 'plans/archive/a.md'), 'first');
+  assert.equal(read(cwd, 'plans/archive/a (2).md'), 'second');
+  assert.equal(read(cwd, 'plans/archive/a (3).md'), 'third');
+});
+
+test('restoreDoc: moves an archived doc back, with the same clash rule', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/archive/a.md', 'old');
+  write(cwd, 'plans/a.md', 'new');
+  assert.deepEqual(await restoreDoc(cwd, undefined, 'plans/archive/a.md'), { ok: true, rel: 'plans/a (2).md' });
+  assert.equal(read(cwd, 'plans/a.md'), 'new');
+  assert.equal(read(cwd, 'plans/a (2).md'), 'old');
+  assert.equal(exists(cwd, 'plans/archive/a.md'), false);
+});
+
+test('archiveDoc / restoreDoc: refuse the wrong direction', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/a.md', 'x');
+  write(cwd, 'plans/archive/b.md', 'y');
+  const again = await archiveDoc(cwd, undefined, 'plans/archive/b.md');
+  assert.equal(again.ok, false);
+  const notArchived = await restoreDoc(cwd, undefined, 'plans/a.md');
+  assert.equal(notArchived.ok, false);
+  assert.equal(read(cwd, 'plans/a.md'), 'x');
+  assert.equal(read(cwd, 'plans/archive/b.md'), 'y');
+});
+
+test('archiveDoc / restoreDoc: a missing file or guarded path is an error, never a throw', async () => {
+  const cwd = tmp();
+  fs.mkdirSync(path.join(cwd, 'plans'));
+  write(cwd, 'secret.md', 's');
+  for (const [fn, rel] of [
+    [archiveDoc, 'plans/gone.md'],
+    [restoreDoc, 'plans/archive/gone.md'],
+    [archiveDoc, '../secret.md'],
+    [archiveDoc, 'secret.md'],
+  ]) {
+    let res;
+    await assert.doesNotReject(async () => {
+      res = await fn(cwd, undefined, rel);
+    });
+    assert.equal(res.ok, false, rel);
+    assert.equal(typeof res.error, 'string');
+  }
+  assert.equal(read(cwd, 'secret.md'), 's');
+});
+
+test('archiveDoc / restoreDoc: work for root docs when "." is configured', async () => {
+  const cwd = tmp();
+  write(cwd, 'README.md', 'R');
+  assert.deepEqual(await archiveDoc(cwd, ['.'], 'README.md'), { ok: true, rel: 'archive/README.md' });
+  assert.deepEqual(await restoreDoc(cwd, ['.'], 'archive/README.md'), { ok: true, rel: 'README.md' });
+  assert.equal(read(cwd, 'README.md'), 'R');
+});
+
+test('archiveDoc: an archive/ that links outside the folder is refused, file stays put', async (t) => {
+  const cwd = tmp();
+  const outside = tmp();
+  write(cwd, 'plans/a.md', 'A');
+  try {
+    fs.symlinkSync(outside, path.join(cwd, 'plans', 'archive'), 'junction');
+  } catch (e) {
+    t.skip(`links not permitted: ${e.code || e.message}`);
+    return;
+  }
+  const res = await archiveDoc(cwd, undefined, 'plans/a.md');
+  assert.equal(res.ok, false);
+  assert.equal(read(cwd, 'plans/a.md'), 'A');
+  assert.deepEqual(fs.readdirSync(outside), []);
 });

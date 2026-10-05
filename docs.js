@@ -196,10 +196,57 @@ async function readDoc(cwd, folders, rel) {
   }
 }
 
+// `name`, or 'name (2).ext', 'name (3).ext', … whichever does not exist in
+// `dir` yet. lstat, so a dangling symlink still counts as taken. fs.rename on
+// Windows replaces an existing target, so this runs right before the move.
+async function freeName(dir, name) {
+  const ext = path.extname(name);
+  const stem = name.slice(0, name.length - ext.length);
+  for (let i = 1; i < 1000; i++) {
+    const candidate = i === 1 ? name : `${stem} (${i})${ext}`;
+    try {
+      await fs.promises.lstat(path.join(dir, candidate));
+    } catch (e) {
+      if (e && e.code === 'ENOENT') return candidate;
+      throw e;
+    }
+  }
+  throw new Error('too many files with this name');
+}
+
+// Move a doc into its folder's archive/ (toArchive) or back out of it.
+// Never overwrites: a clash gets a numbered name. No copy-then-delete
+// fallback, so a failed move leaves the file where it was.
+async function moveDoc(cwd, folders, rel, toArchive) {
+  const r = await resolveDoc(cwd, folders, rel);
+  if (!r.ok) return r;
+  if (r.archived === toArchive) return { ok: false, error: toArchive ? 'Already archived' : 'Not archived' };
+  const verb = toArchive ? 'archive' : 'restore';
+  try {
+    let destDir = r.folderReal;
+    if (toArchive) {
+      await fs.promises.mkdir(path.join(r.folderReal, 'archive'), { recursive: true });
+      // an existing archive/ may be a link: it must still sit inside the folder
+      destDir = await fs.promises.realpath(path.join(r.folderReal, 'archive'));
+      if (!isInside(r.folderReal, destDir) || destDir === r.folderReal) return { ok: false, error: OUTSIDE };
+    }
+    const name = await freeName(destDir, r.name);
+    await fs.promises.rename(r.file, path.join(destDir, name));
+    return { ok: true, rel: relFor(r.folder, toArchive, name) };
+  } catch (e) {
+    return { ok: false, error: `Could not ${verb} ${r.name}: ${(e && e.message) || 'unknown error'}` };
+  }
+}
+
+const archiveDoc = (cwd, folders, rel) => moveDoc(cwd, folders, rel, true);
+const restoreDoc = (cwd, folders, rel) => moveDoc(cwd, folders, rel, false);
+
 module.exports = {
   listDocs,
   readDoc,
   resolveDoc,
+  archiveDoc,
+  restoreDoc,
   normalizeFolders,
   DEFAULT_FOLDERS,
   docFoldersFor,
