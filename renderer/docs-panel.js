@@ -22,9 +22,10 @@ const remembered = new Map(); // cwd -> rel of the doc last shown there (in memo
 
 let open = false;
 let cwd = null; // folder the panel currently shows
+let dir = null; // project/workspace root of that agent: it owns the folder config
 let list = []; // DocEntry[] for cwd
-let folders = ['plans', 'reviews']; // configured folders for cwd's project, in display order
-let sig = ''; // docsSignature(list)
+let folders = []; // configured folders for cwd's project, in display order (from docs:list)
+let sig = ''; // listSig of the last docs:list result
 let currentRel = null; // doc shown in the frame
 let currentStamp = ''; // `${mtimeMs}|${size}` of the shown doc when it was read
 let lastHtml = null; // body html last put into the frame
@@ -107,7 +108,7 @@ async function showDoc(rel) {
   renderPicker();
   let res;
   try {
-    res = await window.api.readDoc(c, rel);
+    res = await window.api.readDoc(c, dir, rel);
   } catch (err) {
     res = { ok: false, error: err && err.message ? err.message : 'Could not read the document.' };
   }
@@ -124,9 +125,17 @@ function pickDefault() {
   return newest ? newest.rel : null;
 }
 
-function applyList(next) {
-  list = next;
-  sig = docsSignature(list);
+const EMPTY_LIST = { folders: [], docs: [] };
+
+const isDocList = (res) => !!res && Array.isArray(res.folders) && Array.isArray(res.docs);
+
+// Changes when a doc changes or when the folder config itself changes.
+const listSig = (res) => `${res.folders.join('|')}\n${docsSignature(res.docs)}`;
+
+function applyList(res) {
+  folders = res.folders;
+  list = res.docs;
+  sig = listSig(res);
   renderPicker();
 }
 
@@ -259,12 +268,12 @@ async function loadFolder() {
   els.docsPickerLabel.textContent = '';
   let next;
   try {
-    next = (await window.api.listDocs(c)) || [];
+    next = await window.api.listDocs(c, dir);
   } catch {
-    next = [];
+    next = EMPTY_LIST;
   }
   if (id !== listReq || c !== cwd || !open) return;
-  applyList(next);
+  applyList(isDocList(next) ? next : EMPTY_LIST);
   const rel = pickDefault();
   if (rel === null) {
     showEmpty(true);
@@ -280,13 +289,12 @@ async function poll() {
   const id = ++listReq;
   let next;
   try {
-    next = await window.api.listDocs(c);
+    next = await window.api.listDocs(c, dir);
   } catch {
     return;
   }
-  if (id !== listReq || c !== cwd || !open || !Array.isArray(next)) return;
-  const nextSig = docsSignature(next);
-  if (nextSig === sig) return;
+  if (id !== listReq || c !== cwd || !open || !isDocList(next)) return;
+  if (listSig(next) === sig) return;
   applyList(next);
   const entry = currentRel === null ? null : list.find((d) => d.rel === currentRel);
   if (!entry) {
@@ -331,10 +339,13 @@ function setOpen(next) {
   open = next;
   applyOpen();
   if (open) {
-    cwd = activeAgent().cwd;
+    const a = activeAgent();
+    cwd = a.cwd;
+    dir = a.dir;
     loadFolder();
   } else {
     cwd = null;
+    dir = null;
   }
 }
 
@@ -362,6 +373,7 @@ export function syncDocsPanel() {
   }
   if (a.cwd !== cwd) {
     cwd = a.cwd;
+    dir = a.dir;
     loadFolder();
   }
 }

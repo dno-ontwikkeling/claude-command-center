@@ -241,12 +241,48 @@ async function moveDoc(cwd, folders, rel, toArchive) {
 const archiveDoc = (cwd, folders, rel) => moveDoc(cwd, folders, rel, true);
 const restoreDoc = (cwd, folders, rel) => moveDoc(cwd, folders, rel, false);
 
+const OS_ACTIONS = new Set(['open', 'reveal', 'trash']);
+
+// The docs:action dispatch. The OS calls are injected (main.js passes
+// electron's shell and the editors.js launcher) so this stays testable; each
+// receives the resolved real path only, never the renderer's `rel`.
+//   ops: { trashItem(file), showItemInFolder(file), openInEditor(file) -> { ok } | { error } }
+// Returns { ok: true, rel? } (rel = new location after archive/restore) or
+// { ok: false, error }. Never throws.
+async function docAction(cwd, folders, rel, action, ops) {
+  if (action === 'archive') return archiveDoc(cwd, folders, rel);
+  if (action === 'restore') return restoreDoc(cwd, folders, rel);
+  if (!OS_ACTIONS.has(action)) return { ok: false, error: 'Unknown action' };
+  const r = await resolveDoc(cwd, folders, rel);
+  if (!r.ok) return r;
+  try {
+    if (action === 'open') {
+      const o = await ops.openInEditor(r.file);
+      return o && o.error ? { ok: false, error: o.error } : { ok: true };
+    }
+    if (action === 'reveal') {
+      ops.showItemInFolder(r.file);
+      return { ok: true };
+    }
+    // trash: Recycle Bin only. No permanent-delete fallback when it fails.
+    try {
+      await ops.trashItem(r.file);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: `Could not move ${r.name} to the Recycle Bin: ${(e && e.message) || 'unknown error'}` };
+    }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || `Could not ${action} ${r.name}` };
+  }
+}
+
 module.exports = {
   listDocs,
   readDoc,
   resolveDoc,
   archiveDoc,
   restoreDoc,
+  docAction,
   normalizeFolders,
   DEFAULT_FOLDERS,
   docFoldersFor,

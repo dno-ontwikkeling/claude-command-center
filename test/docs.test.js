@@ -11,6 +11,7 @@ const {
   resolveDoc,
   archiveDoc,
   restoreDoc,
+  docAction,
   normalizeFolders,
   DEFAULT_FOLDERS,
   docFoldersFor,
@@ -536,4 +537,85 @@ test('archiveDoc: an archive/ that links outside the folder is refused, file sta
   assert.equal(res.ok, false);
   assert.equal(read(cwd, 'plans/a.md'), 'A');
   assert.deepEqual(fs.readdirSync(outside), []);
+});
+
+// --- docAction (main's docs:action dispatch, Electron calls injected) -------
+
+function fakeOps(overrides = {}) {
+  const calls = [];
+  const ops = {
+    trashItem: async (f) => calls.push(['trash', f]),
+    showItemInFolder: (f) => calls.push(['reveal', f]),
+    openInEditor: async (f) => {
+      calls.push(['open', f]);
+      return { ok: true };
+    },
+    ...overrides,
+  };
+  return { ops, calls };
+}
+
+test('docAction: open, reveal and trash act on the resolved real file', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/a.md', 'A');
+  const file = fs.realpathSync.native(path.join(cwd, 'plans', 'a.md'));
+  const { ops, calls } = fakeOps();
+  for (const action of ['open', 'reveal', 'trash']) {
+    assert.deepEqual(await docAction(cwd, undefined, 'plans/a.md', action, ops), { ok: true });
+  }
+  assert.deepEqual(calls, [
+    ['open', file],
+    ['reveal', file],
+    ['trash', file],
+  ]);
+});
+
+test('docAction: archive and restore go through archiveDoc / restoreDoc', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/a.md', 'A');
+  const { ops, calls } = fakeOps();
+  assert.deepEqual(await docAction(cwd, undefined, 'plans/a.md', 'archive', ops), {
+    ok: true,
+    rel: 'plans/archive/a.md',
+  });
+  assert.deepEqual(await docAction(cwd, undefined, 'plans/archive/a.md', 'restore', ops), {
+    ok: true,
+    rel: 'plans/a.md',
+  });
+  assert.deepEqual(calls, []);
+});
+
+test('docAction: a failed trash reports and leaves the file (no permanent delete)', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/a.md', 'A');
+  const { ops } = fakeOps({
+    trashItem: async () => {
+      throw new Error('no recycle bin');
+    },
+  });
+  const res = await docAction(cwd, undefined, 'plans/a.md', 'trash', ops);
+  assert.equal(res.ok, false);
+  assert.match(res.error, /Recycle Bin: no recycle bin/);
+  assert.equal(read(cwd, 'plans/a.md'), 'A');
+});
+
+test('docAction: an editor error is passed through', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/a.md', 'A');
+  const { ops } = fakeOps({ openInEditor: async () => ({ error: 'code not found' }) });
+  assert.deepEqual(await docAction(cwd, undefined, 'plans/a.md', 'open', ops), { ok: false, error: 'code not found' });
+});
+
+test('docAction: unknown actions and guarded paths never reach the OS', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/a.md', 'A');
+  write(cwd, 'secret.md', 'S');
+  const { ops, calls } = fakeOps();
+  assert.equal((await docAction(cwd, undefined, 'plans/a.md', 'delete', ops)).ok, false);
+  assert.equal((await docAction(cwd, undefined, 'plans/a.md', undefined, ops)).ok, false);
+  for (const action of ['open', 'reveal', 'trash']) {
+    assert.equal((await docAction(cwd, undefined, '../secret.md', action, ops)).ok, false);
+    assert.equal((await docAction(cwd, undefined, 'secret.md', action, ops)).ok, false);
+  }
+  assert.deepEqual(calls, []);
 });
