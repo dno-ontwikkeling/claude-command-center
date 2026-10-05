@@ -135,4 +135,11 @@ export const els = {
   docsList: document.getElementById('docs-list'),
   docsEmpty: document.getElementById('docs-empty'),
   docsFrame: document.getElementById('docs-frame'),
+  dfOverlay: document.getElementById('docs-folders'),
+  dfClose: document.getElementById('df-close'),
+  dfList: document.getElementById('df-list'),
+  dfAdd: document.getElementById('df-add'),
+  dfError: document.getElementById('df-error'),
+  dfCancel: document.getElementById('df-cancel'),
+  dfSave: document.getElementById('df-save'),
 };

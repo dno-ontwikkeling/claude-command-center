@@ -1,15 +1,16 @@
 ---
 id: 008-65d7
 title: "docs: panel header actions menu, busy guard, remembered-doc cleanup"
-status: pending
+status: ready
 priority: P2
 type: feature
 created: "2026-10-05T17:44:21.898Z"
-updated: "2026-10-05T17:44:56.027Z"
+updated: "2026-10-05T17:59:13.278Z"
 dependencies: ["006-96ea", "007-4ec2"]
 plan: plans/docs-management.md
 plan_step: Step 8
 depends_on: ["stories/006-96ea-pending-P2-docs-groupdocs-folderlabel-newestdoc-picker-helper.md", "stories/007-4ec2-pending-P2-docs-ipc-wiring-for-folders-config-and-doc-actions.md"]
+started_at: "2026-10-05T17:59:05.446Z"
 ---
 
 # docs: panel header actions menu, busy guard, remembered-doc cleanup
