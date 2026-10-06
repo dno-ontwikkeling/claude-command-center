@@ -141,6 +141,7 @@ export const els = {
   dfOverlay: document.getElementById('docs-folders'),
   dfClose: document.getElementById('df-close'),
   dfList: document.getElementById('df-list'),
+  dfExts: document.getElementById('df-exts'),
   dfAdd: document.getElementById('df-add'),
   dfError: document.getElementById('df-error'),
   dfCancel: document.getElementById('df-cancel'),
