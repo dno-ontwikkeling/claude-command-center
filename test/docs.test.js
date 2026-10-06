@@ -13,10 +13,14 @@ const {
   restoreDoc,
   docAction,
   normalizeFolders,
+  normalizeExts,
   DEFAULT_FOLDERS,
-  docFoldersFor,
-  withDocFolders,
+  DEFAULT_EXTS,
+  docConfigFor,
+  withDocConfig,
 } = require('../docs');
+
+const cfg = (folders, exts = DEFAULT_EXTS) => ({ folders, exts });
 
 function tmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'cc-docs-'));
@@ -84,80 +88,106 @@ test('normalizeFolders: rejects non-arrays and non-string entries', () => {
   }
 });
 
-// --- docFoldersFor / withDocFolders -----------------------------------------
+// --- normalizeExts ----------------------------------------------------------
 
-const PROJ = path.resolve('/work/app');
-const OTHER = path.resolve('/work/lib');
-
-test('docFoldersFor: a record without docFolders, or no record, gives the defaults', () => {
-  assert.deepEqual(docFoldersFor([{ dir: PROJ, name: 'app' }], PROJ), { folders: ['plans', 'reviews'], invalid: false });
-  assert.deepEqual(docFoldersFor([], PROJ), { folders: ['plans', 'reviews'], invalid: false });
+test('normalizeExts: accepts supported types with or without the dot, any case, in a fixed order', () => {
+  assert.deepEqual(normalizeExts(['TXT', '.md']), { ok: true, exts: ['.md', '.txt'] });
+  assert.deepEqual(normalizeExts(['.html', 'html', ' .Md ']), { ok: true, exts: ['.md', '.html'] });
 });
 
-test('docFoldersFor: returns the stored folders of the matching record', () => {
-  const records = [
-    { dir: OTHER, name: 'lib', docFolders: ['notes'] },
-    { dir: PROJ, name: 'app', docFolders: ['docs', '.'] },
-  ];
-  assert.deepEqual(docFoldersFor(records, PROJ), { folders: ['docs', '.'], invalid: false });
-});
-
-test('docFoldersFor: a corrupt stored list falls back to the defaults and is flagged', () => {
-  for (const bad of [['../..'], 'plans', [42], ['archive']]) {
-    const res = docFoldersFor([{ dir: PROJ, name: 'app', docFolders: bad }], PROJ);
-    assert.deepEqual(res, { folders: ['plans', 'reviews'], invalid: true }, JSON.stringify(bad));
+test('normalizeExts: rejects unsupported types, an empty list and bad input', () => {
+  for (const bad of [['.js'], ['.md', 'exe'], [], [''], undefined, '.md', [1]]) {
+    const res = normalizeExts(bad);
+    assert.equal(res.ok, false, JSON.stringify(bad));
+    assert.equal(typeof res.error, 'string');
   }
 });
 
-test('docFoldersFor: matches a dir spelled with other separators (and case on Windows)', () => {
-  const records = [{ dir: PROJ, name: 'app', docFolders: ['docs'] }];
-  assert.deepEqual(docFoldersFor(records, PROJ.split(path.sep).join('/')).folders, ['docs']);
-  if (process.platform === 'win32') assert.deepEqual(docFoldersFor(records, PROJ.toUpperCase()).folders, ['docs']);
+// --- docConfigFor / withDocConfig -------------------------------------------
+
+const PROJ = path.resolve('/work/app');
+const OTHER = path.resolve('/work/lib');
+const DEFAULTS = { folders: ['plans', 'reviews'], exts: ['.md', '.html'] };
+
+test('docConfigFor: a record without config, or no record, gives the defaults', () => {
+  assert.deepEqual(docConfigFor([{ dir: PROJ, name: 'app' }], PROJ), { ...DEFAULTS, invalid: false });
+  assert.deepEqual(docConfigFor([], PROJ), { ...DEFAULTS, invalid: false });
 });
 
-test('withDocFolders: sets the field on the matching record only and leaves the input untouched', () => {
+test('docConfigFor: returns the stored folders and file types of the matching record', () => {
+  const records = [
+    { dir: OTHER, name: 'lib', docFolders: ['notes'], docExts: ['.txt'] },
+    { dir: PROJ, name: 'app', docFolders: ['docs', '.'], docExts: ['.md', '.txt'] },
+  ];
+  assert.deepEqual(docConfigFor(records, PROJ), { folders: ['docs', '.'], exts: ['.md', '.txt'], invalid: false });
+});
+
+test('docConfigFor: a corrupt stored value falls back to its default and is flagged', () => {
+  for (const bad of [['../..'], 'plans', [42], ['archive']]) {
+    const res = docConfigFor([{ dir: PROJ, name: 'app', docFolders: bad, docExts: ['.txt'] }], PROJ);
+    assert.deepEqual(res, { folders: ['plans', 'reviews'], exts: ['.txt'], invalid: true }, JSON.stringify(bad));
+  }
+  for (const bad of [['.js'], [], '.md']) {
+    const res = docConfigFor([{ dir: PROJ, name: 'app', docFolders: ['docs'], docExts: bad }], PROJ);
+    assert.deepEqual(res, { folders: ['docs'], exts: ['.md', '.html'], invalid: true }, JSON.stringify(bad));
+  }
+});
+
+test('docConfigFor: matches a dir spelled with other separators (and case on Windows)', () => {
+  const records = [{ dir: PROJ, name: 'app', docFolders: ['docs'] }];
+  assert.deepEqual(docConfigFor(records, PROJ.split(path.sep).join('/')).folders, ['docs']);
+  if (process.platform === 'win32') assert.deepEqual(docConfigFor(records, PROJ.toUpperCase()).folders, ['docs']);
+});
+
+test('withDocConfig: sets the fields on the matching record only and leaves the input untouched', () => {
   const records = [
     { dir: OTHER, name: 'lib' },
     { dir: PROJ, name: 'app' },
   ];
   const snapshot = JSON.stringify(records);
-  const res = withDocFolders(records, PROJ, ['docs', '.']);
+  const res = withDocConfig(records, PROJ, { folders: ['docs', '.'], exts: ['.md', '.txt'] });
   assert.equal(res.ok, true);
   assert.deepEqual(res.records, [
     { dir: OTHER, name: 'lib' },
-    { dir: PROJ, name: 'app', docFolders: ['docs', '.'] },
+    { dir: PROJ, name: 'app', docFolders: ['docs', '.'], docExts: ['.md', '.txt'] },
   ]);
   assert.equal(JSON.stringify(records), snapshot);
   assert.strictEqual(res.records[0], records[0], 'untouched records are reused');
 });
 
-test('withDocFolders: saving the defaults removes the field', () => {
-  const res = withDocFolders([{ dir: PROJ, name: 'app', docFolders: ['docs'] }], PROJ, ['plans', 'reviews']);
-  assert.deepEqual(res.records, [{ dir: PROJ, name: 'app' }]);
-  assert.ok(!('docFolders' in res.records[0]));
+test('withDocConfig: saving a default removes its field', () => {
+  const rec = { dir: PROJ, name: 'app', docFolders: ['docs'], docExts: ['.txt'] };
+  assert.deepEqual(withDocConfig([rec], PROJ, DEFAULTS).records, [{ dir: PROJ, name: 'app' }]);
+  assert.deepEqual(withDocConfig([rec], PROJ, { folders: ['docs'], exts: ['.md', '.html'] }).records, [
+    { dir: PROJ, name: 'app', docFolders: ['docs'] },
+  ]);
+  assert.deepEqual(withDocConfig([rec], PROJ, { folders: ['plans', 'reviews'], exts: ['.txt'] }).records, [
+    { dir: PROJ, name: 'app', docExts: ['.txt'] },
+  ]);
 });
 
-test('withDocFolders: an unknown dir is an error', () => {
-  const res = withDocFolders([{ dir: OTHER, name: 'lib' }], PROJ, ['docs']);
+test('withDocConfig: an unknown dir is an error', () => {
+  const res = withDocConfig([{ dir: OTHER, name: 'lib' }], PROJ, { folders: ['docs'], exts: ['.md'] });
   assert.equal(res.ok, false);
   assert.equal(typeof res.error, 'string');
 });
 
-test('cleanup: removing a project record drops its folders; re-adding starts on the defaults', () => {
-  const saved = withDocFolders([{ dir: PROJ, name: 'app' }, { dir: OTHER, name: 'lib' }], PROJ, ['docs']).records;
+test('cleanup: removing a project record drops its config; re-adding starts on the defaults', () => {
+  const both = [{ dir: PROJ, name: 'app' }, { dir: OTHER, name: 'lib' }];
+  const saved = withDocConfig(both, PROJ, { folders: ['docs'], exts: ['.txt'] }).records;
   // same filter as the projects:remove / workspaces:remove handlers in main.js
   const removed = saved.filter((p) => p.dir !== PROJ);
-  assert.ok(!JSON.stringify(removed).includes('docFolders'), 'nothing left behind');
-  assert.deepEqual(docFoldersFor(removed, PROJ).folders, ['plans', 'reviews']);
+  assert.ok(!/docFolders|docExts/.test(JSON.stringify(removed)), 'nothing left behind');
+  assert.deepEqual(docConfigFor(removed, PROJ), { ...DEFAULTS, invalid: false });
   const readded = [...removed, { dir: PROJ, name: 'app' }];
-  assert.deepEqual(docFoldersFor(readded, PROJ).folders, ['plans', 'reviews']);
+  assert.deepEqual(docConfigFor(readded, PROJ), { ...DEFAULTS, invalid: false });
 });
 
 test('cleanup: the same holds for a workspace-shaped record', () => {
   const ws = { dir: PROJ, name: 'scratch', created: 1 };
-  const saved = withDocFolders([ws], PROJ, ['.']).records;
-  assert.deepEqual(docFoldersFor(saved, PROJ).folders, ['.']);
-  assert.deepEqual(docFoldersFor(saved.filter((w) => w.dir !== PROJ), PROJ).folders, ['plans', 'reviews']);
+  const saved = withDocConfig([ws], PROJ, { folders: ['.'], exts: ['.md'] }).records;
+  assert.deepEqual(docConfigFor(saved, PROJ).folders, ['.']);
+  assert.deepEqual(docConfigFor(saved.filter((w) => w.dir !== PROJ), PROJ), { ...DEFAULTS, invalid: false });
 });
 
 // --- listDocs ---------------------------------------------------------------
@@ -211,6 +241,18 @@ test('listDocs: ignores other extensions and folders', async () => {
   assert.deepEqual(list.map((d) => d.rel).sort(), ['plans/a.md', 'reviews/r.html']);
 });
 
+test('listDocs: lists only the configured file types', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/a.md', 'x', 2000);
+  write(cwd, 'plans/notes.TXT', 'x', 1000);
+  write(cwd, 'plans/r.html', 'x', 1000);
+  assert.deepEqual(
+    (await listDocs(cwd, cfg(['plans'], ['.md', '.txt']))).map((d) => d.rel).sort(),
+    ['plans/a.md', 'plans/notes.TXT'],
+  );
+  assert.deepEqual((await listDocs(cwd, cfg(['plans'], ['.txt']))).map((d) => d.rel), ['plans/notes.TXT']);
+});
+
 test('listDocs: works when only one of the folders exists', async () => {
   const cwd = tmp();
   write(cwd, 'reviews/only.md', '# only', 1000);
@@ -242,7 +284,7 @@ test('listDocs: "." lists only root files, its archive/ included', async () => {
   write(cwd, 'archive/old.md', 'x', 1000);
   write(cwd, 'plans/a.md', 'x', 1000);
   write(cwd, 'node_modules/pkg/README.md', 'x', 1000);
-  const list = await listDocs(cwd, ['.']);
+  const list = await listDocs(cwd, cfg(['.']));
   assert.deepEqual(
     list.map(({ rel, folder, archived }) => ({ rel, folder, archived })),
     [
@@ -258,7 +300,7 @@ test('listDocs: configured folders, nested ones and missing ones', async () => {
   write(cwd, 'docs/guide.md', 'x', 2000);
   write(cwd, 'docs/api/ref.md', 'x', 1000);
   write(cwd, 'plans/a.md', 'x', 1000);
-  const list = await listDocs(cwd, ['docs', 'docs/api', 'missing']);
+  const list = await listDocs(cwd, cfg(['docs', 'docs/api', 'missing']));
   assert.deepEqual(list.map((d) => [d.rel, d.folder]), [
     ['docs/guide.md', 'docs'],
     ['docs/api/ref.md', 'docs/api'],
@@ -293,12 +335,29 @@ test('readDoc: passes html through unchanged', async () => {
   assert.equal(res.html, html);
 });
 
+test('readDoc: shows plain text escaped in a wrapping <pre> when .txt is configured', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/n.txt', 'a <b> & "c"\n# not a heading');
+  const res = await readDoc(cwd, cfg(['plans'], ['.txt']), 'plans/n.txt');
+  assert.deepEqual(res, {
+    ok: true,
+    html: '<pre class="plain">a &lt;b&gt; &amp; &quot;c&quot;\n# not a heading</pre>',
+  });
+  await assertRejected(cwd, 'plans/n.txt');
+});
+
+test('readDoc: a type that is not configured is rejected', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/a.md', '# a');
+  await assertRejected(cwd, 'plans/a.md', cfg(['plans'], ['.txt']));
+});
+
 // --- readDoc: rejections ----------------------------------------------------
 
-async function assertRejected(cwd, rel, folders) {
+async function assertRejected(cwd, rel, config) {
   let res;
   await assert.doesNotReject(async () => {
-    res = await readDoc(cwd, folders, rel);
+    res = await readDoc(cwd, config, rel);
   });
   assert.equal(res.ok, false, `expected ${JSON.stringify(rel)} to be rejected`);
   assert.equal(typeof res.error, 'string');
@@ -381,7 +440,7 @@ test('readDoc: accepts a file of exactly 2 MB', async () => {
 test('readDoc: a root doc opens when "." is configured, not by default', async () => {
   const cwd = tmp();
   write(cwd, 'README.md', '# Readme');
-  const res = await readDoc(cwd, ['.'], 'README.md');
+  const res = await readDoc(cwd, cfg(['.']), 'README.md');
   assert.equal(res.ok, true);
   assert.match(res.html, /<h1[^>]*>Readme<\/h1>/);
   await assertRejected(cwd, 'README.md');
@@ -393,7 +452,7 @@ test('readDoc: archived docs open; other subfolders do not', async () => {
   write(cwd, 'plans/sub/x.md', '# x');
   write(cwd, 'archive/root-old.md', '# r');
   assert.equal((await readDoc(cwd, undefined, 'plans/archive/old.md')).ok, true);
-  assert.equal((await readDoc(cwd, ['.'], 'archive/root-old.md')).ok, true);
+  assert.equal((await readDoc(cwd, cfg(['.']), 'archive/root-old.md')).ok, true);
   await assertRejected(cwd, 'plans/sub/x.md');
   await assertRejected(cwd, 'plans/archive/../sub/x.md');
 });
@@ -402,16 +461,16 @@ test('readDoc: a folder that is not configured is rejected', async () => {
   const cwd = tmp();
   write(cwd, 'docs/guide.md', '# g');
   write(cwd, 'plans/a.md', '# a');
-  assert.equal((await readDoc(cwd, ['docs'], 'docs/guide.md')).ok, true);
+  assert.equal((await readDoc(cwd, cfg(['docs']), 'docs/guide.md')).ok, true);
   await assertRejected(cwd, 'docs/guide.md');
-  await assertRejected(cwd, 'plans/a.md', ['docs']);
+  await assertRejected(cwd, 'plans/a.md', cfg(['docs']));
 });
 
 test('readDoc: nested configured folders resolve to the right folder', async () => {
   const cwd = tmp();
   write(cwd, 'docs/api/ref.md', '# ref');
-  assert.equal((await readDoc(cwd, ['docs/api'], 'docs/api/ref.md')).ok, true);
-  await assertRejected(cwd, 'docs/api/ref.md', ['docs']);
+  assert.equal((await readDoc(cwd, cfg(['docs/api']), 'docs/api/ref.md')).ok, true);
+  await assertRejected(cwd, 'docs/api/ref.md', cfg(['docs']));
 });
 
 test('readDoc: a vanished file says so instead of throwing', async () => {
@@ -432,7 +491,7 @@ test('readDoc: a configured folder that links outside the project is rejected', 
     t.skip(`links not permitted: ${e.code || e.message}`);
     return;
   }
-  await assertRejected(cwd, 'docs/secret.md', ['docs']);
+  await assertRejected(cwd, 'docs/secret.md', cfg(['docs']));
 });
 
 test('resolveDoc: returns the file, folder, archived flag and name', async () => {
@@ -518,8 +577,8 @@ test('archiveDoc / restoreDoc: a missing file or guarded path is an error, never
 test('archiveDoc / restoreDoc: work for root docs when "." is configured', async () => {
   const cwd = tmp();
   write(cwd, 'README.md', 'R');
-  assert.deepEqual(await archiveDoc(cwd, ['.'], 'README.md'), { ok: true, rel: 'archive/README.md' });
-  assert.deepEqual(await restoreDoc(cwd, ['.'], 'archive/README.md'), { ok: true, rel: 'README.md' });
+  assert.deepEqual(await archiveDoc(cwd, cfg(['.']), 'README.md'), { ok: true, rel: 'archive/README.md' });
+  assert.deepEqual(await restoreDoc(cwd, cfg(['.']), 'archive/README.md'), { ok: true, rel: 'README.md' });
   assert.equal(read(cwd, 'README.md'), 'R');
 });
 

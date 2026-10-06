@@ -36,7 +36,7 @@ Gotchas found while running it:
   port fails with "Cannot start http server for devtools". Use another port.
 - **Add folder opens a native folder dialog** that CDP cannot drive. Test the
   overlay's Save path through the UI and set folders through
-  `window.api.setDocFolders({ dir, folders })` (the same IPC Save calls).
+  `window.api.setDocConfig({ dir, folders, exts })` (the same IPC Save calls).
 - **Re-adding a project** also uses a native dialog: quit, write
   `[{ "dir": ..., "name": ... }]` to `userdata\projects.json` (what
   `addProjectDir` writes), relaunch.

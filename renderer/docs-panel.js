@@ -30,6 +30,7 @@ let cwd = null; // folder the panel currently shows
 let dir = null; // project/workspace root of that agent: it owns the folder config
 let list = []; // DocEntry[] for cwd
 let folders = []; // configured folders for cwd's project, in display order (from docs:list)
+let exts = []; // configured file types for cwd's project (from docs:list)
 let sig = ''; // listSig of the last docs:list result
 let currentRel = null; // doc shown in the frame
 let currentStamp = ''; // `${mtimeMs}|${size}` of the shown doc when it was read
@@ -133,15 +134,17 @@ function pickDefault() {
   return newest ? newest.rel : null;
 }
 
-const EMPTY_LIST = { folders: [], docs: [] };
+const EMPTY_LIST = { folders: [], exts: [], docs: [] };
 
-const isDocList = (res) => !!res && Array.isArray(res.folders) && Array.isArray(res.docs);
+const isDocList = (res) =>
+  !!res && Array.isArray(res.folders) && Array.isArray(res.exts) && Array.isArray(res.docs);
 
-// Changes when a doc changes or when the folder config itself changes.
-const listSig = (res) => `${res.folders.join('|')}\n${docsSignature(res.docs)}`;
+// Changes when a doc changes or when the folder / file type config itself changes.
+const listSig = (res) => `${res.folders.join('|')}\n${res.exts.join('|')}\n${docsSignature(res.docs)}`;
 
 function applyList(res) {
   folders = res.folders;
+  exts = res.exts;
   list = res.docs;
   sig = listSig(res);
   renderPicker();
@@ -401,7 +404,7 @@ async function confirmTrash() {
 function editFolders() {
   const a = activeAgent();
   if (!a) return;
-  openFoldersDialog(a, folders, () => {
+  openFoldersDialog(a, { folders, exts }, () => {
     if (open && a.cwd === cwd) loadFolder();
   });
 }
@@ -417,7 +420,7 @@ els.docsActions.addEventListener('click', (e) => {
       : { label: 'Archive', icon: ICONS.archive, disabled: noMove, action: () => runAction('archive') },
     { label: 'Open in VS Code', icon: ICONS.pencil, disabled: !d, action: () => runAction('open') },
     { label: 'Show in Explorer', icon: ICONS.folder, disabled: !d, action: () => runAction('reveal') },
-    { label: 'Folders…', icon: ICONS.gear, action: editFolders },
+    { label: 'Folders and file types…', icon: ICONS.gear, action: editFolders },
     { label: 'Move to Recycle Bin', icon: ICONS.trash, danger: true, disabled: noMove, action: confirmTrash },
   ]);
 });

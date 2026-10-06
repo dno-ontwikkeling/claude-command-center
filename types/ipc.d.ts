@@ -36,6 +36,9 @@ export type DiffResult =
       error: string;
     };
 
+/** A file type the Docs panel can list and render. */
+export type DocExt = '.md' | '.html' | '.txt';
+
 /** One doc in a configured folder or its archive/ (`docs:list`). */
 export interface DocEntry {
   /** relative to the agent cwd, '/' separated: "plans/x.md", "plans/archive/x.md", "README.md" */
@@ -48,9 +51,10 @@ export interface DocEntry {
   size: number;
 }
 
-/** `docs:list` — the project's configured folders (display order) and their docs. */
+/** `docs:list` — the project's configured folders (display order), file types and their docs. */
 export interface DocList {
   folders: string[];
+  exts: DocExt[];
   docs: DocEntry[];
 }
 
@@ -61,8 +65,8 @@ export type DocAction = 'archive' | 'restore' | 'trash' | 'open' | 'reveal';
 /** `docs:action` — `rel` is the doc's new location after archive/restore. */
 export type DocActionResult = { ok: true; rel?: string } | { ok: false; error: string };
 
-/** `docs:folders-set` — the normalized list that was saved. */
-export type DocFoldersResult = { ok: true; folders: string[] } | { ok: false; error: string };
+/** `docs:config-set` — the normalized config that was saved. */
+export type DocConfigResult = { ok: true; folders: string[]; exts: DocExt[] } | { ok: false; error: string };
 
 export interface DiffStat {
   added: number;
@@ -76,6 +80,8 @@ export interface Project {
   type?: 'node' | 'dotnet' | 'go' | 'rust' | 'python' | null;
   /** Docs panel folders for this project or workspace; absent = plans + reviews. */
   docFolders?: string[];
+  /** Docs panel file types for this project or workspace; absent = .md + .html. */
+  docExts?: DocExt[];
 }
 
 export interface Worktree {
@@ -222,7 +228,7 @@ export interface Api {
   listDocs(cwd: string, dir: string): Promise<DocList>;
   readDoc(cwd: string, dir: string, rel: string): Promise<DocResult>;
   docAction(opts: { cwd: string; dir: string; rel: string; action: DocAction }): Promise<DocActionResult>;
-  setDocFolders(opts: { dir: string; folders: string[] }): Promise<DocFoldersResult>;
+  setDocConfig(opts: { dir: string; folders: string[]; exts: DocExt[] }): Promise<DocConfigResult>;
   /** Native folder picker starting at `cwd`; `rel` is relative to it ('.' for cwd itself). */
   pickDocFolder(cwd: string): Promise<{ rel?: string; canceled?: boolean; error?: string }>;
   gitBranch(cwd: string): Promise<string | null>;

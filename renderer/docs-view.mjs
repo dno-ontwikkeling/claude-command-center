@@ -73,6 +73,7 @@ code, pre { font-family: 'Cascadia Mono', Consolas, monospace; font-size: 0.9em;
 code { background: var(--elevated); padding: 0.15em 0.35em; border-radius: 4px; }
 pre { background: var(--elevated); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; overflow-x: auto; }
 pre code { background: none; padding: 0; }
+pre.plain { white-space: pre-wrap; background: none; border: 0; padding: 0; font-size: 0.95em; }
 table { border-collapse: collapse; display: block; overflow-x: auto; }
 th, td { border: 1px solid var(--border); padding: 6px 12px; text-align: left; }
 th { background: var(--elevated); font-weight: 600; }

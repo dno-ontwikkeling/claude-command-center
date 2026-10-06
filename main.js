@@ -931,19 +931,22 @@ function registerIpc() {
   ipcMain.handle('git:diffstat', (_e, cwd) => gitDiffStat(cwd));
   ipcMain.handle('git:diff', (_e, { cwd, mode }) => gitDiff(cwd, mode));
   // Docs panel. Every handler gates on isKnownDir(cwd); `dir` (the agent's
-  // project root) only selects which record's docFolders apply and is never
+  // project root) only selects which record's docs config applies and is never
   // touched on disk. All paths go through docs.resolveDoc before any fs access.
   ipcMain.handle('docs:list', async (_e, { cwd, dir } = {}) => {
-    if (!isKnownDir(cwd)) return { folders: [], docs: [] };
-    const folders = docFoldersForDir(dir);
-    return { folders, docs: await docs.listDocs(cwd, folders) };
+    if (!isKnownDir(cwd)) return { folders: [], exts: [], docs: [] };
+    const cfg = docConfigForDir(dir);
+    return { folders: cfg.folders, exts: cfg.exts, docs: await docs.listDocs(cwd, cfg) };
   });
   ipcMain.handle('docs:read', (_e, { cwd, dir, rel } = {}) =>
-    isKnownDir(cwd) ? docs.readDoc(cwd, docFoldersForDir(dir), rel) : { ok: false, error: 'Unknown folder' }
+    isKnownDir(cwd) ? docs.readDoc(cwd, docConfigForDir(dir), rel) : { ok: false, error: 'Unknown folder' }
   );
-  ipcMain.handle('docs:folders-set', (_e, { dir, folders } = {}) => {
-    const n = docs.normalizeFolders(folders);
-    if (!n.ok) return n;
+  ipcMain.handle('docs:config-set', (_e, { dir, folders, exts } = {}) => {
+    const nf = docs.normalizeFolders(folders);
+    if (!nf.ok) return nf;
+    const ne = docs.normalizeExts(exts);
+    if (!ne.ok) return ne;
+    const cfg = { folders: nf.folders, exts: ne.exts };
     // The config lives on the project or workspace record, so forgetting the
     // project (projects:remove / workspaces:remove) drops it with the record.
     const stores = [
@@ -952,10 +955,10 @@ function registerIpc() {
     ];
     try {
       for (const [load, save] of stores) {
-        const r = docs.withDocFolders(load(), dir, n.folders);
+        const r = docs.withDocConfig(load(), dir, cfg);
         if (r.ok) {
           save(r.records);
-          return { ok: true, folders: n.folders };
+          return { ok: true, ...cfg };
         }
       }
     } catch (err) {
@@ -977,7 +980,7 @@ function registerIpc() {
   });
   ipcMain.handle('docs:action', async (_e, { cwd, dir, rel, action } = {}) => {
     if (!isKnownDir(cwd)) return { ok: false, error: 'Unknown folder' };
-    const res = await docs.docAction(cwd, docFoldersForDir(dir), rel, action, DOC_OS_OPS);
+    const res = await docs.docAction(cwd, docConfigForDir(dir), rel, action, DOC_OS_OPS);
     const line = `${action} ${typeof rel === 'string' ? rel : '?'}`; // rel only: no absolute paths in logs
     if (res.ok) log.info('docs', line);
     // fs errors quote absolute paths ("rename 'C:\...'"): keep them out of the log
@@ -988,15 +991,17 @@ function registerIpc() {
   registerRemoteIpc();
 }
 
-// Doc folders for the project or workspace record at `dir`, defaults when it
-// has none. A corrupt stored list is ignored (and logged), never trusted.
-function docFoldersForDir(dir) {
+// Docs config ({ folders, exts }) for the project or workspace record at
+// `dir`, defaults when it has none. A corrupt stored value is ignored (and
+// logged), never trusted.
+function docConfigForDir(dir) {
   try {
-    const { folders, invalid } = docs.docFoldersFor([...loadProjects(), ...loadWorkspaces()], dir);
-    if (invalid) log.warn('docs', 'ignoring invalid docFolders, using the defaults');
-    return folders;
+    const { folders, exts, invalid } = docs.docConfigFor([...loadProjects(), ...loadWorkspaces()], dir);
+    if (invalid) log.warn('docs', 'ignoring invalid docFolders/docExts, using the defaults');
+    return { folders, exts };
   } catch {
-    return [...docs.DEFAULT_FOLDERS]; // corrupt store: already surfaced by warnCorruptOnce
+    // corrupt store: already surfaced by warnCorruptOnce
+    return { folders: [...docs.DEFAULT_FOLDERS], exts: [...docs.DEFAULT_EXTS] };
   }
 }
 

@@ -402,11 +402,17 @@
     <div id="docs-folders" class="overlay" hidden>
       <div class="modal modal-wide" role="dialog" aria-labelledby="df-title">
         <header>
-          <span id="df-title">Docs folders</span>
+          <span id="df-title">Docs settings</span>
           <button id="df-close" class="icon-btn" title="Close"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
         </header>
         <p class="hint">Folders the Docs panel lists for this project and all its worktrees. Each folder's archive/ is listed too. Remove them all to go back to plans and reviews.</p>
         <ul id="df-list" class="pm-list"></ul>
+        <fieldset id="df-exts" class="df-exts">
+          <legend>File types</legend>
+          <label><input type="checkbox" value=".md" />.md</label>
+          <label><input type="checkbox" value=".html" />.html</label>
+          <label><input type="checkbox" value=".txt" />.txt</label>
+        </fieldset>
         <p id="df-error" class="df-error" role="alert" hidden></p>
         <div class="modal-actions">
           <button id="df-add" class="btn-ghost"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Add folder</span></button>
