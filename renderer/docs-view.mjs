@@ -2,21 +2,35 @@
 // list, change detection for the poll, and the sandboxed iframe document.
 // No DOM, no electron imports, so it can be unit-tested; docs-panel.js renders it.
 
-const GROUPS = [
-  { kind: 'plans', label: 'Plans' },
-  { kind: 'reviews', label: 'Reviews' },
-];
+/** Picker heading for a configured folder: '.' is the project root. */
+export function folderLabel(folder) {
+  return folder === '.' ? 'Root' : folder.charAt(0).toUpperCase() + folder.slice(1);
+}
 
 /**
- * @param {{ rel: string, kind: string, mtimeMs: number, size: number }[]} list
- * @returns {{ kind: string, label: string, docs: typeof list }[]} Plans then Reviews, newest first, empty groups omitted
+ * @param {{ rel: string, folder: string, archived: boolean, mtimeMs: number, size: number }[]} list
+ * @param {string[]} folders the project's configured folders, in display order
+ * @returns {{ folder: string, archived: boolean, label: string, docs: typeof list }[]}
+ *   one group per folder, its Archived group right after it, newest first, empty groups omitted
  */
-export function groupDocs(list) {
-  return GROUPS.map(({ kind, label }) => ({
-    kind,
-    label,
-    docs: list.filter((d) => d.kind === kind).sort((a, b) => b.mtimeMs - a.mtimeMs),
-  })).filter((g) => g.docs.length > 0);
+export function groupDocs(list, folders) {
+  const groups = [];
+  for (const folder of folders) {
+    for (const archived of [false, true]) {
+      const docs = list
+        .filter((d) => d.folder === folder && d.archived === archived)
+        .sort((a, b) => b.mtimeMs - a.mtimeMs);
+      if (docs.length) groups.push({ folder, archived, label: archived ? 'Archived' : folderLabel(folder), docs });
+    }
+  }
+  return groups;
+}
+
+/** The doc to open by default: the newest one that is not archived, or null. */
+export function newestDoc(list) {
+  let newest = null;
+  for (const d of list) if (!d.archived && (!newest || d.mtimeMs > newest.mtimeMs)) newest = d;
+  return newest;
 }
 
 /** Case-insensitive match on the file name only (not the folder). Blank query keeps everything. */
@@ -26,9 +40,9 @@ export function filterDocs(list, query) {
   return list.filter((d) => d.rel.slice(d.rel.lastIndexOf('/') + 1).toLowerCase().includes(q));
 }
 
-/** Changes whenever a file is added, removed, renamed, modified or resized. */
+/** Changes whenever a file is added, removed, renamed, archived, modified or resized. */
 export function docsSignature(list) {
-  return list.map((d) => `${d.rel}|${d.mtimeMs}|${d.size}`).join('\n');
+  return list.map((d) => `${d.rel}|${d.archived}|${d.mtimeMs}|${d.size}`).join('\n');
 }
 
 const CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";

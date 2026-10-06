@@ -36,14 +36,33 @@ export type DiffResult =
       error: string;
     };
 
+/** One doc in a configured folder or its archive/ (`docs:list`). */
 export interface DocEntry {
+  /** relative to the agent cwd, '/' separated: "plans/x.md", "plans/archive/x.md", "README.md" */
   rel: string;
-  kind: 'plans' | 'reviews';
+  /** the configured folder it came from: "plans", "docs/api", "." (project root) */
+  folder: string;
+  /** true when it sits in <folder>/archive/ */
+  archived: boolean;
   mtimeMs: number;
   size: number;
 }
 
+/** `docs:list` — the project's configured folders (display order) and their docs. */
+export interface DocList {
+  folders: string[];
+  docs: DocEntry[];
+}
+
 export type DocResult = { ok: true; html: string } | { ok: false; error: string };
+
+export type DocAction = 'archive' | 'restore' | 'trash' | 'open' | 'reveal';
+
+/** `docs:action` — `rel` is the doc's new location after archive/restore. */
+export type DocActionResult = { ok: true; rel?: string } | { ok: false; error: string };
+
+/** `docs:folders-set` — the normalized list that was saved. */
+export type DocFoldersResult = { ok: true; folders: string[] } | { ok: false; error: string };
 
 export interface DiffStat {
   added: number;
@@ -55,6 +74,8 @@ export interface Project {
   name: string;
   isGit?: boolean;
   type?: 'node' | 'dotnet' | 'go' | 'rust' | 'python' | null;
+  /** Docs panel folders for this project or workspace; absent = plans + reviews. */
+  docFolders?: string[];
 }
 
 export interface Worktree {
@@ -197,8 +218,13 @@ export interface Api {
   gitPull(cwd: string): Promise<OpResult>;
   gitDiffStat(cwd: string): Promise<DiffStat>;
   gitDiff(cwd: string, mode: 'wip' | 'branch'): Promise<DiffResult>;
-  listDocs(cwd: string): Promise<DocEntry[]>;
-  readDoc(cwd: string, rel: string): Promise<DocResult>;
+  /** `dir` = the agent's project/workspace root, which owns the folder config. */
+  listDocs(cwd: string, dir: string): Promise<DocList>;
+  readDoc(cwd: string, dir: string, rel: string): Promise<DocResult>;
+  docAction(opts: { cwd: string; dir: string; rel: string; action: DocAction }): Promise<DocActionResult>;
+  setDocFolders(opts: { dir: string; folders: string[] }): Promise<DocFoldersResult>;
+  /** Native folder picker starting at `cwd`; `rel` is relative to it ('.' for cwd itself). */
+  pickDocFolder(cwd: string): Promise<{ rel?: string; canceled?: boolean; error?: string }>;
   gitBranch(cwd: string): Promise<string | null>;
   gitDeleteBranch(dir: string, branch: string, opts?: { noPrompt?: boolean }): Promise<DeleteBranchResult>;
   openExternal(url: string): Promise<void>;
