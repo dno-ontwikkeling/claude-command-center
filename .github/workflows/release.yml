@@ -68,8 +68,11 @@ jobs:
         env:
           V: ${{ inputs.version }}
         run: |
-          git tag "v$V"
-          git push origin "v$V"
+          # Reuse an existing tag (finishing a release whose run died midway).
+          if ! git rev-parse -q --verify "refs/tags/v$V" >/dev/null; then
+            git tag "v$V"
+            git push origin "v$V"
+          fi
           echo "new_tag=v$V" >> "$GITHUB_OUTPUT"
           echo "new_version=$V" >> "$GITHUB_OUTPUT"
 
@@ -81,11 +84,23 @@ jobs:
           AUTO_LOG: ${{ steps.auto.outputs.changelog }}
           MAN_TAG: ${{ steps.manual.outputs.new_tag }}
           MAN_VER: ${{ steps.manual.outputs.new_version }}
+          ATTEMPT: ${{ github.run_attempt }}
         run: |
+          # "Re-run all jobs" re-runs this job too; the auto-bump then sees the
+          # tag it created on attempt 1 and reports nothing, which would skip
+          # every build. Fall back to the tag already on this commit.
+          RERUN_TAG=""
+          if [ -z "$MAN_TAG" ] && [ -z "$AUTO_TAG" ] && [ "$ATTEMPT" -gt 1 ]; then
+            RERUN_TAG=$(git tag --points-at HEAD --list 'v*' --sort=-v:refname | head -1)
+          fi
           if [ -n "$MAN_TAG" ]; then
             echo "new_tag=$MAN_TAG" >> "$GITHUB_OUTPUT"
             echo "new_version=$MAN_VER" >> "$GITHUB_OUTPUT"
             echo "changelog=Manual release $MAN_TAG" >> "$GITHUB_OUTPUT"
+          elif [ -n "$RERUN_TAG" ]; then
+            echo "new_tag=$RERUN_TAG" >> "$GITHUB_OUTPUT"
+            echo "new_version=${RERUN_TAG#v}" >> "$GITHUB_OUTPUT"
+            echo "changelog=Release $RERUN_TAG" >> "$GITHUB_OUTPUT"
           else
             echo "new_tag=$AUTO_TAG" >> "$GITHUB_OUTPUT"
             echo "new_version=$AUTO_VER" >> "$GITHUB_OUTPUT"
@@ -112,6 +127,11 @@ jobs:
           TAG: ${{ needs.tag.outputs.new_tag }}
           CHANGELOG: ${{ needs.tag.outputs.changelog }}
         run: |
+          # A re-run or manual finish keeps the existing draft and its notes.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; reusing it."
+            exit 0
+          fi
           printf '%s\n' "$CHANGELOG" > "$RUNNER_TEMP/notes.md"
           gh release create "$TAG" --verify-tag --draft --prerelease --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
 
