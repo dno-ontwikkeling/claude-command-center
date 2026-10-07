@@ -34,7 +34,14 @@ class PinnedSocketTest {
     private fun serve(held: HeldCertificate, vararg chain: java.security.cert.X509Certificate) {
         val certs = HandshakeCertificates.Builder().heldCertificate(held, *chain).build()
         server.useHttps(certs.sslSocketFactory())
-        server.enqueue(MockResponse.Builder().webSocketUpgrade(object : WebSocketListener() {}).build())
+        // Answer the client's close frame. Otherwise the server-side socket stays
+        // open and server.close() gives up waiting for it (AssertionError).
+        val echoClose = object : WebSocketListener() {
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                webSocket.close(code, null)
+            }
+        }
+        server.enqueue(MockResponse.Builder().webSocketUpgrade(echoClose).build())
     }
 
     private fun pinOf(held: HeldCertificate): ByteArray =
