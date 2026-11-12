@@ -23,8 +23,12 @@ name: Release
 on:
   push:
     branches: [main]
+    # Order matters: a later "!" pattern re-includes paths an earlier one
+    # ignored. skills/** ships inside the app (package.json build.files), so
+    # a skill-only change (SKILL.md) must still trigger a release.
     paths-ignore:
       - "**/*.md"
+      - "!skills/**"
       - "docs/**"
       - "stories/**"
       - "reviews/**"
