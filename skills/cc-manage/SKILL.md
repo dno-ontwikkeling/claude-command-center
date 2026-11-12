@@ -1,7 +1,7 @@
 ---
 name: cc-manage
-description: Turn the plan in this chat into Command Center worktrees (one per repo slice, under the Worktrees folder) or workspaces, each with a new running session started with a skill you pick. Shows one table and creates nothing until you approve. Works only inside a session launched by Command Center.
-argument-hint: "[optional notes, e.g. which skill to start with]"
+description: Turn the plan in this chat into Command Center worktrees (one per repo slice, under the Worktrees folder) or workspaces, each with a new running session started with a workflow command you pick (brainstorm, plan or auto). Shows one table and creates nothing until you approve. Works only inside a session launched by Command Center.
+argument-hint: "[optional notes, e.g. which command to start with]"
 ---
 
 # cc-manage
@@ -9,7 +9,7 @@ argument-hint: "[optional notes, e.g. which skill to start with]"
 Turn the plan discussed in this chat into ready Command Center (CC) sessions:
 one git worktree per repo slice under `<worktreeRoot>/<repo>/<slug>`, or one
 workspace folder under `<workspaceRoot>/<slug>` for work tied to no repo, each
-with a new CC session whose first prompt is a starting skill plus a brief.
+with a new CC session whose first prompt is a starting command plus a brief.
 
 You talk to CC only through `node "$CC_CLI" <op>`. You run git yourself.
 Nothing is created before the user approves the summary table.
@@ -90,18 +90,35 @@ For each item:
    An existing branch or folder → **conflict: branch exists** /
    **conflict: folder exists**. Do not pick another name yourself; the user
    can rename the row in step 4.
-5. **Starting skill.** Pick the best fit from the skills installed in this
-   session (the skill list you were given, plus `ls ~/.claude/skills`), for
-   example a planning skill for a slice that still needs design, or an
-   implementation skill for a slice with a ready plan. Use the user's choice
-   if they named one. Write it as `/<skill-name>` exactly as it is invoked.
+5. **Starting command.** The user picks it in step 4. Write `ask` for now,
+   and note which of the three workflow commands fits the slice best, so
+   step 4 can mark it `(Recommended)`:
+   - `/workflow:brainstorm`: requirements are vague or the design is still
+     open;
+   - `/workflow:plan`: a clear slice that needs a step-by-step plan;
+   - `/workflow:auto`: hands-off: plan, execute, review and verify; never
+     commits.
+
+   If the user already named the command for a row (in the arguments or in
+   this chat), use it and do not ask for that row.
+
+   The workflow plugin counts as installed when the skill list you were given
+   has `workflow:brainstorm` and `workflow:plan`. `/workflow:auto` is not in
+   that list (only the user can invoke it); it ships in the same plugin.
+   If the workflow plugin is not installed, fall back:
+   pick the best fit yourself from the skills installed in this session (the
+   skill list, plus `ls ~/.claude/skills`), for example a planning skill for a
+   slice that still needs design, or an implementation skill for a slice with
+   a ready plan. Write it as `/<skill-name>` exactly as it is invoked. Step 4
+   then asks no starting-command question.
 6. **Brief.** Write a self-contained brief for the new session, which will not
    see this chat: the goal of this slice, what is in and out of scope, the
    relevant decisions and constraints from the plan, acceptance criteria,
    and which other slices exist (repo and branch) if they depend on each
    other. Plain text, line breaks allowed.
-   The first prompt is `/<skill> <brief>` and must stay under 8,000
-   characters in total; keep the brief well under that.
+   The first prompt is `/<command> <brief>` (`/<command>` = the starting
+   command) and must stay under 8,000 characters in total; keep the brief
+   well under that.
 
 ## 3. Show the table
 
@@ -110,23 +127,66 @@ Show one table with every row, created or not:
 | # | Repo | Branch | Folder | Starting skill | Brief (one line) | Status |
 |---|------|--------|--------|----------------|------------------|--------|
 
-Status is `create`, `skipped: <reason>` or `conflict: <reason>`. Under the
-table, say plainly that nothing has been created yet, and how many
-worktrees, workspaces and sessions approval will create.
+Status is `create`, `skipped: <reason>` or `conflict: <reason>`. Starting
+skill is the chosen command, or `ask` until the user picks it in step 4.
+Under the table, say plainly that nothing has been created yet, and how many
+worktrees, workspaces and sessions approval will create. If the workflow
+plugin is not installed, say so too: you picked the starting skills
+yourself, and the user can change them through `Other` in step 4.
 
 If no row has status `create`, stop here.
 
-## 4. Ask for approval
+## 4. Pick the sessions and their starting commands
 
-Use AskUserQuestion with one question (header `Create`):
-"Create the worktrees and sessions in the table?" with options
-`Create all` (recommended), `Change rows` and `Cancel`.
+### Which sessions to create
 
-- `Cancel` → stop. Say that nothing was created.
-- `Change rows` or a free-text answer → apply the changes (another slug,
-  skill or brief, dropping rows), re-check conflicts, show the table again and
-  ask again.
-- `Create all` → step 5.
+Use AskUserQuestion with a `multiSelect` question, header `Create`: "Which
+sessions should I create? Unticked rows are skipped. Use Other to change
+rows or to cancel."
+
+- One option per `create` row, all ticked by default if the tool allows it:
+  label `#<n> <repo or workspace> <slug>` (e.g. `#2 shop order-ui`),
+  description = the brief in one line.
+- A question holds at most 4 options. With more than 4 rows, split them over
+  several `Create` questions in the same call (headers `Create 1/2`,
+  `Create 2/2`, …; 4 rows each, at most 4 questions). With a single row, add
+  a second option `Cancel`.
+
+Answers:
+
+- Nothing ticked, `Cancel`, or an `Other` answer that cancels → stop. Say
+  that nothing was created.
+- `Other` with changes → apply them (another slug, starting command or
+  brief, dropping rows), re-check conflicts, show the table again and ask
+  again.
+- Ticked rows are approved; unticked rows become `skipped: not selected`.
+
+### Starting command per session
+
+For every approved row whose command is still `ask`, ask one question per
+session, at most 4 per AskUserQuestion call (more sessions → the next call,
+in row order). Skip this without the workflow plugin (step 2).
+
+- Header `Start #<n>` (`<n>` = the row number).
+- The question gives a little context: "#<n> <repo> <branch or folder>:
+  <goal in one sentence>. Which command starts this session?"
+- Options (single choice), the recommended one first with ` (Recommended)`
+  after its label:
+  - `/workflow:brainstorm`: "Requirements vague or design still open: turn
+    it into a spec first."
+  - `/workflow:plan`: "Clear slice: write a step-by-step plan first."
+  - `/workflow:auto`: "Hands-off: plan, execute, review and verify; never
+    commits."
+- Give each option a `preview` with the first prompt that choice sends:
+  `/<command> <brief>`, cut after about 600 characters with `…`, so the user
+  sees what the session gets.
+- The chosen command is the label without ` (Recommended)`. A free-text
+  `Other` answer names any other skill: use it as `/<name>` (add the leading
+  `/` if it is missing).
+
+Then fill in the chosen commands, check that every first prompt
+`/<command> <brief>` stays under 8,000 characters (shorten the brief if
+not), and go to step 5.
 
 ## 5. Create, row by row
 

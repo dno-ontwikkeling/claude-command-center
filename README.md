@@ -45,8 +45,11 @@ with a status dot that reflects what the agent is doing right now.
     per repo slice under `<Worktrees folder>/<repo>/<feature>` on a new
     `feat/<feature>` branch forked from `origin/<default>` (or a folder under
     the Workspaces folder for work tied to no repo), each with a new session
-    whose first prompt is a starting skill you pick plus a brief. It shows one
-    table and creates nothing until you approve it.
+    whose first prompt is a starting command plus a brief. It shows one table,
+    lets you tick which sessions to create, then asks per session which
+    workflow command starts it (`/workflow:brainstorm`, `/workflow:plan`,
+    `/workflow:auto`, or any other skill you name; without the workflow
+    plugin it picks the skill itself). Nothing is created before you approve.
   - **`/cc-clean-worktrees`** lists every folder under the Worktrees folder as
     merged, idle (no commits for 14 days, or the number you pass), orphaned or
     keep, flags dirty and unpushed ones, and after you confirm removes their
