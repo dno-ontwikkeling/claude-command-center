@@ -609,6 +609,8 @@ function fakeOps(overrides = {}) {
       calls.push(['open', f]);
       return { ok: true };
     },
+    openInBrowser: async (f) => calls.push(['browser', f]),
+    tempDir: tmp(),
     ...overrides,
   };
   return { ops, calls };
@@ -672,9 +674,123 @@ test('docAction: unknown actions and guarded paths never reach the OS', async ()
   const { ops, calls } = fakeOps();
   assert.equal((await docAction(cwd, undefined, 'plans/a.md', 'delete', ops)).ok, false);
   assert.equal((await docAction(cwd, undefined, 'plans/a.md', undefined, ops)).ok, false);
-  for (const action of ['open', 'reveal', 'trash']) {
+  for (const action of ['open', 'reveal', 'trash', 'browser']) {
     assert.equal((await docAction(cwd, undefined, '../secret.md', action, ops)).ok, false);
     assert.equal((await docAction(cwd, undefined, 'secret.md', action, ops)).ok, false);
   }
+  assert.deepEqual(calls, []);
+});
+
+// --- docAction 'browser' (open the shown doc in the default browser) --------
+
+const { pathToFileURL } = require('node:url');
+const crypto = require('node:crypto');
+
+const real = (cwd, rel) => fs.realpathSync.native(path.join(cwd, ...rel.split('/')));
+const hash8 = (file) => crypto.createHash('sha1').update(file).digest('hex').slice(0, 8);
+const baseHref = (page) => (page.match(/<base href="([^"]*)"/) || [])[1];
+
+test('docAction browser: an .html doc opens as the file itself, no temp page', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/r.html', '<h1>R</h1>');
+  const { ops, calls } = fakeOps();
+  assert.deepEqual(await docAction(cwd, cfg(['plans']), 'plans/r.html', 'browser', ops), { ok: true });
+  assert.deepEqual(calls, [['browser', real(cwd, 'plans/r.html')]]);
+  assert.deepEqual(fs.readdirSync(ops.tempDir), []);
+});
+
+test('docAction browser: a .md doc is rendered to a standalone page in tempDir and that page opens', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/a.md', '# Title\n\n![pic](pic.png)');
+  const { ops, calls } = fakeOps();
+  assert.deepEqual(await docAction(cwd, undefined, 'plans/a.md', 'browser', ops), { ok: true });
+  const file = real(cwd, 'plans/a.md');
+  const pagePath = path.join(ops.tempDir, `a-${hash8(file)}.html`);
+  assert.deepEqual(calls, [['browser', pagePath]]);
+  const page = fs.readFileSync(pagePath, 'utf8');
+  assert.match(page, /<meta charset="utf-8">/);
+  assert.match(page, /<h1>Title<\/h1>/);
+  assert.match(page, /Content-Security-Policy" content="default-src 'none'/);
+  assert.equal(baseHref(page), pathToFileURL(path.dirname(file) + path.sep).href);
+  assert.match(baseHref(page), /\/plans\/$/);
+});
+
+test('docAction browser: an archived doc gets its archive folder as base', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/archive/a.md', '# A');
+  const { ops, calls } = fakeOps();
+  assert.deepEqual(await docAction(cwd, undefined, 'plans/archive/a.md', 'browser', ops), { ok: true });
+  assert.match(baseHref(fs.readFileSync(calls[0][1], 'utf8')), /\/plans\/archive\/$/);
+});
+
+test('docAction browser: .txt text is escaped into a plain pre', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/n.txt', '<b>&');
+  const { ops, calls } = fakeOps();
+  assert.deepEqual(await docAction(cwd, cfg(['plans'], ['.txt']), 'plans/n.txt', 'browser', ops), { ok: true });
+  assert.match(fs.readFileSync(calls[0][1], 'utf8'), /<pre class="plain">&lt;b&gt;&amp;<\/pre>/);
+});
+
+test('docAction browser: non-ASCII names and text survive, base href is percent-encoded', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/é b #1.md', 'héllo — ✓');
+  const { ops, calls } = fakeOps();
+  assert.deepEqual(await docAction(cwd, undefined, 'plans/é b #1.md', 'browser', ops), { ok: true });
+  const page = fs.readFileSync(calls[0][1], 'utf8');
+  assert.match(page, /héllo — ✓/);
+  assert.doesNotMatch(baseHref(page), /[ #é]/);
+});
+
+test('docAction browser: temp pages are per doc, reused on reopen, and the stem is capped', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/a.md', 'one');
+  write(cwd, 'reviews/a.md', 'two');
+  const long = 'x'.repeat(200);
+  write(cwd, `plans/${long}.md`, 'long');
+  const { ops, calls } = fakeOps();
+  for (const rel of ['plans/a.md', 'reviews/a.md', 'plans/a.md', `plans/${long}.md`]) {
+    assert.equal((await docAction(cwd, undefined, rel, 'browser', ops)).ok, true);
+  }
+  const pages = calls.map((c) => c[1]);
+  assert.notEqual(pages[0], pages[1]);
+  assert.equal(pages[0], pages[2]);
+  assert.ok(path.basename(pages[3]).length <= 60 + '-12345678.html'.length);
+  assert.equal(fs.readdirSync(ops.tempDir).length, 3);
+});
+
+test('docAction browser: a missing or oversized doc never reaches the OS', async () => {
+  const cwd = tmp();
+  const big = 'x'.repeat(2 * 1024 * 1024 + 1);
+  write(cwd, 'plans/big.md', big);
+  write(cwd, 'plans/big.html', big);
+  const { ops, calls } = fakeOps();
+  const missing = await docAction(cwd, undefined, 'plans/gone.md', 'browser', ops);
+  assert.equal(missing.ok, false);
+  assert.match(missing.error, /no longer exists/);
+  for (const rel of ['plans/big.md', 'plans/big.html']) {
+    const res = await docAction(cwd, undefined, rel, 'browser', ops);
+    assert.equal(res.ok, false);
+    assert.match(res.error, /larger than 2 MB/);
+  }
+  assert.deepEqual(calls, []);
+});
+
+test('docAction browser: an open failure or unwritable tempDir is reported', async () => {
+  const cwd = tmp();
+  write(cwd, 'plans/a.md', 'A');
+  const failing = fakeOps({
+    openInBrowser: async () => {
+      throw new Error('no handler');
+    },
+  });
+  const res = await docAction(cwd, undefined, 'plans/a.md', 'browser', failing.ops);
+  assert.equal(res.ok, false);
+  assert.match(res.error, /Could not open a\.md in the browser: no handler/);
+
+  const blocker = write(tmp(), 'file', 'not a dir');
+  const { ops, calls } = fakeOps({ tempDir: path.join(blocker, 'sub') });
+  const res2 = await docAction(cwd, undefined, 'plans/a.md', 'browser', ops);
+  assert.equal(res2.ok, false);
+  assert.match(res2.error, /in the browser: /);
   assert.deepEqual(calls, []);
 });

@@ -1133,12 +1133,21 @@ function docConfigForDir(dir) {
   }
 }
 
-// OS calls for docs.docAction: Recycle Bin, Explorer, and the injection-safe
-// VS Code launcher from editors.js.
+// OS calls for docs.docAction: Recycle Bin, Explorer, the injection-safe
+// VS Code launcher from editors.js, and the OS handler for .html files (the
+// browser, normally). openPath takes a native path (no URL parsing) and
+// resolves with an error string instead of rejecting.
 const DOC_OS_OPS = {
   trashItem: (file) => shell.trashItem(file),
   showItemInFolder: (file) => shell.showItemInFolder(file),
   openInEditor: (file) => openInVSCode(file),
+  openInBrowser: async (file) => {
+    const err = await shell.openPath(file);
+    if (err) throw new Error(err);
+  },
+  get tempDir() {
+    return path.join(app.getPath('temp'), 'command-center-docs');
+  },
 };
 
 // ---------------------------------------------------------------------------
