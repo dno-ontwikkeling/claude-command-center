@@ -123,7 +123,46 @@ function openSettings() {
   els.setAlwaysSound.checked = settings.alwaysSound;
   els.setSoundType.value = settings.soundType;
   els.setVolume.value = Math.round(settings.volume * 100);
+  refreshRoots();
   els.overlay.hidden = false;
+}
+
+// ---- default roots (stored in main, paths.json) ----------------------------
+// Each row: the current path (or "Not set"), Choose… and Clear, and the
+// rejection message inline. A rejected value leaves the stored root as it was.
+const rootRows = {
+  worktreeRoot: { val: els.setWtRoot, pick: els.setWtRootPick, clear: els.setWtRootClear, err: els.setWtRootErr },
+  workspaceRoot: { val: els.setWsRoot, pick: els.setWsRootPick, clear: els.setWsRootClear, err: els.setWsRootErr },
+};
+
+function renderRoots(cfg, failedKey) {
+  for (const [key, row] of Object.entries(rootRows)) {
+    const value = cfg[key] || '';
+    row.val.textContent = value || 'Not set';
+    row.val.classList.toggle('is-unset', !value);
+    row.val.title = value;
+    row.clear.disabled = !value;
+    const msg = key === failedKey ? cfg.error || '' : '';
+    row.err.textContent = msg;
+    row.err.hidden = !msg;
+  }
+}
+
+async function refreshRoots() {
+  renderRoots(await window.api.getPathsConfig());
+}
+
+async function setRoot(key, value) {
+  renderRoots(await window.api.setPathsConfig({ [key]: value }), key);
+}
+
+for (const [key, row] of Object.entries(rootRows)) {
+  row.pick.addEventListener('click', async () => {
+    const res = await window.api.pickPathRoot(/** @type {'worktreeRoot' | 'workspaceRoot'} */ (key));
+    if (res.canceled || !res.path) return;
+    await setRoot(key, res.path);
+  });
+  row.clear.addEventListener('click', () => setRoot(key, ''));
 }
 
 function closeSettings() {

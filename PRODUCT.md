@@ -29,6 +29,8 @@ Status comes from Claude Code lifecycle hooks, not from scraping terminal output
 - Overlays: settings (General, Terminal, Notifications, Remote), worktree picker, confirm, prompt, smart-prompts manager.
 - Agent menu: Rename, Sleep/Resume, Forget. List filter: All / Active / Sleeping.
 - Supporting features: diff viewer, Docs panel, sounds and notifications, remote pairing.
+- Default roots: Settings → General sets a Worktrees folder and a Workspaces folder; new worktrees go in `<Worktrees folder>/<repo>/<feature>`, new workspaces in `<Workspaces folder>/<name>`, and the folder pickers start there.
+- Two bundled Claude Code skills steer the app from inside a session it launched: `/cc-manage` turns a plan into worktrees or workspaces with a running session each, and `/cc-clean-worktrees` removes merged, idle or orphaned worktrees with their sessions. Both confirm before they change anything and talk to the app through the local `/command` endpoint (config, spawn, forget).
 
 ## Capabilities and Constraints
 

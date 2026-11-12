@@ -79,6 +79,11 @@ const api = {
   // A project or workspace was added from the phone: re-read the lists.
   onProjectsChanged: (cb) => ipcRenderer.on('projects:changed', () => cb()),
 
+  // default worktree/workspace roots (Settings → General)
+  getPathsConfig: () => ipcRenderer.invoke('paths:getConfig'),
+  setPathsConfig: (patch) => ipcRenderer.invoke('paths:setConfig', patch),
+  pickPathRoot: (key) => ipcRenderer.invoke('paths:pickRoot', key),
+
   // remote access (phone app)
   getRemoteConfig: () => ipcRenderer.invoke('remote:getConfig'),
   setRemoteConfig: (patch) => ipcRenderer.invoke('remote:setConfig', patch),

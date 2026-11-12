@@ -1,7 +1,8 @@
 'use strict';
 
 // Removes Command Center's status hooks from the shared Claude CLI config
-// (~/.claude/settings.json) — the inverse of main.js's ensureHooksInstalled.
+// (~/.claude/settings.json) — the inverse of main.js's ensureHooksInstalled —
+// and the CC-owned bundled skills from ~/.claude/skills (ensureSkillsInstalled).
 // Run by the NSIS uninstaller (see build/uninstaller.nsh) so uninstalling the
 // app doesn't leave an orphaned hook pointing at a deleted report.js, which
 // would make every future Claude Code session throw "Cannot find module".
@@ -82,5 +83,14 @@ try {
   main();
 } catch {
   // Uninstall must never fail because of hook cleanup.
+}
+
+// The bundled skills (/cc-manage, /cc-clean-worktrees) in ~/.claude/skills:
+// only copies Command Center installed and the user hasn't edited (see
+// skillsync.js). Separate try, so a hooks failure never keeps them behind.
+try {
+  require('./skillsync').removeOwned(path.join(os.homedir(), '.claude', 'skills'));
+} catch {
+  // Uninstall must never fail because of skill cleanup.
 }
 process.exit(0);

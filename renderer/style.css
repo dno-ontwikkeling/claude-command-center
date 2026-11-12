@@ -1476,6 +1476,42 @@ body.resizing #terminals {
   opacity: 0.8;
 }
 
+/* ---- settings: default folder rows (label + buttons, then the path) ---- */
+.set-path {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.set-path-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.set-path-actions .btn-ghost {
+  padding: 6px 10px;
+  font-size: var(--t-sm);
+}
+
+.set-path-val {
+  font-family: var(--mono);
+  font-size: var(--t-sm);
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.set-path-val.is-unset {
+  color: var(--muted);
+}
+
+.modal .set-path-err {
+  margin: 0;
+  font-size: var(--t-sm);
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
 /* ---- settings: remote access tab ---- */
 .modal .remote-status {
   margin: 0;
