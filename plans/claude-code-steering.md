@@ -1,0 +1,201 @@
+# Steer Command Center from Claude Code
+
+Base: 5601b434ac31a79eece476c193a8df1368a78eaa
+
+## Goal
+The user plans features in a Claude Code chat, then rebuilds that plan in Command Center (CC) by hand: one worktree per repo through a folder dialog with no default, one session per worktree, a pasted first prompt. Cleanup later is the same, one Forget at a time. This plan adds two bundled skills, `/cc-manage` and `/cc-clean-worktrees`, which run inside CC-launched sessions and steer CC through a small local `/command` endpoint (`config`, `spawn`, `forget`). It also adds default **Worktrees folder** and **Workspaces folder** settings, which CC's folder pickers start from. Value: one confirmation turns a plan into ready, running CC sessions, with every worktree under one root; merged or abandoned worktrees and their sessions go in one confirmed pass. Measure: none agreed (personal tool); the `/command` audit log can supply usage counts later.
+
+## Success criteria
+- [ ] Settings → General shows **Worktrees folder** and **Workspaces folder**, each with a folder picker; both values survive an app restart.
+- [ ] Settings rejects a root that is a drive root, the home folder, equal to or nested in the other root, inside a registered project, or contains a shell metacharacter, with a message saying which rule failed.
+- [ ] "Create branch" in the worktree picker opens its folder dialog at `<wt-root>/<repo>`; the new-workspace picker opens at `<ws-root>`; with a root unset, or the folder unusable, both behave as today.
+- [ ] In a CC-launched session, `/cc-manage` with a plan that touches registered repos X and Y shows one table before creating anything; after approval `<wt-root>/X/<feature>` and `<wt-root>/Y/<feature>` exist as worktrees on new `--no-track` branches forked from `origin/<default>`, fetched just before.
+- [ ] Each new worktree shows a new session in the CC sidebar under its project, whose first prompt is the chosen skill plus the brief, with line breaks, quotes and non-ASCII text intact; the desktop's active terminal does not switch.
+- [ ] A new session in a folder Claude Code has never trusted starts without a "trust this folder?" prompt: CC has pre-set trust for it.
+- [ ] A plan with two slices of one repo creates two worktrees with distinct folders and branches, and two sessions.
+- [ ] A plan item tied to no repo gets `<ws-root>/<name>`, registered as a CC workspace, with a session; a registered non-git project gets its session in its own folder.
+- [ ] An involved repo that isn't registered in CC, has an ambiguous folder name (two registered repos with the same name), whose fetch fails, or whose target branch or folder already exists appears in the table as skipped or conflicting, with the reason; nothing is created or overwritten for it.
+- [ ] Rejecting the summary table creates nothing.
+- [ ] Running either skill outside a CC-launched session stops with a clear message and changes nothing.
+- [ ] `/command` returns 403 for a wrong secret and 404 for an unknown agent, and both leave a warn line in `main.log`; `spawn` returns an error for a target that is neither a worktree of a registered project nor a direct child folder of `<ws-root>`, and for a prompt over the length cap.
+- [ ] `spawn` with `dir`/`cwd` spelled `C:/…`, with a lowercase drive letter or with a trailing separator puts the session row under the right project; an MSYS path (`/c/…`) is rejected with a clear message.
+- [ ] `forget` refuses, before stopping anything: a folder the calling session runs in, a project's main folder, and any folder that is not under `<wt-root>` or `<ws-root>`.
+- [ ] `forget` without `force` on a dirty worktree changes nothing on disk, leaves its sessions sleeping and returns `needsForce`; with `force` it removes the worktree.
+- [ ] A `forget` that takes longer than 5 seconds (several sessions, locked folder) returns its result to the CLI instead of a connection reset.
+- [ ] Each `/command` call leaves one info line in `main.log` with the caller agent id, op, target cwd and outcome.
+- [ ] `node "$CC_CLI" config` returns without hanging when no stdin is attached or stdin never closes.
+- [ ] `/cc-clean-worktrees` lists every folder under `<wt-root>/<repo>/` with a verdict (merged / idle / orphaned / keep) and flags dirty and unpushed folders; "merged" is judged against `origin/<default>` after a fetch; the calling session's own worktree is never listed.
+- [ ] A worktree with no commits of its own (fresh from `/cc-manage`) is "keep (new)", never merged or idle; a worktree of an unregistered repo under `<wt-root>` is "keep", never orphaned.
+- [ ] With more than 4 cleanup candidates, every candidate can still be selected.
+- [ ] Nothing is removed before confirmation. For each confirmed folder: its live and sleeping CC sessions leave the sidebar (including sleeping sessions from an earlier app run); the worktree is gone from `git worktree list` and from disk; the local branch is deleted only if chosen, and only when it is merged into `origin/<default>` (even if local `main` is stale); an unmerged branch is kept and reported.
+- [ ] A dirty worktree is never removed without its own explicit force confirmation.
+- [ ] On first start with the skills missing, CC offers to install them into `~/.claude/skills/`; after an app update that changes them, CC-marked unedited copies are updated and user-edited or unmarked copies are left alone.
+- [ ] An app update (NSIS) keeps the status hooks and the CC skills in place; a real uninstall removes the CC-marked skills and the hooks, and leaves unmarked skills and extra user files alone.
+
+## Out of scope
+- Sessions not launched by CC (VS Code, plain terminal): the skills refuse to run.
+- One session spanning several repos, or a workspace that contains worktrees.
+- Detecting squash merges or deleted upstreams; deleting remote branches; creating PRs.
+- Brief files on disk: the brief is prompt text only.
+- Auto-registering unregistered repos as CC projects.
+- Phone UI for manage or clean.
+- Scheduled or automatic cleanup without confirmation.
+- A CC-side confirmation dialog for `spawn`/`forget`: confirmation stays in the skills.
+- "Idle after N days" as a CC setting: it's a skill argument (default 14).
+- Background sessions (`claude --bg`) as CC agents.
+- Cleaning workspaces under `<ws-root>`: the dashboard's workspace remove (with delete folder) covers it.
+- A cap on spawns per caller: guards, the audit log and the confirmation table are enough for one user.
+
+## Decisions
+- Approach B: the skills run git; CC exposes only `config` / `spawn` / `forget`. The model applies the stale rules and the path convention, which no unit test covers. Exception: `forget` removes a session's worktree through CC's `worktree:remove` (`main.js:799`), keeping its locked-folder retry (`rmDirRetry`) and `git worktree prune`. The skills use bare git only for worktrees without CC sessions and for orphaned folders.
+- CC spawns the sessions, not the skill: background sessions have no status until opened (`hookserver.js:63`), and opening one interrupts its turn (`main.js:446`).
+- Only CC-launched sessions can call `/command`: same per-agent `x-cc-secret` and `127.0.0.1` binding as `/event` (`hookserver.js:67`).
+- Starting skill picked at run time from installed skills; brief passed as prompt text only, max 8,000 characters.
+- New worktrees: `git fetch --prune`, then `git worktree add --no-track -b feat/<slug> <wt-root>/<repo>/<slug> <defaultRef>`, then record the base: `git config branch.<branch>.ccBase <sha>`. The first `git push -u` sets the real upstream.
+- Stale rules (in the clean skill): merged = `merge-base --is-ancestor <tip> <defaultRef>` and tip ≠ `ccBase` (or at least one commit in `<defaultRef>..<tip>`); idle = date of `git log -1 --no-merges --format=%ct <defaultRef>..<branch>`, falling back to the creation time; unpushed = `git rev-list --count <branch> --not --remotes=origin` > 0; orphaned = the folder's `.git` is missing or its `gitdir:` target is gone. A `.git` file pointing at an existing gitdir of an unregistered repo → keep.
+- Branch deletion: an explicit `merge-base --is-ancestor <branch> <defaultRef>` check, then `git branch -D`; never `-d`, which compares against the main repo's possibly stale HEAD once there is no upstream.
+- `defaultRef` per project comes from `resolveDiffBase` (`gitops.js:106`): `origin/HEAD`, then `origin/main`, `origin/master`, `main`, `master`; `null` → row skipped.
+- Guards instead of a CC-side confirm: `forget` refuses any folder the calling session runs in, project main folders, and folders outside `<wt-root>`/`<ws-root>`, all before stopping anything; `forget` takes a `force` flag, and the skill asks its own force confirmation first; every call is logged, rejections too; the README documents `/command`.
+- `spawn` decides by `dir`: a registered project goes only through `validateRemoteSpawn` (`main.js:1346`). Otherwise the target must have `dir === cwd` and be an existing direct child of `<ws-root>`, not inside a registered project, a registered workspace or `<wt-root>`; it is then registered as a workspace. `ccommand` replaces `dir` with the stored record's exact `dir` string, because the renderer compares dirs with `===` (`renderer/state.js:36`).
+- Trust: before each spawn, CC sets `projects["<key>"].hasTrustDialogAccepted = true` in `~/.claude.json` for the project root and the session folder, only where it's missing. Keys use forward slashes, like Claude's own (`C:/Github/Lansweeper.Packet`). CC aborts without writing if the file doesn't parse. Bypass mode does not skip the trust prompt.
+- Default roots stored in main (`userData/paths.json`), following the remote-config pattern (`loadRemoteConfig`, `main.js:1104`; `remote:getConfig`, `main.js:1502`). Root checks: no drive root, no home folder, not equal or nested, not inside a registered project, `hasShellMeta` kept, and the error names the character.
+- Non-git rows: a plan item tied to no repo → new workspace under `<ws-root>`; a registered non-git project → session in its own folder.
+- Both the hooks and the skills survive NSIS updates (`${ifNot} ${isUpdated}`); only a real uninstall removes them. This ends today's re-prompt for the hooks after every update.
+- One delivery, no slices.
+- `config` returns `{ worktreeRoot, workspaceRoot, projects[{ dir, name, isGit, defaultRef }], workspaces, agents[{ id, cwd, dir, branch, status, live, callerSelf }] }`, built in main from the stores and the agent snapshot (`remoteAgents.list`, `sanitizeAgent`, `main.js:1311`); no renderer round trip. `spawn`/`forget` reuse the renderer's `remoteCommands` dispatch (`renderer/agents.js:586`) through `rendererCommand` (`main.js:1328`).
+- `cc.js` takes its arguments as JSON on stdin, delimited by `<<'CC_ARGS_EOF'`; ops without arguments use `< /dev/null`.
+- CLI and skill-sync code live in `hooks/` (unpacked from the asar, `package.json:68`): the NSIS uninstaller runs plain `node` (`build/uninstaller.nsh:18`), which can't read inside the asar.
+- New electron-free modules take an injected logger or none, like `hookserver.js:23`; they never require `./logger`, which pulls in `electron` (`logger.js:11`).
+- Skill marker: a sidecar `.command-center.json` in each installed skill folder, holding the hash of the `SKILL.md` bytes CC wrote. Present and the hash matches → CC owns it (update/uninstall). Hash differs → user-edited, left alone. No sidecar → user-owned, left alone.
+- The worktree picker creates `<wt-root>/<repo>` if it's missing, so the dialog can open there; if that fails, the dialog opens without `defaultPath`.
+- Defaults adopted during deepen: branch name `feat/<slug>`, folder `<slug>`; two registered repos with the same folder name → skipped as "ambiguous"; no `origin` or failed fetch → manage skips the row, clean marks the repo "fetch failed"; each skill checks only the roots it uses (clean: `<wt-root>`).
+
+## Steps
+- [ ] Step 1: Spike: test that a prompt survives being passed as an argument through `@lydell/node-pty` the way `spawnAgent` does (`main.js:348`). Spawn `process.execPath` with the echo fixture and a prompt of about 8,000 characters containing newlines, `"`, `\` before quotes, trailing `\`, `%`, `^`, `&` and non-ASCII text. The fixture writes `argv[2]` to the file named in `ARGV_OUT` (not to stdout, which ConPTY wraps and escapes); compare the bytes. Skip on non-Windows. Record pass or fail in this plan's Log. If it fails, Step 7 implements the fallback instead — files: test/ptyargv.test.js, test/fixtures/argv-echo.js — verify: `node --test test/ptyargv.test.js`
+  - note: node-pty builds the command line in `argsToCommandLine` (`node_modules/@lydell/node-pty/windowsPtyAgent.js:170-222`, copied from winpty). It quotes per `CommandLineToArgvW`, and newlines pass through unescaped. Quirk: an arg that already starts and ends with `"` and contains a space is left as is. There is no length check before CreateProcessW's 32,767-character limit. The binary is a prebuilt (`@lydell/node-pty-win32-x64/conpty.node`) that should load under plain node. (framework-docs research)
+- [ ] Step 2: Electron-free `ccpaths.js`, tests first:
+  - `canonicalPath(p)`: rejects MSYS `/x/…` paths; otherwise `path.resolve`, then `fs.realpathSync.native` when the path exists, to expand 8.3 names.
+  - `validateRootsPatch(patch, { isDirectory, home, projects })`: absolute existing folder, or `''` to unset. Rejects a drive root, home, equal or nested roots, a root inside a registered project, and `hasShellMeta` (`jsonstore.js`), with the failing character named in the message.
+  - `repoFolderName(dir)`, `worktreePickerDir(root, dir)`, `isUnder(root, p)` (normalized, case-insensitive on Windows, no `..` escape), `isDirectChild(root, p)`.
+  - `loadRoots(file)` / `saveRoots(file, roots)`: a corrupt file falls back to defaults and reports it, like `loadRemoteConfig` (`main.js:1104`).
+  - files: ccpaths.js, test/ccpaths.test.js — verify: `node --test test/ccpaths.test.js`
+- [ ] Step 3: Main side of the roots:
+  - `userData/paths.json` through `loadRoots`/`saveRoots`.
+  - IPC `paths:getConfig`, `paths:setConfig` (checked by `validateRootsPatch` against the registered projects), `paths:pickRoot` (folder dialog).
+  - `worktree:create` (`main.js:755`) gets `defaultPath` = `worktreePickerDir`, creating the folder if missing; if mkdir fails, no `defaultPath`. `workspaces:pickFolder` (`main.js:681`) gets `defaultPath` = `<ws-root>` when it exists.
+  - Preload API; `InvokeChannelMap` in `types/electron.d.ts:27` plus the `Api` methods and result types in `types/ipc.d.ts`; add `ccpaths.js` to `build.files`.
+  - files: main.js, preload.js, types/electron.d.ts, types/ipc.d.ts, package.json — verify: `node --check main.js && npm run typecheck && npm test`
+  - note: on Windows, Electron calls `IFileDialog::SetFolder` with an absolute `defaultPath`, which overrides the remembered last folder. A path that doesn't exist and has no trailing separator becomes parent folder + filename, so always pass an existing folder. (`electron/shell/browser/ui/file_dialog_win.cc` @ v43.7.9, framework-docs research)
+- [ ] Step 4: Settings → General: two rows, **Worktrees folder** and **Workspaces folder**, each showing the path with **Choose…** and **Clear** buttons and the rejection message inline. Read and written over the Step 3 IPC (pattern: `refreshRemote`/`setRemote`, `renderer/settings.js:268`). Styled per `DESIGN.md` using the existing `set-row` markup (`renderer/index.html:162`) — files: renderer/index.html, renderer/dom.js, renderer/settings.js, renderer/style.css — verify: `node --test test/renderer-contract.test.mjs test/renderer-tokens.test.mjs`
+- [ ] Step 5: Electron-free `worktreecheck.js` with an injected git runner (default `execFile('git', …)`) and no logger, tests first against a temp repo:
+  - `isRegisteredWorktreeOf(dir, wtPath)`: `false` when git fails, unlike `isWorktreeRegistered` (`gitops.js:79`).
+  - `worktreeBranchOf(dir, wtPath)`: from `worktree list --porcelain`.
+  - `deleteMergedBranch(dir, branch, defaultRef)`: `merge-base --is-ancestor`, then `branch -D`; otherwise `{ kept: true, reason }`.
+  - Then fix `worktree:remove` (`main.js:800`): accept `wtPath` when `isKnownDir(wtPath)` or it is a registered worktree of the known project `dir`. Today `isKnownDir` only learns folders at spawn (`main.js:352`), so worktrees of sessions left sleeping from an earlier run fail with "Unknown directory."
+  - Test repos commit with `-c user.name=cc-test -c user.email=cc-test@example.invalid`, because the CI runner has no git identity.
+  - files: worktreecheck.js, test/worktreecheck.test.js, main.js, package.json — verify: `node --test test/worktreecheck.test.js && node --check main.js`
+  - note: `gitops.js:13` requires `./logger` → `require('electron')` (`logger.js:11`). Under plain node in CI (`npm ci --ignore-scripts`, `ci.yml:24`) that throws or yields `app === undefined`, so a git-failure log crashes. No existing test builds a temp repo. (repo research)
+- [ ] Step 6: Electron-free `claudetrust.js`, tests first with temp files:
+  - `trustKey(p)`: forward slashes, casing kept, so `C:\Github\x` → `C:/Github/x`, matching Claude's keys.
+  - `ensureTrusted(file, paths)`: reads `~/.claude.json` right before writing; sets `projects[key].hasTrustDialogAccepted = true` only where it's missing or false; keeps every other key; writes atomically with `writeJsonAtomic` (`jsonstore.js`); doesn't write when nothing changed; never writes when the file doesn't parse (returns `{ ok: false }`).
+  - files: claudetrust.js, test/claudetrust.test.js — verify: `node --test test/claudetrust.test.js`
+  - note: Claude keys trust by git repo root (a worktree uses its main checkout's root) and, outside a repo, by the start folder and its subfolders. The dialog holds the positional prompt until accepted, and bypass mode doesn't skip it. Manual pre-set via `projects["<path>"].hasTrustDialogAccepted`. (https://code.claude.com/docs/en/permissions, /security; framework-docs research)
+- [ ] Step 7: First prompt on spawn. Extract `buildClaudeArgs({ resume, bypass, prompt })` into `spawnargs.js`: `--resume`, then `--dangerously-skip-permissions`, then the prompt as the last positional; never a prompt together with `resume`; reject a NUL character. `spawnAgent` (`main.js:353-357`) uses it. Renderer `spawn()` (`renderer/agents.js:226`) passes `opts.prompt` through `window.api.spawn`; `SpawnOpts.prompt` goes in `types/ipc.d.ts:120`. If Step 1 failed: the renderer keeps the prompt and, on the first activity-idle (30 s cap, never on resume), writes it as a bracketed paste (`\x1b[200~…\x1b[201~`) followed by `\r`. Add `spawnargs.js` to `build.files`. Tests first — files: spawnargs.js, test/spawnargs.test.js, main.js, renderer/agents.js, types/ipc.d.ts, package.json — verify: `node --test test/spawnargs.test.js && node --check main.js && npm run typecheck`
+- [ ] Step 8: Electron-free command runner `ccommand.js`: `createCommandRunner(deps)` → `run(callerId, op, args)`, tests first with stubs. Injected deps: `roots`, `projects`, `workspaces`, `agents` (snapshot), `defaultRef(dir)`, `validateWorktreeSpawn`, `registerWorkspace`, `trust(paths)`, `worktreeBranchOf`, `deleteMergedBranch`, `rendererCommand`, `log`.
+  - `config` → the shape in Decisions, with `callerSelf` set from `callerId` and paths in canonical form.
+  - `spawn { dir, cwd, prompt }`:
+    - prompt is a string of at most 8,000 characters with no NUL; `dir`/`cwd` are run through `canonicalPath`, then `dir` is replaced by the matching stored record's exact string.
+    - The target is decided by `dir` (Decisions).
+    - Then `trust([dir, cwd])`; a failure is logged and the spawn continues.
+    - Then `rendererCommand('spawn', { dir, cwd, prompt, kind: 'project'|'workspace' })`.
+  - `forget { cwd, removeWorktree, deleteBranch, force }`:
+    - Refused before anything is stopped: a folder the caller's session runs in, a project main folder, a folder outside `<wt-root>`/`<ws-root>`.
+    - Resolves the session ids for that cwd from the snapshot (`normPath`); reads the branch with `worktreeBranchOf` before removal.
+    - `rendererCommand('forgetIds', { ids, cwd, dir, removeWorktree, force }, { timeoutMs: 120000 })`.
+    - On success with `deleteBranch`: `deleteMergedBranch(dir, branch, defaultRef)`.
+    - Returns `{ ok, needsForce?, branch, branchDeleted, branchKept?, error? }`.
+  - Strict argument validation in the style of `RPC_ARGS` (`remoteproto.js:35`), exported as `ARG_SCHEMA` and `OPS`; unknown op → error. One `log.info('command', …)` line per call with caller id, op, cwd and outcome.
+  - files: ccommand.js, test/ccommand.test.js — verify: `node --test test/ccommand.test.js`
+- [ ] Step 9: `POST /command` in `hookserver.js`, tests first next to the existing ones:
+  - Same body cap, live-agent check and `x-cc-secret` check as `/event`.
+  - `req.setEncoding('utf8')` on both routes, so a multi-byte character split across chunks stays intact.
+  - For `/command`: `req.socket.setTimeout(130000)` before awaiting `runCommand`.
+  - Body `{ agentId, op, args }` → `200 {ok:true,result}` / `400 {ok:false,error}`.
+  - 403/404 on `/command` → `log.warn` with the caller id and the status; `noopLog` gains `info`.
+  - Tests: a server with `setTimeout(50)` and a `runCommand` that resolves after 200 ms still returns 200; a 3-byte character split across two writes arrives intact.
+  - files: hookserver.js, test/hookserver.test.js — verify: `node --test test/hookserver.test.js`
+  - note: `server.setTimeout(5000)` (`main.js:333`) only sets each socket's timeout on connect. Overriding it per request works, but Node resets it to `keepAliveTimeout` after the response, so set it on every `/command` request. `requestTimeout` and `headersTimeout` don't limit handler time. Without `setEncoding`, `body += chunk` decodes each Buffer separately and a split character becomes U+FFFD. (Node 24 http and stream docs, framework-docs research)
+- [ ] Step 10: Wire it up.
+  - main.js: build the runner with `validateRemoteSpawn` (`main.js:1346`); `createWorkspace({ parent, useParent: true })` (`main.js:603`) followed by `sendToRenderer('projects:changed')`; `remoteAgents.list`; `resolveDiffBase` (only when `isGit`); `ensureTrusted` on `~/.claude.json`; the `worktreecheck` helpers; `rendererCommand`; `log`. Pass `runCommand` to `createRequestHandler` (`main.js:327`). Add `ccommand.js` and `claudetrust.js` to `build.files`.
+  - renderer: `remoteCommands.spawn` (`renderer/agents.js:589`) takes optional `prompt` and `kind`; `kind` decides workspace, branch lookup and `isMain`, instead of `state.workspacesData` (which may not be refreshed yet). `app.js:49` re-renders the row on `projects:changed`; don't import `refreshProjects` into agents.js (`dashboard.js:7` imports agents.js, so that would be an import cycle).
+  - renderer: new `remoteCommands.forgetIds` puts every listed session to sleep and waits for exit, then calls `window.api.removeWorktree(dir, cwd, force)` once. Only on success are all of them untracked. On a git refusal all of them stay sleeping and it returns `{ needsForce: !force, error }`.
+  - `RemoteCommand` union in `types/ipc.d.ts:150`.
+  - files: main.js, renderer/agents.js, types/ipc.d.ts, package.json — verify: `node --check main.js && npm run typecheck && npm test`
+- [ ] Step 11: CLI `hooks/cc.js`, tests first by running it as a child process against a test server:
+  - `node cc.js <op>` reads JSON args from stdin with `setEncoding('utf8')`. Skip stdin when `isTTY`; if no byte arrives within 500 ms treat it as `{}`; once data arrives, read to EOF.
+  - Posts `{ agentId, op, args }` to `http://127.0.0.1:$CC_PORT/command` with `x-cc-secret` and a 130 s client timeout.
+  - Prints the result JSON to stdout and exits 0; prints the error to stderr and exits 1 (bad JSON included); without `CC_PORT`/`CC_AGENT_ID`/`CC_SECRET` prints "Run this from a Command Center session" and exits 2.
+  - `spawnAgent` injects `CC_CLI=<dir of REPORT_SCRIPT>/cc.js` (`main.js:374`).
+  - Tests include a stdin pipe that never closes, for `config`.
+  - files: hooks/cc.js, test/cc-cli.test.js, main.js — verify: `node --test test/cc-cli.test.js && node --check main.js`
+  - note: inside Claude Code on Windows the Bash tool runs Git Bash, so `<<'CC_ARGS_EOF'` heredocs work. Foreground stdin has been reported as an open pipe that never reaches EOF (anthropics/claude-code#67234), so a bare stdin read can hang. (framework-docs research)
+- [ ] Step 12: `hooks/skillsync.js`, electron-free and safe under plain node (node built-ins only), tests first with temp dirs:
+  - `planSync(bundledDir, targetDir)` → `{ install[], update[], skip[] }`, per skill; a sidecar without `SKILL.md` counts as missing.
+  - `applySync(plan)` writes `SKILL.md` (LF-normalized) and a `.command-center.json` sidecar with the hash of the written bytes, using read and write rather than `copyFile`, so it works from inside the asar.
+  - `removeOwned(targetDir)` deletes only `SKILL.md` and the sidecar where the hash matches, then removes the folder if it's empty.
+  - files: hooks/skillsync.js, test/skillsync.test.js — verify: `node --test test/skillsync.test.js`
+- [ ] Step 13: Write the skills.
+  - `skills/cc-manage/SKILL.md`:
+    - checks the roots it needs and `CC_CLI`, then `cc config < /dev/null`;
+    - plan → table (repo, branch `feat/<slug>`, path, starting skill picked from the installed skills, one-line brief). Skipped or conflicting rows: unregistered, ambiguous name, no `defaultRef` or failed fetch, branch or folder already exists;
+    - AskUserQuestion; then per row `git fetch --prune`, `worktree add --no-track -b …` from `defaultRef`, `git config branch.<b>.ccBase <sha>` (or `mkdir` under `<ws-root>` for a no-repo item), then `cc spawn` with a `CC_ARGS_EOF` heredoc;
+    - report, including a hint if a session still shows a trust prompt.
+  - `skills/cc-clean-worktrees/SKILL.md`:
+    - checks `<wt-root>`; optional N-days argument (default 14); fetches each repo;
+    - classifies by the stale rules in Decisions (verdicts merged / idle / orphaned / keep (new) / keep), flags dirty and unpushed, excludes the caller's own worktree and main trees;
+    - selection grouped for more than 4 candidates (all merged / all idle / numbers in free text), plus a delete-branch question;
+    - `cc forget` with `removeWorktree`/`deleteBranch` for folders with sessions, and a second call with `force` after its own confirmation when `needsForce`; bare git otherwise (`worktree remove`, ancestor check + `branch -D`);
+    - orphaned folders only after their own confirmation; report.
+  - A content test checks: frontmatter `name` equals the folder name and `description` is present; every `$CC_CLI` op is in `ccommand.OPS`; the JSON keys in the heredocs match `ccommand.ARG_SCHEMA`.
+  - files: skills/cc-manage/SKILL.md, skills/cc-clean-worktrees/SKILL.md, test/skills-content.test.js — verify: `node --test test/skills-content.test.js`
+  - note: AskUserQuestion takes 1-4 questions per call, 2-4 options each, a header of at most 12 characters, and accepts a free-text answer. A positional prompt that starts with `/plugin:skill args` should run as that skill (inferred from the docs; Step 17 confirms it). (https://code.claude.com/docs/en/agent-sdk/user-input, /skills)
+- [ ] Step 14: Install and uninstall.
+  - `ensureSkillsInstalled()` runs at startup after `ensureHooksInstalled` (`main.js:268`). Missing skills → consent dialog (Install / Skip), asked again on every start until installed, like the hooks. CC-owned outdated copies → updated silently; edited or unmarked copies → skipped and logged.
+  - `hooks/uninstall-hooks.js` calls `skillsync.removeOwned(~/.claude/skills)` in its own try block, separate from the hooks cleanup.
+  - `build/uninstaller.nsh`: wrap the `customUnInit` body in `${ifNot} ${isUpdated}`, so updates keep both hooks and skills; update the `DetailPrint` and the outdated comment. Add `skills/**` to `build.files`.
+  - Test: an uninstall run with a temp `HOME` and `USERPROFILE` removes owned skills and keeps unmarked ones and extra files.
+  - files: main.js, hooks/uninstall-hooks.js, build/uninstaller.nsh, package.json, test/uninstall-skills.test.js — verify: `node --test test/uninstall-skills.test.js && node --check main.js && npm test`
+  - note: an NSIS update runs the old uninstaller with `--updated` (`installUtil.nsh:202-224`), and `customUnInit` fires in `un.onInit` (`uninstaller.nsh:33-35`), so today's hook cleanup also runs on every update. `${isUpdated}` is used inside uninstaller code (`uninstaller.nsh:164,224`), but its `!define` wasn't found in the templates; Step 17 confirms it with a real update. The comment in `build/uninstaller.nsh` claiming `RMDir` runs before `customUnInstall` is wrong for this version. (framework-docs research)
+- [ ] Step 15: Docs.
+  - README: feature list (the two skills, the default roots).
+  - README security model (`README.md:138`): who can call `/command`, the three ops, the allowed targets and `forget` guards, the audit log, and that CC pre-sets Claude's folder trust for the folders it spawns into.
+  - PRODUCT.md "Operating Context": the roots and the skills.
+  - files: README.md, PRODUCT.md — verify: `grep -q "/command" README.md && grep -q "cc-clean-worktrees" README.md && grep -q "Worktrees folder" README.md && grep -q "hasTrustDialogAccepted" README.md`
+- [ ] Step 16: Write the acceptance checklist `plans/claude-code-steering.acceptance.md`, one unticked item per success criterion that unit tests can't prove:
+  - a real `/cc-manage` with 2 repos, 2 slices of one repo, 1 no-repo item, 1 unregistered repo, 1 existing branch, plus a rejected run;
+  - first prompt arrives intact in `claude.exe` and runs as a skill;
+  - no trust prompt in a fresh `<ws-root>` child;
+  - `/cc-clean-worktrees` over merged, idle, fresh, orphaned, unregistered-repo and dirty folders, more than 4 candidates, and a session left sleeping from an earlier app run;
+  - an NSIS update keeps the hooks and skills, an uninstall removes them;
+  - files: plans/claude-code-steering.acceptance.md — verify: `test -f plans/claude-code-steering.acceptance.md && grep -c "^- \[ \]" plans/claude-code-steering.acceptance.md`
+- [ ] Step 17: Run the acceptance checklist on the built app (needs the user: real sessions, an installer update and an uninstall). Tick each item and record failures in this plan's Log; fix or park them before ticking — files: plans/claude-code-steering.acceptance.md — verify: `! grep -q "^- \[ \]" plans/claude-code-steering.acceptance.md`
+
+## Risks
+- `claude.exe` may split the command line differently from the node echo child in Step 1 → both normally follow `CommandLineToArgvW`; Step 17 checks a real prompt, and if it arrives mangled, Step 7 switches to the bracketed-paste fallback.
+- `~/.claude.json` is rewritten by every running Claude session, so a session holding an older copy can overwrite CC's trust flag (or CC's write can lose theirs) → read right before writing, add only missing flags, atomic rename, never write a file that doesn't parse. If the flag is lost, the session shows the trust prompt: visible and harmless. Step 17 checks it.
+- Trust for a linked worktree under an untrusted, non-repo `<wt-root>` isn't documented → CC sets both the repo root and the worktree folder.
+- `${isUpdated}`'s definition wasn't found in electron-builder's templates → if it's undefined, the NSIS build fails loudly, not silently; Step 17 runs a real update.
+- A workspace registered by `spawn` isn't in the renderer's `state.workspacesData` yet → `spawn` passes `kind`, and the existing `projects:changed` refresh (`renderer/app.js:49`) draws the row.
+- Several sessions in one cwd keep the folder locked on Windows → `forgetIds` stops all of them and waits before the single removal; untracks only on success.
+- An agent with bypass permissions can now start and stop other agents → targets limited to registered worktrees and `<ws-root>` children; `forget` limited to `<wt-root>`/`<ws-root>` with no main folders and never the caller's folder; every call logged, rejections too; documented in the README.
+- The renderer compares dirs with `===` (`renderer/state.js:36`) while git and Git Bash return other spellings → `ccommand` canonicalizes and substitutes the stored record string; tests cover `C:/`, lowercase drive, trailing separator and MSYS.
+- Claude Code's Bash tool may leave stdin as an open pipe → `cc.js` gives up on stdin after 500 ms with no data; skills pass `< /dev/null` or a heredoc.
+- `git branch -d` gives wrong answers with `--no-track` and a stale local `main` → explicit ancestor check against `defaultRef`, then `-D` (`worktreecheck.deleteMergedBranch`).
+- main.js glue has no unit tests → all logic lives in electron-free modules with tests; main.js steps verify with `node --check`, typecheck and the full suite; Step 17 covers the app end to end.
+- Electron reads files from inside the asar, but `fs.copyFile` from the asar is unreliable → `skillsync` copies with read and write (Step 12).
+- The model may apply the stale rules inconsistently (approach B trade-off) → the skill lists every verdict with its reason, and nothing is removed without confirmation.
+- Step 17 needs the user → `/workflow:work --unattended` stops there.
+
+## Log
+<!-- appended by /workflow:work: one entry per completed step -->
+- 2026-11-12 Deepened — 8 criteria, 3 steps, 6 risks, 8 notes
