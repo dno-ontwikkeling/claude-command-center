@@ -545,15 +545,20 @@ button svg,
   background: var(--board-hover);
 }
 
+/* Prompts and Settings share the row in two exactly equal halves. minmax(0, 1fr)
+   drops 1fr's min-content floor so a longer label can't take more than half. */
 .sidebar-footer {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
   padding: 12px;
 }
 
 .settings-btn {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: center;
+  min-width: 0;
   gap: var(--space);
   padding: 7px 10px;
   border: none;
@@ -567,6 +572,18 @@ button svg,
 .settings-btn:hover {
   background: var(--board-raised);
   color: var(--board-fg);
+}
+
+.settings-btn svg {
+  flex-shrink: 0;
+}
+
+/* clip on the label, not the button, so the focus outline stays whole */
+.settings-btn span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* signature motion: a two-frame flap when a row lands in a loud state */

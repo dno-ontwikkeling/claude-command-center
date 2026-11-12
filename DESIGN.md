@@ -301,7 +301,7 @@ The All / Active / Sleeping filter and the settings tabs. A 1px outline with 2 t
 - **Header:** the wordmark, then search, theme and dashboard icon buttons. The dashboard icon turns cyan while the dashboard is open.
 - **Sections:** PROJECTS and WORKSPACES Label headings, each with a + that opens a menu of that section's folders (picking one starts an agent there) and a Manage link to the dashboard.
 - **Agent row:** 48px, a 7px signal square, a 14px gap, the project name in Title Bahnschrift over the custom name or branch in 12px Board Mist, then the state word. Rows are ruled by a Board Line hairline. Hover fills with the hover tone; the selected row fills with the raised tone. On hover the state word hides to make room for the ⋮ menu. A sleeping row mutes its title.
-- **Footer:** Prompts and Settings as muted icon-and-label buttons.
+- **Footer:** Prompts and Settings as muted icon-and-label buttons, side by side in two equal halves of the row; a label that runs out of room ends in an ellipsis.
 
 ### Docs panel
 A column on the right of the stage, opened by the Docs button in the stage bar and never on its own. It uses the Departure Hall stage tokens, not the dark board: `--panel` fill, a 1px `--border` hairline on its left edge, and a draggable edge that sets the width.
