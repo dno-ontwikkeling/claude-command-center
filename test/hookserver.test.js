@@ -147,3 +147,129 @@ test('a body just under the 64KB cutoff with valid auth still succeeds (boundary
   assert.equal(events.length, 1);
   await close();
 });
+
+// ---- POST /command ---------------------------------------------------------
+
+function startCommandServer({ runCommand, socketTimeout, agents } = {}) {
+  const logs = [];
+  const log = {
+    info: (...a) => logs.push(['info', ...a]),
+    warn: (...a) => logs.push(['warn', ...a]),
+    error: (...a) => logs.push(['error', ...a]),
+  };
+  const handler = createRequestHandler({
+    agents: agents || new Map([['agent-1', {}]]),
+    agentSecret: (id) => agentSecret(MASTER, id),
+    sendToRenderer: () => {},
+    runCommand: runCommand || (async (id, op, args) => ({ id, op, args })),
+    log,
+  });
+  const server = http.createServer(handler);
+  if (socketTimeout) server.setTimeout(socketTimeout);
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      resolve({ port, url: `http://127.0.0.1:${port}/command`, logs, close: () => new Promise((r) => server.close(r)) });
+    });
+  });
+}
+
+const cmdHeaders = (id = 'agent-1') => ({ 'x-cc-secret': agentSecret(MASTER, id), 'content-type': 'application/json' });
+
+test('/command: 200 with the runner result for a valid caller', async () => {
+  const s = await startCommandServer();
+  try {
+    const res = await post(s.url, JSON.stringify({ agentId: 'agent-1', op: 'config', args: {} }), cmdHeaders());
+    assert.equal(res.status, 200);
+    assert.deepEqual(JSON.parse(res.body), { ok: true, result: { id: 'agent-1', op: 'config', args: {} } });
+  } finally {
+    await s.close();
+  }
+});
+
+test('/command: 400 with the error when the runner rejects', async () => {
+  const s = await startCommandServer({ runCommand: async () => { throw new Error('Unknown op "x".'); } });
+  try {
+    const res = await post(s.url, JSON.stringify({ agentId: 'agent-1', op: 'x', args: {} }), cmdHeaders());
+    assert.equal(res.status, 400);
+    assert.deepEqual(JSON.parse(res.body), { ok: false, error: 'Unknown op "x".' });
+  } finally {
+    await s.close();
+  }
+});
+
+test('/command: 400 for a body that is not JSON or lacks op', async () => {
+  const s = await startCommandServer();
+  try {
+    assert.equal((await post(s.url, '{nope', cmdHeaders())).status, 400);
+    assert.equal((await post(s.url, JSON.stringify({ agentId: 'agent-1' }), cmdHeaders())).status, 400);
+  } finally {
+    await s.close();
+  }
+});
+
+test('/command: 403 for a wrong secret and 404 for an unknown agent, each with a warn line', async () => {
+  let ran = 0;
+  const s = await startCommandServer({ runCommand: async () => ++ran });
+  try {
+    const r403 = await post(s.url, JSON.stringify({ agentId: 'agent-1', op: 'config', args: {} }), { 'x-cc-secret': 'wrong' });
+    assert.equal(r403.status, 403);
+    const r404 = await post(s.url, JSON.stringify({ agentId: 'ghost', op: 'config', args: {} }), cmdHeaders('ghost'));
+    assert.equal(r404.status, 404);
+    assert.equal(ran, 0);
+    const warns = s.logs.filter((l) => l[0] === 'warn').map((l) => l.join(' '));
+    assert.equal(warns.length, 2);
+    assert.match(warns[0], /agent-1.*403/);
+    assert.match(warns[1], /ghost.*404/);
+  } finally {
+    await s.close();
+  }
+});
+
+test('/command: a runner slower than the server socket timeout still answers 200', async () => {
+  const s = await startCommandServer({
+    socketTimeout: 50,
+    runCommand: () => new Promise((r) => setTimeout(() => r({ slow: true }), 200)),
+  });
+  try {
+    const res = await post(s.url, JSON.stringify({ agentId: 'agent-1', op: 'forget', args: {} }), cmdHeaders());
+    assert.equal(res.status, 200);
+    assert.deepEqual(JSON.parse(res.body).result, { slow: true });
+  } finally {
+    await s.close();
+  }
+});
+
+test('/command: a multi-byte character split across two writes arrives intact', async () => {
+  let got;
+  const s = await startCommandServer({ runCommand: async (_id, _op, args) => (got = args.prompt) });
+  try {
+    const body = Buffer.from(JSON.stringify({ agentId: 'agent-1', op: 'spawn', args: { prompt: 'a中b' } }), 'utf8');
+    const cut = body.indexOf(Buffer.from('中', 'utf8')) + 1; // inside the 3-byte character
+    const status = await new Promise((resolve, reject) => {
+      const req = http.request(s.url, { method: 'POST', headers: cmdHeaders() }, (res) => {
+        res.resume();
+        res.on('end', () => resolve(res.statusCode));
+      });
+      req.on('error', reject);
+      req.write(body.subarray(0, cut));
+      setTimeout(() => req.end(body.subarray(cut)), 20);
+    });
+    assert.equal(status, 200);
+    assert.equal(got, 'a中b');
+  } finally {
+    await s.close();
+  }
+});
+
+test('/command: without a runner the route is 404', async () => {
+  const handler = createRequestHandler({ agents: new Map(), agentSecret: () => 'x', sendToRenderer: () => {} });
+  const server = http.createServer(handler);
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  try {
+    const res = await post(`http://127.0.0.1:${server.address().port}/command`, '{}');
+    assert.equal(res.status, 404);
+  } finally {
+    await new Promise((r) => server.close(r));
+  }
+});

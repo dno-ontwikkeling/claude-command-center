@@ -10,6 +10,8 @@ import type {
   DiffResult,
   DiffStat,
   OpResult,
+  PathsConfig,
+  PickRootResult,
   Project,
   RemoteConfig,
   RemoveWorktreeResult,
@@ -49,6 +51,9 @@ interface InvokeChannelMap {
   'code:open': OpResult;
   'explorer:open': OpResult;
   'agent:spawn': void;
+  'paths:getConfig': PathsConfig;
+  'paths:setConfig': PathsConfig;
+  'paths:pickRoot': PickRootResult;
   'remote:getConfig': RemoteConfig;
   'remote:setConfig': RemoteConfig;
   'remote:regenerate': RemoteConfig;

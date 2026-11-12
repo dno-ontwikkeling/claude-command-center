@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "renderer/index.html"
+        ],
+        "createdAt": "2026-11-12T18:00:31.448Z",
+        "reason": "Claude: pre-existing pairing-QR <img id=set-remote-qr-img> in a hidden container; settings.js sets src at runtime before showing it"
+      }
+    ]
+  }
+}

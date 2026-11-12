@@ -124,6 +124,8 @@ export interface SpawnOpts {
   rows?: number;
   /** which device the pty size belongs to (default: 'remote' when sized) */
   owner?: 'desktop' | 'remote';
+  /** first prompt for a new session (max 8,000 characters, no NUL); ignored with `resume`. */
+  prompt?: string;
 }
 
 /** One agent as mirrored to the phone (renderer -> main -> phone). */
@@ -149,9 +151,20 @@ export interface RemoteAgentsSnapshot {
 
 /** `remote:command` — main asks the renderer to run a phone-initiated action. */
 export type RemoteCommand =
-  | { reqId: number; op: 'spawn'; args: { dir: string; cwd: string; cols: number; rows: number } }
+  | {
+      reqId: number;
+      op: 'spawn';
+      /** phone: cols/rows. `/command` (ccommand.js): prompt and kind instead. */
+      args: { dir: string; cwd: string; cols?: number; rows?: number; prompt?: string; kind?: 'project' | 'workspace' };
+    }
   | { reqId: number; op: 'resume'; args: { id: string; cols?: number; rows?: number } }
-  | { reqId: number; op: 'kill'; args: { id: string } };
+  | { reqId: number; op: 'kill'; args: { id: string } }
+  | {
+      reqId: number;
+      op: 'forgetIds';
+      /** `/command` forget: stop every listed session in `cwd`, then remove the worktree once. */
+      args: { ids: string[]; cwd: string; dir: string; removeWorktree: boolean; force: boolean };
+    };
 
 /** `remote:command-result` — the renderer's answer; spawn/resume return the agent `{ id }`. */
 export interface RemoteCommandResult {
@@ -191,6 +204,25 @@ export interface RemoteConfigPatch {
   port?: number;
   bindHost?: string;
   advertisedHost?: string;
+}
+
+/** `paths:getConfig` / `paths:setConfig` — the default roots ('' = unset).
+ * `error` is a rejected setConfig patch; the roots are then unchanged. */
+export interface PathsConfig {
+  worktreeRoot: string;
+  workspaceRoot: string;
+  error: string | null;
+}
+
+export type PathRootKey = 'worktreeRoot' | 'workspaceRoot';
+
+export type PathsConfigPatch = Partial<Record<PathRootKey, string>>;
+
+/** `paths:pickRoot` — folder dialog for one root. */
+export interface PickRootResult {
+  path?: string;
+  canceled?: boolean;
+  error?: string;
 }
 
 /** The object exposed as `window.api` (see preload.js). */
@@ -266,6 +298,11 @@ export interface Api {
   /** pty size ownership flipped (the phone resized it, or the desktop took it back). */
   onSizeOwner(cb: (p: { id: string; owner: 'desktop' | 'remote' }) => void): void;
   onProjectsChanged(cb: () => void): void;
+
+  // default worktree/workspace roots (Settings → General)
+  getPathsConfig(): Promise<PathsConfig>;
+  setPathsConfig(patch: PathsConfigPatch): Promise<PathsConfig>;
+  pickPathRoot(key: PathRootKey): Promise<PickRootResult>;
 
   // remote access (phone app)
   getRemoteConfig(): Promise<RemoteConfig>;

@@ -51,9 +51,15 @@
       "fcm.js",
       "pushnotify.js",
       "docs.js",
+      "ccpaths.js",
+      "worktreecheck.js",
+      "spawnargs.js",
+      "ccommand.js",
+      "claudetrust.js",
       "build/icon.png",
       "renderer/**",
       "hooks/**",
+      "skills/**",
       "node_modules/**"
     ],
     "extraResources": [

@@ -63,7 +63,8 @@ document.addEventListener('mousedown', (e) => {
 // stored session id so Claude reopens the same conversation (`claude --resume`).
 // `opts` comes from a phone-initiated spawn: `background` adds the agent
 // without switching the desktop's visible terminal; `cols`/`rows` size the pty
-// for the phone from the start. Returns the agent id.
+// for the phone from the start; `prompt` is a first prompt for a new session
+// (a `/command` spawn), ignored on resume. Returns the agent id.
 export function spawn(dir, cwd, branch, isMain, restore = null, opts = {}) {
   let id, label;
   if (restore) {
@@ -229,6 +230,7 @@ export function spawn(dir, cwd, branch, isMain, restore = null, opts = {}) {
     resume: restore?.sessionId || null,
     cols: opts.cols,
     rows: opts.rows,
+    prompt: restore ? undefined : opts.prompt,
   });
   if (opts.cols && opts.rows) {
     agents.get(id).sizeOwner = 'remote';
@@ -584,13 +586,46 @@ async function takeOver(id) {
 }
 
 const remoteCommands = {
-  // Phone spawns follow the desktop's bypass setting (spawn() reads it), and
-  // never steal the desktop's visible terminal.
-  async spawn({ dir, cwd, cols, rows }) {
-    const workspace = state.workspacesData.some((w) => w.dir === dir);
+  // Phone and `/command` spawns follow the desktop's bypass setting (spawn()
+  // reads it), and never steal the desktop's visible terminal. A `/command`
+  // spawn passes `kind`: a workspace it just registered may not be in
+  // state.workspacesData yet (projects:changed redraws the row). `prompt` is
+  // the new session's first prompt.
+  async spawn({ dir, cwd, cols, rows, prompt, kind }) {
+    const workspace = kind ? kind === 'workspace' : state.workspacesData.some((w) => w.dir === dir);
     const branch = workspace ? null : await window.api.gitBranch(cwd);
-    const id = spawn(dir, cwd, branch, cwd === dir, null, { background: true, cols, rows });
+    const id = spawn(dir, cwd, branch, cwd === dir, null, { background: true, cols, rows, prompt });
     return { id };
+  },
+  // `/command` forget: every session in one folder (live and sleeping) goes
+  // at once, so the folder is unlocked before the single worktree removal.
+  // Only on success are they untracked; on a git refusal they all stay as
+  // sleeping rows, so there is a way back to the worktree.
+  async forgetIds({ ids, cwd, dir, removeWorktree = false, force = false }) {
+    const mine = ids.filter((id) => {
+      const a = agents.get(id) || dormant.get(id);
+      return a && a.cwd === cwd && a.dir === dir;
+    });
+    for (const id of mine) {
+      if (agents.has(id)) await killAndWait(id);
+    }
+    const untrackAll = () => {
+      for (const id of mine) {
+        if (agents.has(id)) cleanupAgent(id);
+        else removeDormant(id);
+      }
+    };
+    if (!removeWorktree) {
+      untrackAll();
+      return { ok: true };
+    }
+    const res = await window.api.removeWorktree(dir, cwd, force);
+    if (res.error && !res.cleanupIncomplete) {
+      for (const id of mine) if (agents.has(id)) convertToDormant(id);
+      return { ok: false, needsForce: !force, error: res.error };
+    }
+    untrackAll();
+    return { ok: true, cleanupError: res.cleanupIncomplete ? res.error : null };
   },
   resume({ id, cols, rows }) {
     if (!dormant.has(id)) throw new Error('Not a dormant agent.');

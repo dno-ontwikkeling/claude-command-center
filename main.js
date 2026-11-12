@@ -27,6 +27,12 @@ const hooksMerge = require('./hooksmerge');
 const { createRequestHandler } = require('./hookserver');
 const { openInVisualStudio, openInVSCode } = require('./editors');
 const { readJsonSafe, writeJsonAtomic, hasShellMeta, hasLeadingDash } = require('./jsonstore');
+const ccPaths = require('./ccpaths');
+const worktreeCheck = require('./worktreecheck');
+const { buildClaudeArgs } = require('./spawnargs');
+const { createCommandRunner } = require('./ccommand');
+const { ensureTrusted } = require('./claudetrust');
+const skillSync = require('./hooks/skillsync');
 const { parseServiceAccount, createFcmClient } = require('./fcm');
 const { createPushNotifier } = require('./pushnotify');
 const { gitBranch, isGitRepo, detectProjectType } = require('./gitinfo');
@@ -94,12 +100,16 @@ const PROJECTS_FILE = path.join(app.getPath('userData'), 'projects.json');
 // Workspaces: plain scratch folders (no git / worktree machinery). Launch an
 // agent straight in the folder. Kept in their own store + sidebar section.
 const WORKSPACES_FILE = path.join(app.getPath('userData'), 'workspaces.json');
+// Default roots for new worktrees (<wt-root>/<repo>/<feature>) and workspaces
+// (<ws-root>/<name>), set in Settings → General. Folder pickers start there.
+const PATHS_FILE = path.join(app.getPath('userData'), 'paths.json');
 // In a packaged build the hook script is unpacked from the asar so `node` can
 // actually execute it (you cannot run a file from inside the virtual asar).
 // Sourced from hookauth.js so eventHasReport's install-detection always
 // matches the exact path this app installs, never a duplicated computation
 // that could drift out of sync.
 const REPORT_SCRIPT = hookAuth.REPORT_SCRIPT;
+const CC_CLI_SCRIPT = path.join(path.dirname(REPORT_SCRIPT), 'cc.js');
 
 // Lifecycle events we hook, mapped to the status the agent should report.
 const HOOK_EVENTS = {
@@ -124,6 +134,32 @@ function warnCorruptOnce(file, title, message) {
   if (corruptWarned.has(file)) return;
   corruptWarned.add(file);
   dialog.showErrorBox(title, message);
+}
+
+// ---------------------------------------------------------------------------
+// Default roots (paths.json)
+// ---------------------------------------------------------------------------
+
+// A corrupt paths.json (already backed up by readJsonSafe) falls back to no
+// roots: pickers then behave as before. Logged once, never blocks startup.
+let pathsCorruptLogged = false;
+function loadPathRoots() {
+  const { roots, error } = ccPaths.loadRoots(PATHS_FILE);
+  if (error && !pathsCorruptLogged) {
+    pathsCorruptLogged = true;
+    log.warn('paths', 'paths.json unreadable — default folders unset', error);
+  }
+  return roots;
+}
+
+// A root that is set and still an existing folder, else null.
+function usableRoot(root) {
+  if (!root) return null;
+  try {
+    return fs.statSync(root).isDirectory() ? root : null;
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -313,6 +349,58 @@ async function ensureHooksInstalled() {
 }
 
 // ---------------------------------------------------------------------------
+// Bundled skills (/cc-manage, /cc-clean-worktrees) → ~/.claude/skills
+// ---------------------------------------------------------------------------
+
+const BUNDLED_SKILLS_DIR = path.join(__dirname, 'skills');
+const USER_SKILLS_DIR = path.join(os.homedir(), '.claude', 'skills');
+
+// Missing skills: ask (Install / Skip), again on every start until installed,
+// like the hooks. Copies CC installed and the user hasn't edited are updated
+// silently when the bundled version changes; edited or unmarked copies are
+// left alone (see hooks/skillsync.js).
+async function ensureSkillsInstalled() {
+  let plan;
+  try {
+    plan = skillSync.planSync(BUNDLED_SKILLS_DIR, USER_SKILLS_DIR);
+  } catch (err) {
+    log.warn('skills', 'could not check the bundled skills', err);
+    return;
+  }
+  for (const s of plan.skip) log.info('skills', `left ${s.name} alone: ${s.reason}`);
+
+  if (plan.update.length) {
+    const r = skillSync.applySync({ install: [], update: plan.update });
+    if (r.written.length) log.info('skills', `updated ${r.written.join(', ')}`);
+    for (const e of r.errors) log.error('skills', `could not update ${e.name}: ${e.error}`);
+  }
+  if (!plan.install.length) return;
+
+  const names = plan.install.map((s) => `/${s.name}`).join(' and ');
+  const { response } = await dialog.showMessageBox(mainWindow, {
+    type: 'question',
+    buttons: ['Install', 'Skip'],
+    defaultId: 0,
+    cancelId: 1,
+    title: 'Command Center setup',
+    message: `Install the ${names} skills into ~/.claude/skills?`,
+    detail:
+      'They let a Claude Code session started from Command Center turn a plan into ' +
+      'worktrees with running sessions, and clean up merged or abandoned worktrees. ' +
+      'Both ask before they change anything, and they do nothing in sessions you ' +
+      'open outside Command Center.',
+  });
+  if (response !== 0) return;
+  const r = skillSync.applySync({ install: plan.install, update: [] });
+  if (r.written.length) log.info('skills', `installed ${r.written.join(', ')}`);
+  if (r.errors.length) {
+    const detail = r.errors.map((e) => `${e.name}: ${e.error}`).join('\n');
+    log.error('skills', `could not install: ${detail}`);
+    dialog.showErrorBox('Command Center — could not install the skills', detail);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Local HTTP server — receives hook events, forwards to renderer
 // ---------------------------------------------------------------------------
 
@@ -324,7 +412,7 @@ function startServer() {
     // test/hookserver.test.js). Only the actual http.Server + listen() stay
     // here since serverPort/agents are main.js state.
     const server = http.createServer(
-      createRequestHandler({ agents, agentSecret, sendToRenderer, log })
+      createRequestHandler({ agents, agentSecret, sendToRenderer, runCommand, log })
     );
     // A connection that opens and never sends (or sends a partial request and
     // stalls) would otherwise hang its socket forever. 5s is generous for a
@@ -352,10 +440,16 @@ function spawnAgent(id, cwd, opts = {}) {
   rememberAgentDir(cwd);
   const shell = resolveClaude();
   // `--resume <id>` reopens a prior Claude session; permission flag (if any)
-  // follows so it applies to the resumed run too.
-  const args = [];
-  if (opts.resume) args.push('--resume', opts.resume);
-  if (opts.bypass) args.push('--dangerously-skip-permissions');
+  // follows so it applies to the resumed run too; a first prompt (only on a
+  // fresh session) is the last positional. See spawnargs.js.
+  let args;
+  try {
+    args = buildClaudeArgs({ resume: opts.resume, bypass: opts.bypass, prompt: opts.prompt });
+  } catch (err) {
+    sendToRenderer('agent:exit', { id, error: errMsg(err) });
+    remoteHub.emit('exit', id, { exitCode: null, error: errMsg(err) });
+    return;
+  }
 
   // A phone-initiated spawn passes its own size so the first output is drawn
   // at the phone's width instead of 80 cols until the first resize lands.
@@ -371,7 +465,15 @@ function spawnAgent(id, cwd, opts = {}) {
       cols,
       rows,
       cwd,
-      env: { ...process.env, CC_PORT: String(serverPort), CC_AGENT_ID: id, CC_SECRET: agentSecret(id) },
+      // CC_CLI: the /command CLI the bundled skills call (`node "$CC_CLI" <op>`),
+      // next to the hook script so it is unpacked from the asar too.
+      env: {
+        ...process.env,
+        CC_PORT: String(serverPort),
+        CC_AGENT_ID: id,
+        CC_SECRET: agentSecret(id),
+        CC_CLI: CC_CLI_SCRIPT,
+      },
     });
   } catch (err) {
     // cwd gone (e.g. a removed worktree) or claude not found — report as an
@@ -678,9 +780,13 @@ function registerIpc() {
   // (the renderer's next step decides whether to use it as-is or nest under
   // it), and the picker's own "New folder" button covers creating one.
   ipcMain.handle('workspaces:pickFolder', async () => {
+    // Start at the Workspaces folder when it is set and exists; otherwise the
+    // dialog behaves as before (Windows reopens the last folder).
+    const wsRoot = usableRoot(loadPathRoots().workspaceRoot);
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
       properties: ['openDirectory', 'createDirectory'],
       title: 'Choose a folder for the workspace',
+      ...(wsRoot ? { defaultPath: wsRoot } : {}),
     });
     if (canceled || !filePaths[0]) return { canceled: true };
     return { path: filePaths[0] };
@@ -752,9 +858,24 @@ function registerIpc() {
   //   remote -> create a local tracking branch from a remote ref (origin/x -> x)
   ipcMain.handle('worktree:create', async (_e, { dir, mode, branch, base }) => {
     if (!isKnownDir(dir)) return { error: 'Unknown project directory.' };
+    // Open at <wt-root>/<repo>, creating it if needed: Electron's defaultPath
+    // must be an existing folder, or Windows treats its last part as a file
+    // name. No root, or mkdir fails → no defaultPath (behaves as before).
+    let pickerDir = null;
+    const wtRoot = usableRoot(loadPathRoots().worktreeRoot);
+    if (wtRoot) {
+      const want = ccPaths.worktreePickerDir(wtRoot, dir);
+      try {
+        fs.mkdirSync(want, { recursive: true });
+        pickerDir = want;
+      } catch (err) {
+        log.warn('paths', `could not create ${want}`, err);
+      }
+    }
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
       properties: ['openDirectory', 'createDirectory'],
       title: `Choose parent folder for worktree "${branch}"`,
+      ...(pickerDir ? { defaultPath: pickerDir } : {}),
     });
     if (canceled || !filePaths[0]) return { canceled: true };
     if (hasShellMeta(branch)) {
@@ -797,7 +918,14 @@ function registerIpc() {
   });
 
   ipcMain.handle('worktree:remove', async (_e, { dir, path: wtPath, force }) => {
-    if (!isKnownDir(dir) || !isKnownDir(wtPath)) return { error: 'Unknown directory.' };
+    if (!isKnownDir(dir)) return { error: 'Unknown directory.' };
+    // knownAgentDirs only learns a folder when an agent spawns there, so the
+    // worktree of a session left sleeping from an earlier app run is not
+    // "known" yet. A linked worktree that git lists for the known project is
+    // just as legitimate.
+    if (!isKnownDir(wtPath) && !(await worktreeCheck.isRegisteredWorktreeOf(dir, wtPath))) {
+      return { error: 'Unknown directory.' };
+    }
     const args = ['worktree', 'remove'];
     if (force) args.push('--force');
     args.push('--', wtPath);
@@ -1356,6 +1484,52 @@ async function validateRemoteSpawn(dir, cwd) {
   if (!worktrees.some((w) => normPath(w.path) === c)) throw new Error('Not a worktree of this project.');
 }
 
+// ---------------------------------------------------------------------------
+// `/command`: config / spawn / forget for the /cc-manage and
+// /cc-clean-worktrees skills, called through hooks/cc.js from inside a CC
+// session (same per-agent secret as /event). The logic and its guards live in
+// ccommand.js; this only plugs in the main-process pieces.
+// ---------------------------------------------------------------------------
+
+const CLAUDE_JSON = path.join(os.homedir(), '.claude.json');
+
+const commandRunner = createCommandRunner({
+  roots: loadPathRoots,
+  projects: loadProjects,
+  workspaces: loadWorkspaces,
+  agents: () => remoteAgents.list,
+  isGit: (dir) => isGitRepo(dir),
+  defaultRef: (dir) => resolveDiffBase(dir),
+  // The project's own folder, or one of its linked worktrees. Compared with
+  // ccpaths.normPath (realpath), since the caller's path may be spelled
+  // differently from what git recorded.
+  validateWorktreeSpawn: async (dir, cwd) => {
+    if (ccPaths.normPath(dir) === ccPaths.normPath(cwd)) return;
+    if (!(await worktreeCheck.isRegisteredWorktreeOf(dir, cwd))) throw new Error('Not a worktree of this project.');
+  },
+  registerWorkspace: async (dir) => {
+    const rec = createWorkspace({ parent: dir, useParent: true });
+    if (rec && rec.dir) sendToRenderer('projects:changed');
+    return rec;
+  },
+  trust: async (paths) => ensureTrusted(CLAUDE_JSON, paths),
+  worktreeBranchOf: worktreeCheck.worktreeBranchOf,
+  deleteMergedBranch: worktreeCheck.deleteMergedBranch,
+  rendererCommand,
+  isDirectory: (p) => {
+    try {
+      return fs.statSync(p).isDirectory();
+    } catch {
+      return false;
+    }
+  },
+  log,
+});
+
+function runCommand(agentId, op, args) {
+  return commandRunner.run(agentId, op, args);
+}
+
 const REMOTE_RPC = {
   'projects.list': () => loadProjects().map(enrich),
   'workspaces.list': () => loadWorkspaces().map(enrich),
@@ -1499,6 +1673,56 @@ function registerRemoteIpc() {
     else p.reject(new Error(typeof error === 'string' && error ? error : 'Command failed.'));
   });
 
+  // -- Default roots (Settings → General) ----------------------------------
+
+  ipcMain.handle('paths:getConfig', () => ({ ...loadPathRoots(), error: null }));
+
+  // Checked against the registered projects; a rejected patch changes nothing
+  // and returns the current roots with `error` naming the failed rule.
+  ipcMain.handle('paths:setConfig', (_e, patch = {}) => {
+    const current = loadPathRoots();
+    let projects;
+    try {
+      projects = loadProjects();
+    } catch (err) {
+      return { ...current, error: errMsg(err) };
+    }
+    const r = ccPaths.validateRootsPatch(patch, {
+      isDirectory: (p) => {
+        try {
+          return fs.statSync(p).isDirectory();
+        } catch {
+          return false;
+        }
+      },
+      home: os.homedir(),
+      projects,
+      current,
+    });
+    if (!r.ok) return { ...current, error: r.error };
+    try {
+      ccPaths.saveRoots(PATHS_FILE, r.roots);
+    } catch (err) {
+      log.error('paths', 'could not save paths.json', err);
+      return { ...current, error: `Could not save: ${errMsg(err)}` };
+    }
+    return { ...r.roots, error: null };
+  });
+
+  // Folder dialog for one root; the caller then saves it via paths:setConfig.
+  ipcMain.handle('paths:pickRoot', async (_e, key) => {
+    const titles = { worktreeRoot: 'Choose the Worktrees folder', workspaceRoot: 'Choose the Workspaces folder' };
+    if (!Object.prototype.hasOwnProperty.call(titles, key)) return { error: 'Unknown setting.' };
+    const start = usableRoot(loadPathRoots()[key]);
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory', 'createDirectory'],
+      title: titles[key],
+      ...(start ? { defaultPath: start } : {}),
+    });
+    if (canceled || !filePaths[0]) return { canceled: true };
+    return { path: filePaths[0] };
+  });
+
   ipcMain.handle('remote:getConfig', () => remoteConfigView());
 
   ipcMain.handle('remote:setConfig', async (_e, patch = {}) => {
@@ -1632,6 +1856,7 @@ if (!gotSingleInstanceLock) {
     // on wake instead of waiting for the next heartbeat tick.
     powerMonitor.on('resume', () => remote.server?.heartbeat());
     await ensureHooksInstalled();
+    await ensureSkillsInstalled();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

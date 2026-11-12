@@ -1,12 +1,20 @@
 ; Custom NSIS uninstall hook for electron-builder.
-; Removes the status hooks this install wrote into ~/.claude/settings.json so
-; uninstalling doesn't leave an orphaned hook pointing at a deleted report.js
-; (which would make every future Claude Code session throw "Cannot find module").
+; On a real uninstall, removes what this install wrote into the user's Claude
+; config, so nothing is left pointing at deleted files:
+;   - the status hooks in ~/.claude/settings.json (an orphaned hook pointing at
+;     a deleted report.js would make every future Claude Code session throw
+;     "Cannot find module");
+;   - the bundled skills in ~/.claude/skills that Command Center installed and
+;     the user hasn't edited (see hooks/skillsync.js).
 ;
-; IMPORTANT: electron-builder's uninstaller runs `RMDir /r $INSTDIR` (deleting
-; the app, incl. our cleanup script) BEFORE the `customUnInstall` macro. So we
-; hook `customUnInit` instead — it runs in un.onInit, before any files are
-; removed, while $INSTDIR\resources\...\uninstall-hooks.js still exists.
+; An app update also runs the old uninstaller (with --updated). Then nothing is
+; removed: the new version keeps using the same hooks and skills, and the user
+; isn't asked to install them again after every update.
+;
+; Why customUnInit: it runs in un.onInit, before any files are removed, while
+; $INSTDIR\resources\app.asar.unpacked\hooks\uninstall-hooks.js still exists.
+; customUnInstall can run after electron-builder has already deleted the app
+; folder.
 ;
 ; Requires `node` on PATH — the hook mechanism itself already relies on that.
 ; Non-fatal: nsExec's result is popped and ignored so a missing node or script
@@ -14,7 +22,9 @@
 ; the uninstaller from a temp copy); the second run simply removes nothing.
 
 !macro customUnInit
-  DetailPrint "Removing Command Center status hooks from ~/.claude/settings.json"
-  nsExec::Exec 'cmd /c node "$INSTDIR\resources\app.asar.unpacked\hooks\uninstall-hooks.js"'
-  Pop $0
+  ${ifNot} ${isUpdated}
+    DetailPrint "Removing Command Center status hooks and skills from ~/.claude"
+    nsExec::Exec 'cmd /c node "$INSTDIR\resources\app.asar.unpacked\hooks\uninstall-hooks.js"'
+    Pop $0
+  ${endIf}
 !macroend

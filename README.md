@@ -35,6 +35,27 @@ with a status dot that reflects what the agent is doing right now.
     `archive/`) / **Restore**, **Open in VS Code**, **Show in Explorer**, and
     **Move to Recycle Bin** (asks first). A name clash gets a ` (2)` suffix;
     nothing is ever overwritten or permanently deleted.
+- **Default folders** — Settings → General has a **Worktrees folder** and a
+  **Workspaces folder**. "Create branch" in the worktree picker then opens at
+  `<Worktrees folder>/<repo>`, and New workspace opens at the Workspaces
+  folder. Either can be left unset; the pickers then behave as before.
+- **Steer Command Center from Claude Code** — two bundled skills, installed into
+  `~/.claude/skills/` on first start (CC asks first):
+  - **`/cc-manage`** turns the plan in a chat into ready sessions: one worktree
+    per repo slice under `<Worktrees folder>/<repo>/<feature>` on a new
+    `feat/<feature>` branch forked from `origin/<default>` (or a folder under
+    the Workspaces folder for work tied to no repo), each with a new session
+    whose first prompt is a starting skill you pick plus a brief. It shows one
+    table and creates nothing until you approve it.
+  - **`/cc-clean-worktrees`** lists every folder under the Worktrees folder as
+    merged, idle (no commits for 14 days, or the number you pass), orphaned or
+    keep, flags dirty and unpushed ones, and after you confirm removes their
+    sessions, the worktrees and, if you choose, the merged branches. A dirty
+    worktree needs its own confirmation.
+
+  Both only work in a session Command Center started, and talk to it through
+  the local [`/command` endpoint](#command-endpoint). CC updates its own copies
+  of the skills after an app update; a copy you edited is left alone.
 - **Light / dark theme** — follows OS by default, toggle in the sidebar.
 - **Remote access from your phone** (opt-in) — a sideloaded Android app shows
   the same agents and status, opens their terminals, has the same agent menu,
@@ -57,6 +78,41 @@ can't spoof status events.
 ```
 hook event ──> report.js ──POST (x-cc-secret)──> app HTTP server ──> sidebar dot
 ```
+
+App updates keep the hooks (and the bundled skills) in place; only a real
+uninstall removes them.
+
+### `/command` endpoint
+
+The same local server takes `POST /command`, which the bundled skills call
+through `hooks/cc.js` (`node "$CC_CLI" <op>`, JSON arguments on stdin). Every
+call is authenticated like a status event: a live `agentId` plus that agent's
+own `x-cc-secret`, on `127.0.0.1` only. Only a session Command Center started
+has those, so a session you open yourself can't call it. Three ops:
+
+- **`config`** — the default folders, the registered projects (with each
+  repo's default branch) and workspaces, and the agents (live and sleeping).
+- **`spawn`** `{ dir, cwd, prompt }` — start a session in the background (the
+  desktop's active terminal doesn't switch) in a worktree of a registered
+  project (or the project's own folder), in a registered workspace, or in an
+  existing direct child of the Workspaces folder, which is then registered as a
+  workspace. Anything else is refused. The prompt is at most 8,000 characters.
+- **`forget`** `{ cwd, removeWorktree?, deleteBranch?, force? }` — stop every
+  session in a folder, take them off the sidebar and optionally remove the
+  worktree and delete its branch. Refused, before anything is stopped, for a
+  folder outside the Worktrees and Workspaces folders, a project's main
+  folder, and the calling session's own folder (or one that contains it). A
+  dirty worktree is only removed with `force`; without it, nothing is removed
+  and the sessions stay as sleeping rows. The branch is deleted only when it is
+  merged into the repo's `origin/<default>`.
+
+Every call, refusals included, leaves one line in `main.log` with the caller's
+agent id, the op, the folder and the outcome; a wrong secret or unknown agent
+also logs a warning. Before a spawn, CC pre-accepts Claude Code's "trust this
+folder?" prompt for the project and the session folder (it sets
+`projects["<path>"].hasTrustDialogAccepted` in `~/.claude.json`, only where
+missing): Claude shows that prompt even in bypass mode, and a new session would
+otherwise wait on it.
 
 ## Remote access
 
@@ -154,6 +210,13 @@ control of it:
   needs-input alert for them). Settings → Remote warns when both are on.
 - Remote clients can only start agents in saved projects / workspaces and their
   registered worktrees, and only run the same guarded git commands as the UI.
+- **Sessions can start and stop other sessions** through the local
+  [`/command` endpoint](#command-endpoint) (the `/cc-manage` and
+  `/cc-clean-worktrees` skills). That needs a live agent's own secret, so only
+  sessions Command Center launched can call it, and only for the targets and
+  guards listed there. With bypass permissions on, such a session can do this
+  without a permission prompt, so the skills ask for confirmation themselves
+  and every call is logged.
 
 The phone app itself — building, sideloading and the release keystore — is
 documented in [`mobile/README.md`](mobile/README.md).
@@ -188,6 +251,11 @@ Electron, two processes with a curated IPC bridge (`contextIsolation: true`,
     `writeJsonAtomic`) + `hasShellMeta` path-safety check.
   - `gitinfo.js` — `.git/HEAD` branch reading, project-type detection, and the
     `git` porcelain output parsers.
+  - `ccpaths.js` (default folders, path checks), `ccommand.js` (the
+    `/command` ops and their guards), `worktreecheck.js` (worktree and
+    merged-branch checks), `claudetrust.js` (Claude folder trust),
+    `spawnargs.js` (the `claude` command line); `hooks/cc.js` (the CLI the
+    skills call) and `hooks/skillsync.js` (installing the skills in `skills/`).
   - `logger.js` — leveled logger, rotating file at `userData/logs/main.log`
     (`CC_LOG_LEVEL` controls verbosity); renderer logs are forwarded here too.
   - Remote access: `remoteserver.js` (WSS server, auth at upgrade),

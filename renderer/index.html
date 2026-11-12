@@ -166,6 +166,34 @@
             </div>
             <label class="switch"><input id="set-bypass" type="checkbox" /><span class="slider"></span></label>
           </div>
+          <div class="set-path">
+            <div class="set-row">
+              <div class="set-txt">
+                <span>Worktrees folder</span>
+                <small>New worktrees go in folder\repo\feature.</small>
+              </div>
+              <div class="set-path-actions">
+                <button id="set-wt-root-pick" class="btn-ghost">Choose…</button>
+                <button id="set-wt-root-clear" class="btn-ghost">Clear</button>
+              </div>
+            </div>
+            <span id="set-wt-root" class="set-path-val"></span>
+            <p id="set-wt-root-err" class="set-path-err" role="alert" hidden></p>
+          </div>
+          <div class="set-path">
+            <div class="set-row">
+              <div class="set-txt">
+                <span>Workspaces folder</span>
+                <small>New workspaces go in folder\name.</small>
+              </div>
+              <div class="set-path-actions">
+                <button id="set-ws-root-pick" class="btn-ghost">Choose…</button>
+                <button id="set-ws-root-clear" class="btn-ghost">Clear</button>
+              </div>
+            </div>
+            <span id="set-ws-root" class="set-path-val"></span>
+            <p id="set-ws-root-err" class="set-path-err" role="alert" hidden></p>
+          </div>
         </section>
 
         <section class="set-panel" data-panel="terminal">

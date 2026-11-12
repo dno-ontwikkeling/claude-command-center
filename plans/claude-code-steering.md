@@ -23,7 +23,7 @@ The user plans features in a Claude Code chat, then rebuilds that plan in Comman
 - [ ] `forget` without `force` on a dirty worktree changes nothing on disk, leaves its sessions sleeping and returns `needsForce`; with `force` it removes the worktree.
 - [ ] A `forget` that takes longer than 5 seconds (several sessions, locked folder) returns its result to the CLI instead of a connection reset.
 - [ ] Each `/command` call leaves one info line in `main.log` with the caller agent id, op, target cwd and outcome.
-- [ ] `node "$CC_CLI" config` returns without hanging when no stdin is attached or stdin never closes.
+- [x] `node "$CC_CLI" config` returns without hanging when no stdin is attached or stdin never closes.
 - [ ] `/cc-clean-worktrees` lists every folder under `<wt-root>/<repo>/` with a verdict (merged / idle / orphaned / keep) and flags dirty and unpushed folders; "merged" is judged against `origin/<default>` after a fetch; the calling session's own worktree is never listed.
 - [ ] A worktree with no commits of its own (fresh from `/cc-manage`) is "keep (new)", never merged or idle; a worktree of an unregistered repo under `<wt-root>` is "keep", never orphaned.
 - [ ] With more than 4 cleanup candidates, every candidate can still be selected.
@@ -71,23 +71,23 @@ The user plans features in a Claude Code chat, then rebuilds that plan in Comman
 - Defaults adopted during deepen: branch name `feat/<slug>`, folder `<slug>`; two registered repos with the same folder name → skipped as "ambiguous"; no `origin` or failed fetch → manage skips the row, clean marks the repo "fetch failed"; each skill checks only the roots it uses (clean: `<wt-root>`).
 
 ## Steps
-- [ ] Step 1: Spike: test that a prompt survives being passed as an argument through `@lydell/node-pty` the way `spawnAgent` does (`main.js:348`). Spawn `process.execPath` with the echo fixture and a prompt of about 8,000 characters containing newlines, `"`, `\` before quotes, trailing `\`, `%`, `^`, `&` and non-ASCII text. The fixture writes `argv[2]` to the file named in `ARGV_OUT` (not to stdout, which ConPTY wraps and escapes); compare the bytes. Skip on non-Windows. Record pass or fail in this plan's Log. If it fails, Step 7 implements the fallback instead — files: test/ptyargv.test.js, test/fixtures/argv-echo.js — verify: `node --test test/ptyargv.test.js`
+- [x] Step 1: Spike: test that a prompt survives being passed as an argument through `@lydell/node-pty` the way `spawnAgent` does (`main.js:348`). Spawn `process.execPath` with the echo fixture and a prompt of about 8,000 characters containing newlines, `"`, `\` before quotes, trailing `\`, `%`, `^`, `&` and non-ASCII text. The fixture writes `argv[2]` to the file named in `ARGV_OUT` (not to stdout, which ConPTY wraps and escapes); compare the bytes. Skip on non-Windows. Record pass or fail in this plan's Log. If it fails, Step 7 implements the fallback instead — files: test/ptyargv.test.js, test/fixtures/argv-echo.js — verify: `node --test test/ptyargv.test.js`
   - note: node-pty builds the command line in `argsToCommandLine` (`node_modules/@lydell/node-pty/windowsPtyAgent.js:170-222`, copied from winpty). It quotes per `CommandLineToArgvW`, and newlines pass through unescaped. Quirk: an arg that already starts and ends with `"` and contains a space is left as is. There is no length check before CreateProcessW's 32,767-character limit. The binary is a prebuilt (`@lydell/node-pty-win32-x64/conpty.node`) that should load under plain node. (framework-docs research)
-- [ ] Step 2: Electron-free `ccpaths.js`, tests first:
+- [x] Step 2: Electron-free `ccpaths.js`, tests first:
   - `canonicalPath(p)`: rejects MSYS `/x/…` paths; otherwise `path.resolve`, then `fs.realpathSync.native` when the path exists, to expand 8.3 names.
   - `validateRootsPatch(patch, { isDirectory, home, projects })`: absolute existing folder, or `''` to unset. Rejects a drive root, home, equal or nested roots, a root inside a registered project, and `hasShellMeta` (`jsonstore.js`), with the failing character named in the message.
   - `repoFolderName(dir)`, `worktreePickerDir(root, dir)`, `isUnder(root, p)` (normalized, case-insensitive on Windows, no `..` escape), `isDirectChild(root, p)`.
   - `loadRoots(file)` / `saveRoots(file, roots)`: a corrupt file falls back to defaults and reports it, like `loadRemoteConfig` (`main.js:1104`).
   - files: ccpaths.js, test/ccpaths.test.js — verify: `node --test test/ccpaths.test.js`
-- [ ] Step 3: Main side of the roots:
+- [x] Step 3: Main side of the roots:
   - `userData/paths.json` through `loadRoots`/`saveRoots`.
   - IPC `paths:getConfig`, `paths:setConfig` (checked by `validateRootsPatch` against the registered projects), `paths:pickRoot` (folder dialog).
   - `worktree:create` (`main.js:755`) gets `defaultPath` = `worktreePickerDir`, creating the folder if missing; if mkdir fails, no `defaultPath`. `workspaces:pickFolder` (`main.js:681`) gets `defaultPath` = `<ws-root>` when it exists.
   - Preload API; `InvokeChannelMap` in `types/electron.d.ts:27` plus the `Api` methods and result types in `types/ipc.d.ts`; add `ccpaths.js` to `build.files`.
   - files: main.js, preload.js, types/electron.d.ts, types/ipc.d.ts, package.json — verify: `node --check main.js && npm run typecheck && npm test`
   - note: on Windows, Electron calls `IFileDialog::SetFolder` with an absolute `defaultPath`, which overrides the remembered last folder. A path that doesn't exist and has no trailing separator becomes parent folder + filename, so always pass an existing folder. (`electron/shell/browser/ui/file_dialog_win.cc` @ v43.7.9, framework-docs research)
-- [ ] Step 4: Settings → General: two rows, **Worktrees folder** and **Workspaces folder**, each showing the path with **Choose…** and **Clear** buttons and the rejection message inline. Read and written over the Step 3 IPC (pattern: `refreshRemote`/`setRemote`, `renderer/settings.js:268`). Styled per `DESIGN.md` using the existing `set-row` markup (`renderer/index.html:162`) — files: renderer/index.html, renderer/dom.js, renderer/settings.js, renderer/style.css — verify: `node --test test/renderer-contract.test.mjs test/renderer-tokens.test.mjs`
-- [ ] Step 5: Electron-free `worktreecheck.js` with an injected git runner (default `execFile('git', …)`) and no logger, tests first against a temp repo:
+- [x] Step 4: Settings → General: two rows, **Worktrees folder** and **Workspaces folder**, each showing the path with **Choose…** and **Clear** buttons and the rejection message inline. Read and written over the Step 3 IPC (pattern: `refreshRemote`/`setRemote`, `renderer/settings.js:268`). Styled per `DESIGN.md` using the existing `set-row` markup (`renderer/index.html:162`) — files: renderer/index.html, renderer/dom.js, renderer/settings.js, renderer/style.css — verify: `node --test test/renderer-contract.test.mjs test/renderer-tokens.test.mjs`
+- [x] Step 5: Electron-free `worktreecheck.js` with an injected git runner (default `execFile('git', …)`) and no logger, tests first against a temp repo:
   - `isRegisteredWorktreeOf(dir, wtPath)`: `false` when git fails, unlike `isWorktreeRegistered` (`gitops.js:79`).
   - `worktreeBranchOf(dir, wtPath)`: from `worktree list --porcelain`.
   - `deleteMergedBranch(dir, branch, defaultRef)`: `merge-base --is-ancestor`, then `branch -D`; otherwise `{ kept: true, reason }`.
@@ -95,13 +95,13 @@ The user plans features in a Claude Code chat, then rebuilds that plan in Comman
   - Test repos commit with `-c user.name=cc-test -c user.email=cc-test@example.invalid`, because the CI runner has no git identity.
   - files: worktreecheck.js, test/worktreecheck.test.js, main.js, package.json — verify: `node --test test/worktreecheck.test.js && node --check main.js`
   - note: `gitops.js:13` requires `./logger` → `require('electron')` (`logger.js:11`). Under plain node in CI (`npm ci --ignore-scripts`, `ci.yml:24`) that throws or yields `app === undefined`, so a git-failure log crashes. No existing test builds a temp repo. (repo research)
-- [ ] Step 6: Electron-free `claudetrust.js`, tests first with temp files:
+- [x] Step 6: Electron-free `claudetrust.js`, tests first with temp files:
   - `trustKey(p)`: forward slashes, casing kept, so `C:\Github\x` → `C:/Github/x`, matching Claude's keys.
   - `ensureTrusted(file, paths)`: reads `~/.claude.json` right before writing; sets `projects[key].hasTrustDialogAccepted = true` only where it's missing or false; keeps every other key; writes atomically with `writeJsonAtomic` (`jsonstore.js`); doesn't write when nothing changed; never writes when the file doesn't parse (returns `{ ok: false }`).
   - files: claudetrust.js, test/claudetrust.test.js — verify: `node --test test/claudetrust.test.js`
   - note: Claude keys trust by git repo root (a worktree uses its main checkout's root) and, outside a repo, by the start folder and its subfolders. The dialog holds the positional prompt until accepted, and bypass mode doesn't skip it. Manual pre-set via `projects["<path>"].hasTrustDialogAccepted`. (https://code.claude.com/docs/en/permissions, /security; framework-docs research)
-- [ ] Step 7: First prompt on spawn. Extract `buildClaudeArgs({ resume, bypass, prompt })` into `spawnargs.js`: `--resume`, then `--dangerously-skip-permissions`, then the prompt as the last positional; never a prompt together with `resume`; reject a NUL character. `spawnAgent` (`main.js:353-357`) uses it. Renderer `spawn()` (`renderer/agents.js:226`) passes `opts.prompt` through `window.api.spawn`; `SpawnOpts.prompt` goes in `types/ipc.d.ts:120`. If Step 1 failed: the renderer keeps the prompt and, on the first activity-idle (30 s cap, never on resume), writes it as a bracketed paste (`\x1b[200~…\x1b[201~`) followed by `\r`. Add `spawnargs.js` to `build.files`. Tests first — files: spawnargs.js, test/spawnargs.test.js, main.js, renderer/agents.js, types/ipc.d.ts, package.json — verify: `node --test test/spawnargs.test.js && node --check main.js && npm run typecheck`
-- [ ] Step 8: Electron-free command runner `ccommand.js`: `createCommandRunner(deps)` → `run(callerId, op, args)`, tests first with stubs. Injected deps: `roots`, `projects`, `workspaces`, `agents` (snapshot), `defaultRef(dir)`, `validateWorktreeSpawn`, `registerWorkspace`, `trust(paths)`, `worktreeBranchOf`, `deleteMergedBranch`, `rendererCommand`, `log`.
+- [x] Step 7: First prompt on spawn. Extract `buildClaudeArgs({ resume, bypass, prompt })` into `spawnargs.js`: `--resume`, then `--dangerously-skip-permissions`, then the prompt as the last positional; never a prompt together with `resume`; reject a NUL character. `spawnAgent` (`main.js:353-357`) uses it. Renderer `spawn()` (`renderer/agents.js:226`) passes `opts.prompt` through `window.api.spawn`; `SpawnOpts.prompt` goes in `types/ipc.d.ts:120`. If Step 1 failed: the renderer keeps the prompt and, on the first activity-idle (30 s cap, never on resume), writes it as a bracketed paste (`\x1b[200~…\x1b[201~`) followed by `\r`. Step 1 found one quirk: a prompt that starts and ends with `"` and contains whitespace is passed through unquoted and gets split, so `buildClaudeArgs` appends a space to such a prompt. Add `spawnargs.js` to `build.files`. Tests first — files: spawnargs.js, test/spawnargs.test.js, main.js, renderer/agents.js, types/ipc.d.ts, package.json — verify: `node --test test/spawnargs.test.js && node --check main.js && npm run typecheck`
+- [x] Step 8: Electron-free command runner `ccommand.js`: `createCommandRunner(deps)` → `run(callerId, op, args)`, tests first with stubs. Injected deps: `roots`, `projects`, `workspaces`, `agents` (snapshot), `defaultRef(dir)`, `validateWorktreeSpawn`, `registerWorkspace`, `trust(paths)`, `worktreeBranchOf`, `deleteMergedBranch`, `rendererCommand`, `log`.
   - `config` → the shape in Decisions, with `callerSelf` set from `callerId` and paths in canonical form.
   - `spawn { dir, cwd, prompt }`:
     - prompt is a string of at most 8,000 characters with no NUL; `dir`/`cwd` are run through `canonicalPath`, then `dir` is replaced by the matching stored record's exact string.
@@ -116,7 +116,7 @@ The user plans features in a Claude Code chat, then rebuilds that plan in Comman
     - Returns `{ ok, needsForce?, branch, branchDeleted, branchKept?, error? }`.
   - Strict argument validation in the style of `RPC_ARGS` (`remoteproto.js:35`), exported as `ARG_SCHEMA` and `OPS`; unknown op → error. One `log.info('command', …)` line per call with caller id, op, cwd and outcome.
   - files: ccommand.js, test/ccommand.test.js — verify: `node --test test/ccommand.test.js`
-- [ ] Step 9: `POST /command` in `hookserver.js`, tests first next to the existing ones:
+- [x] Step 9: `POST /command` in `hookserver.js`, tests first next to the existing ones:
   - Same body cap, live-agent check and `x-cc-secret` check as `/event`.
   - `req.setEncoding('utf8')` on both routes, so a multi-byte character split across chunks stays intact.
   - For `/command`: `req.socket.setTimeout(130000)` before awaiting `runCommand`.
@@ -125,13 +125,13 @@ The user plans features in a Claude Code chat, then rebuilds that plan in Comman
   - Tests: a server with `setTimeout(50)` and a `runCommand` that resolves after 200 ms still returns 200; a 3-byte character split across two writes arrives intact.
   - files: hookserver.js, test/hookserver.test.js — verify: `node --test test/hookserver.test.js`
   - note: `server.setTimeout(5000)` (`main.js:333`) only sets each socket's timeout on connect. Overriding it per request works, but Node resets it to `keepAliveTimeout` after the response, so set it on every `/command` request. `requestTimeout` and `headersTimeout` don't limit handler time. Without `setEncoding`, `body += chunk` decodes each Buffer separately and a split character becomes U+FFFD. (Node 24 http and stream docs, framework-docs research)
-- [ ] Step 10: Wire it up.
+- [x] Step 10: Wire it up.
   - main.js: build the runner with `validateRemoteSpawn` (`main.js:1346`); `createWorkspace({ parent, useParent: true })` (`main.js:603`) followed by `sendToRenderer('projects:changed')`; `remoteAgents.list`; `resolveDiffBase` (only when `isGit`); `ensureTrusted` on `~/.claude.json`; the `worktreecheck` helpers; `rendererCommand`; `log`. Pass `runCommand` to `createRequestHandler` (`main.js:327`). Add `ccommand.js` and `claudetrust.js` to `build.files`.
   - renderer: `remoteCommands.spawn` (`renderer/agents.js:589`) takes optional `prompt` and `kind`; `kind` decides workspace, branch lookup and `isMain`, instead of `state.workspacesData` (which may not be refreshed yet). `app.js:49` re-renders the row on `projects:changed`; don't import `refreshProjects` into agents.js (`dashboard.js:7` imports agents.js, so that would be an import cycle).
   - renderer: new `remoteCommands.forgetIds` puts every listed session to sleep and waits for exit, then calls `window.api.removeWorktree(dir, cwd, force)` once. Only on success are all of them untracked. On a git refusal all of them stay sleeping and it returns `{ needsForce: !force, error }`.
   - `RemoteCommand` union in `types/ipc.d.ts:150`.
   - files: main.js, renderer/agents.js, types/ipc.d.ts, package.json — verify: `node --check main.js && npm run typecheck && npm test`
-- [ ] Step 11: CLI `hooks/cc.js`, tests first by running it as a child process against a test server:
+- [x] Step 11: CLI `hooks/cc.js`, tests first by running it as a child process against a test server:
   - `node cc.js <op>` reads JSON args from stdin with `setEncoding('utf8')`. Skip stdin when `isTTY`; if no byte arrives within 500 ms treat it as `{}`; once data arrives, read to EOF.
   - Posts `{ agentId, op, args }` to `http://127.0.0.1:$CC_PORT/command` with `x-cc-secret` and a 130 s client timeout.
   - Prints the result JSON to stdout and exits 0; prints the error to stderr and exits 1 (bad JSON included); without `CC_PORT`/`CC_AGENT_ID`/`CC_SECRET` prints "Run this from a Command Center session" and exits 2.
@@ -139,12 +139,12 @@ The user plans features in a Claude Code chat, then rebuilds that plan in Comman
   - Tests include a stdin pipe that never closes, for `config`.
   - files: hooks/cc.js, test/cc-cli.test.js, main.js — verify: `node --test test/cc-cli.test.js && node --check main.js`
   - note: inside Claude Code on Windows the Bash tool runs Git Bash, so `<<'CC_ARGS_EOF'` heredocs work. Foreground stdin has been reported as an open pipe that never reaches EOF (anthropics/claude-code#67234), so a bare stdin read can hang. (framework-docs research)
-- [ ] Step 12: `hooks/skillsync.js`, electron-free and safe under plain node (node built-ins only), tests first with temp dirs:
+- [x] Step 12: `hooks/skillsync.js`, electron-free and safe under plain node (node built-ins only), tests first with temp dirs:
   - `planSync(bundledDir, targetDir)` → `{ install[], update[], skip[] }`, per skill; a sidecar without `SKILL.md` counts as missing.
   - `applySync(plan)` writes `SKILL.md` (LF-normalized) and a `.command-center.json` sidecar with the hash of the written bytes, using read and write rather than `copyFile`, so it works from inside the asar.
   - `removeOwned(targetDir)` deletes only `SKILL.md` and the sidecar where the hash matches, then removes the folder if it's empty.
   - files: hooks/skillsync.js, test/skillsync.test.js — verify: `node --test test/skillsync.test.js`
-- [ ] Step 13: Write the skills.
+- [x] Step 13: Write the skills.
   - `skills/cc-manage/SKILL.md`:
     - checks the roots it needs and `CC_CLI`, then `cc config < /dev/null`;
     - plan → table (repo, branch `feat/<slug>`, path, starting skill picked from the installed skills, one-line brief). Skipped or conflicting rows: unregistered, ambiguous name, no `defaultRef` or failed fetch, branch or folder already exists;
@@ -159,19 +159,19 @@ The user plans features in a Claude Code chat, then rebuilds that plan in Comman
   - A content test checks: frontmatter `name` equals the folder name and `description` is present; every `$CC_CLI` op is in `ccommand.OPS`; the JSON keys in the heredocs match `ccommand.ARG_SCHEMA`.
   - files: skills/cc-manage/SKILL.md, skills/cc-clean-worktrees/SKILL.md, test/skills-content.test.js — verify: `node --test test/skills-content.test.js`
   - note: AskUserQuestion takes 1-4 questions per call, 2-4 options each, a header of at most 12 characters, and accepts a free-text answer. A positional prompt that starts with `/plugin:skill args` should run as that skill (inferred from the docs; Step 17 confirms it). (https://code.claude.com/docs/en/agent-sdk/user-input, /skills)
-- [ ] Step 14: Install and uninstall.
+- [x] Step 14: Install and uninstall.
   - `ensureSkillsInstalled()` runs at startup after `ensureHooksInstalled` (`main.js:268`). Missing skills → consent dialog (Install / Skip), asked again on every start until installed, like the hooks. CC-owned outdated copies → updated silently; edited or unmarked copies → skipped and logged.
   - `hooks/uninstall-hooks.js` calls `skillsync.removeOwned(~/.claude/skills)` in its own try block, separate from the hooks cleanup.
   - `build/uninstaller.nsh`: wrap the `customUnInit` body in `${ifNot} ${isUpdated}`, so updates keep both hooks and skills; update the `DetailPrint` and the outdated comment. Add `skills/**` to `build.files`.
   - Test: an uninstall run with a temp `HOME` and `USERPROFILE` removes owned skills and keeps unmarked ones and extra files.
   - files: main.js, hooks/uninstall-hooks.js, build/uninstaller.nsh, package.json, test/uninstall-skills.test.js — verify: `node --test test/uninstall-skills.test.js && node --check main.js && npm test`
   - note: an NSIS update runs the old uninstaller with `--updated` (`installUtil.nsh:202-224`), and `customUnInit` fires in `un.onInit` (`uninstaller.nsh:33-35`), so today's hook cleanup also runs on every update. `${isUpdated}` is used inside uninstaller code (`uninstaller.nsh:164,224`), but its `!define` wasn't found in the templates; Step 17 confirms it with a real update. The comment in `build/uninstaller.nsh` claiming `RMDir` runs before `customUnInstall` is wrong for this version. (framework-docs research)
-- [ ] Step 15: Docs.
+- [x] Step 15: Docs.
   - README: feature list (the two skills, the default roots).
   - README security model (`README.md:138`): who can call `/command`, the three ops, the allowed targets and `forget` guards, the audit log, and that CC pre-sets Claude's folder trust for the folders it spawns into.
   - PRODUCT.md "Operating Context": the roots and the skills.
   - files: README.md, PRODUCT.md — verify: `grep -q "/command" README.md && grep -q "cc-clean-worktrees" README.md && grep -q "Worktrees folder" README.md && grep -q "hasTrustDialogAccepted" README.md`
-- [ ] Step 16: Write the acceptance checklist `plans/claude-code-steering.acceptance.md`, one unticked item per success criterion that unit tests can't prove:
+- [x] Step 16: Write the acceptance checklist `plans/claude-code-steering.acceptance.md`, one unticked item per success criterion that unit tests can't prove:
   - a real `/cc-manage` with 2 repos, 2 slices of one repo, 1 no-repo item, 1 unregistered repo, 1 existing branch, plus a rejected run;
   - first prompt arrives intact in `claude.exe` and runs as a skill;
   - no trust prompt in a fresh `<ws-root>` child;
@@ -199,3 +199,84 @@ The user plans features in a Claude Code chat, then rebuilds that plan in Comman
 ## Log
 <!-- appended by /workflow:work: one entry per completed step -->
 - 2026-11-12 Deepened — 8 criteria, 3 steps, 6 risks, 8 notes
+- 2026-11-12 Step 1 — done (spike PASS: pass the prompt as an argument; no bracketed-paste fallback)
+  red: `✖ a prompt that starts and ends with a quote and contains a space survives` — `"quoted start and end"` arrived as `"quoted`
+  green: `✔ a long prompt with quotes, backslashes, newlines and non-ASCII survives node-pty argv` (7,994 chars, byte-equal); `✔ a quote-wrapped prompt with a space survives once a trailing space breaks the quote wrap`
+  verify: `node --test test/ptyargv.test.js` → exit 0
+  learning: node-pty passes an arg that starts and ends with `"` and contains a space through unquoted (winpty quirk), so Step 7 appends a space to such a prompt. After a ConPTY child exits, call `term.kill()` or the handles keep the test process alive.
+- 2026-11-12 Step 2 — done
+  red: `Error: Cannot find module '../ccpaths'`, then 3 ✖ (home, nested roots, project): `actual: true, expected: false`
+  green: `ℹ pass 27` `ℹ fail 0`
+  verify: `node --test test/ccpaths.test.js` → exit 0
+  learning: `os.tmpdir()` here is an 8.3 short path (`OLIVIE~1`), so `normPath` in ccpaths runs realpath.native before comparing. Without it, a long-form root never matches a short-form stored project or home. main.js `normPath` doesn't do this.
+- 2026-11-12 Step 3 — done
+  red: — (main.js glue, no unit test; the logic is in ccpaths, tested in Step 2)
+  green: `node --check main.js` ok; `tsc -p tsconfig.typecheck.json` clean; `ℹ pass 358` `ℹ fail 0`
+  verify: `node --check main.js && npm run typecheck && npm test` → exit 0
+  learning: IPC is `paths:getConfig` / `paths:setConfig` / `paths:pickRoot(key)`. They return `PathsConfig { worktreeRoot, workspaceRoot, error }`. A rejected patch returns the unchanged roots with `error`.
+- 2026-11-12 Step 4 — done
+  red: — (markup and wiring; the contract test guards the IDs)
+  green: `ℹ pass 7` `ℹ fail 0` (renderer-contract + renderer-tokens); typecheck clean
+  verify: `node --test test/renderer-contract.test.mjs test/renderer-tokens.test.mjs` → exit 0
+  learning: each row is a `.set-path` block: a `set-row` with the label and Choose…/Clear, then the path in mono, then an inline `--danger` error. A 360px modal has no room for a path next to the buttons. Not yet looked at in the running app (Step 17).
+- 2026-11-12 Step 5 — done
+  red: `Error: Cannot find module '../worktreecheck'`
+  green: `ℹ pass 11` `ℹ fail 0`; `node --check main.js` ok
+  verify: `node --test test/worktreecheck.test.js && node --check main.js` → exit 0
+  learning: `isRegisteredWorktreeOf` excludes the main checkout, so `worktree:remove` can never be pointed at a project's main folder through it. `deleteMergedBranch` keeps a merged branch that is still checked out (git refuses `-D`) and returns git's reason.
+- 2026-11-12 Step 6 — done
+  red: `Error: Cannot find module '../claudetrust'`
+  green: `ℹ pass 11` `ℹ fail 0`
+  verify: `node --test test/claudetrust.test.js` → exit 0
+  learning: a missing `~/.claude.json` is not created (`{ ok: false }`). An existing key that differs only in casing and is already trusted counts as trusted on Windows. `trustKey` upper-cases the drive letter.
+- 2026-11-12 Step 7 — done (argument path; no bracketed-paste fallback, per Step 1)
+  red: `Error: Cannot find module '../spawnargs'`
+  green: `ℹ pass 10` `ℹ fail 0`; `node --check main.js` ok; typecheck clean
+  verify: `node --test test/spawnargs.test.js && node --check main.js && npm run typecheck` → exit 0
+  learning: `buildClaudeArgs` also puts a leading space before a prompt that starts with `-`, so claude can't read it as an option. `MAX_PROMPT` (8000) is exported for ccommand. A bad prompt makes `spawnAgent` report an immediate `agent:exit` with the error, like a failed pty spawn.
+- 2026-11-12 Step 8 — done
+  red: tests written before `ccommand.js` existed (module-not-found, not run separately); the first run had 1 ✖ (`forget refuses when the caller is unknown`), a test regex that was too narrow
+  green: `ℹ pass 31` `ℹ fail 0`
+  verify: `node --test test/ccommand.test.js` → exit 0
+  learning: `run` resolves with the result or rejects with an Error (guards and validation). `forget` returns `{ ok: false, needsForce }` for a git refusal, and `{ ok: false, noSessions: true }` when no CC session runs in the folder (the skill then uses bare git). The guard order is outside roots → project main folder → caller unknown or caller's own folder (or a parent of it). An `isGit` dep was added for `config`.
+- 2026-11-12 Step 9 — done
+  red: 6 ✖ on the new `/command:` tests (route missing → 404)
+  green: `ℹ pass 16` `ℹ fail 0` (including `a runner slower than the server socket timeout still answers 200` and `a multi-byte character split across two writes arrives intact`)
+  verify: `node --test test/hookserver.test.js` → exit 0
+  learning: `/command` exists only when `runCommand` is injected (otherwise 404). A runner rejection → `400 {ok:false,error}`. 403/404 log `warn` with `caller=<id> status=<n>`.
+- 2026-11-12 Step 10 — done
+  red: — (glue; the logic is tested in ccommand/hookserver/worktreecheck)
+  green: `node --check main.js` ok; typecheck clean; `ℹ pass 428` `ℹ fail 0`
+  verify: `node --check main.js && npm run typecheck && npm test` → exit 0
+  learning: `validateWorktreeSpawn` for `/command` doesn't reuse `validateRemoteSpawn`. It compares with `ccpaths.normPath` (realpath) and uses `worktreecheck.isRegisteredWorktreeOf`, because main's `normPath` doesn't expand 8.3 names and `listWorktrees` runs `git status` per worktree. `forgetIds` only acts on ids whose record has that exact `cwd` and `dir`.
+- 2026-11-12 Step 11 — done
+  red: 10 ✖ (`hooks/cc.js` missing)
+  green: `ℹ pass 10` `ℹ fail 0` (including `config returns when stdin is a pipe that never closes`)
+  verify: `node --test test/cc-cli.test.js && node --check main.js` → exit 0
+  learning: an ECONNREFUSED says "not reachable on port N". 403/404 says "rejected this session (HTTP n)". `CC_CLI_SCRIPT` sits next to `REPORT_SCRIPT`, so the asar-unpacked path is reused.
+- 2026-11-12 Step 12 — done
+  red: `Error: Cannot find module '../hooks/skillsync'`
+  green: `ℹ pass 9` `ℹ fail 0`
+  verify: `node --test test/skillsync.test.js` → exit 0
+  learning: `planSync` also returns `current` (owned and up to date), so main can tell "nothing to do" apart from "skipped". An unreadable sidecar counts as unmarked (user-owned).
+- 2026-11-12 Step 13 — done
+  red: `ℹ fail 10` (skills missing)
+  green: `ℹ pass 10` `ℹ fail 0`
+  verify: `node --test test/skills-content.test.js` → exit 0
+  learning: the skills write paths with forward slashes (`C:/…`) in shell and JSON, so nothing needs backslash escaping. "keep (new)" without `ccBase` uses the branch reflog (a single entry = no commits since creation), because the "at least one commit in `<defaultRef>..<tip>`" fallback in Decisions can never hold for a tip that is an ancestor of `defaultRef`. The content test also checks that `spawn`/`forget` always use a heredoc and `config` always uses `< /dev/null`.
+- 2026-11-12 Step 14 — done
+  red: 2 ✖ in `test/uninstall-skills.test.js` (uninstall left the skills)
+  green: `ℹ pass 2` `ℹ fail 0`; `node --check main.js` ok; `ℹ pass 459` `ℹ fail 0`
+  verify: `node --test test/uninstall-skills.test.js && node --check main.js && npm test` → exit 0
+  learning: `${isUpdated}` still has no `!define` in `app-builder-lib/templates/nsis`, though electron-builder's own templates use it the same way, so it likely comes from its NSIS resources. Only a real `npm run dist` plus an update (Step 17) can confirm it. Bundled skills are read from `__dirname/skills` inside the asar; uninstall only needs `removeOwned`, not the bundled copy.
+- 2026-11-12 Step 15 — done
+  red: — (docs)
+  green: README: Features (default folders, both skills), a new `### /command endpoint` section under "How status works", a bullet in the Security model, and the new modules in Architecture; PRODUCT.md: Operating Context
+  verify: `grep -q "/command" README.md && grep -q "cc-clean-worktrees" README.md && grep -q "Worktrees folder" README.md && grep -q "hasTrustDialogAccepted" README.md` → exit 0
+  learning: —
+- 2026-11-12 Step 16 — done
+  red: — (doc)
+  green: `plans/claude-code-steering.acceptance.md` with 28 unticked items (setup, settings and pickers, /cc-manage, /command guards and log, /cc-clean-worktrees, install/update/uninstall)
+  verify: `test -f plans/claude-code-steering.acceptance.md && grep -c "^- \[ \]" plans/claude-code-steering.acceptance.md` → 28, exit 0
+  learning: —
+- 2026-11-12 Steps 1–16 done; Step 17 left for the user (built app, NSIS update, uninstall). Full suite `ℹ pass 459` `ℹ fail 0` `ℹ skipped 1`; typecheck clean. Success criteria: only "`config` returns without hanging" is ticked (test/cc-cli.test.js: no stdin, empty stdin, and a pipe that never closes); the rest need the Step 17 run.
