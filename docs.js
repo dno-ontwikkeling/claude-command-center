@@ -9,11 +9,17 @@
 // IPC. readDoc never throws and only ever reads direct children of the
 // configured folders (no traversal, no symlink escape).
 //
+// docAction's 'browser' action opens the shown doc in the default browser: an
+// .html doc as the file itself, a .md/.txt doc rendered to a standalone page in
+// a temp folder first (see browserPage).
+//
 // `cfg` below is a project's docs config: { folders, exts }.
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const { pathToFileURL } = require('url');
 const { marked } = require('marked');
 
 // File types the viewer can render, and the ones listed when a project has no
@@ -237,18 +243,123 @@ function toHtml(ext, text) {
   return text;
 }
 
-// Read one doc. Returns { ok: true, html } or { ok: false, error }. Never throws.
-async function readDoc(cwd, cfg, rel) {
-  const r = await resolveDoc(cwd, cfg, rel);
-  if (!r.ok) return r;
+// The viewer's limits for a resolved doc: a regular file of at most 2 MB.
+// Returns { ok: true } or { ok: false, error }. Throws on fs errors.
+async function checkDoc(r) {
+  const st = await fs.promises.stat(r.file);
+  if (!st.isFile()) return { ok: false, error: 'Not a file' };
+  if (st.size > MAX_DOC_BYTES) return { ok: false, error: 'File is larger than 2 MB' };
+  return { ok: true };
+}
+
+// Body html of a resolved doc, within the viewer's limits.
+// Returns { ok: true, html } or { ok: false, error }. Never throws.
+async function readResolved(r) {
   try {
-    const st = await fs.promises.stat(r.file);
-    if (!st.isFile()) return { ok: false, error: 'Not a file' };
-    if (st.size > MAX_DOC_BYTES) return { ok: false, error: 'File is larger than 2 MB' };
+    const c = await checkDoc(r);
+    if (!c.ok) return c;
     const text = await fs.promises.readFile(r.file, 'utf8');
     return { ok: true, html: toHtml(path.extname(r.name).toLowerCase(), text) };
   } catch (e) {
     return { ok: false, error: (e && e.message) || 'Could not read file' };
+  }
+}
+
+// Read one doc. Returns { ok: true, html } or { ok: false, error }. Never throws.
+async function readDoc(cwd, cfg, rel) {
+  const r = await resolveDoc(cwd, cfg, rel);
+  if (!r.ok) return r;
+  return readResolved(r);
+}
+
+// Readable defaults for the browser page. Keep in step with BASE_CSS in
+// renderer/docs-view.mjs (the in-app look). Not imported from there, so the
+// main process never depends on renderer code.
+const BROWSER_CSS = `
+:root { color-scheme: light dark; --fg: #1f2328; --bg: #ffffff; --muted: #59636e; --border: #d1d9e0; --elevated: #f6f8fa; --link: #0969da; }
+@media (prefers-color-scheme: dark) {
+  :root { --fg: #e6e8eb; --bg: #15191c; --muted: #9aa4ae; --border: #30363d; --elevated: #1e2428; --link: #6cb6ff; }
+}
+body { margin: 0 auto; max-width: 860px; padding: 32px 24px 64px; background: var(--bg); color: var(--fg);
+  font: 15px/1.6 'Segoe UI', system-ui, sans-serif; overflow-wrap: break-word; }
+h1, h2, h3, h4, h5, h6 { line-height: 1.25; margin: 1.4em 0 0.5em; font-weight: 600; }
+h1 { font-size: 1.8em; margin-top: 0; padding-bottom: 0.3em; border-bottom: 1px solid var(--border); }
+h2 { font-size: 1.4em; padding-bottom: 0.25em; border-bottom: 1px solid var(--border); }
+p, ul, ol, blockquote, table, pre { margin: 0 0 1em; }
+ul, ol { padding-left: 1.6em; }
+a { color: var(--link); }
+hr { border: 0; border-top: 1px solid var(--border); margin: 1.5em 0; }
+blockquote { padding: 0 1em; color: var(--muted); border-left: 3px solid var(--border); }
+code, pre { font-family: 'Cascadia Mono', Consolas, monospace; font-size: 0.9em; }
+code { background: var(--elevated); padding: 0.15em 0.35em; border-radius: 4px; }
+pre { background: var(--elevated); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+pre.plain { white-space: pre-wrap; background: none; border: 0; padding: 0; font-size: 0.95em; }
+table { border-collapse: collapse; display: block; overflow-x: auto; }
+th, td { border: 1px solid var(--border); padding: 6px 12px; text-align: left; }
+th { background: var(--elevated); font-weight: 600; }
+img { max-width: 100%; }
+`;
+
+// Scripts, frames and forms are blocked: rendered markdown is not sanitized.
+// Images may load (local ones through <base>, plus data: and https:).
+const BROWSER_CSP = "default-src 'none'; img-src file: data: https:; style-src 'unsafe-inline'; form-action 'none'";
+
+// DEFERRED (2026-11-12): two limits left out of the open-in-browser slice.
+// - Relative links to other .md docs point at the raw .md, which the OS hands
+//   to its .md app. Fixing it means rewriting links and pre-rendering the
+//   linked docs.
+// - The page follows prefers-color-scheme, not the app's data-theme. Fixing it
+//   means the renderer passing its theme through docs:action.
+// Neither was requested; each is its own slice if wanted.
+//
+// Standalone page for a rendered doc. `dir` is the folder the doc sits in, so
+// its relative images and links resolve there (the trailing separator makes
+// the base that folder, not its parent).
+function browserPage(name, dir, bodyHtml) {
+  const base = pathToFileURL(dir + path.sep).href;
+  return (
+    `<!doctype html><html><head><meta charset="utf-8">` +
+    `<meta http-equiv="Content-Security-Policy" content="${BROWSER_CSP}">` +
+    `<meta name="viewport" content="width=device-width, initial-scale=1">` +
+    `<title>${escapeHtml(name)}</title>` +
+    `<base href="${escapeHtml(base)}">` +
+    `<style>${BROWSER_CSS}</style>` +
+    `</head><body>${bodyHtml}</body></html>\n`
+  );
+}
+
+const MAX_STEM = 60;
+
+// '<stem>-<hash8>.html' for the doc at real path `file`. The hash keeps docs
+// of the same name in different folders apart, and reopening a doc reuses
+// (overwrites) its page. The stem is capped to stay clear of MAX_PATH.
+function tempPageName(name, file) {
+  const stem = name.slice(0, name.length - path.extname(name).length).slice(0, MAX_STEM);
+  const hash = crypto.createHash('sha1').update(file).digest('hex').slice(0, 8);
+  return `${stem}-${hash}.html`;
+}
+
+// Open a resolved doc through ops.openInBrowser(path): an .html doc as the
+// file itself, anything else rendered into ops.tempDir first. Never throws.
+async function openInBrowser(r, ops) {
+  try {
+    if (path.extname(r.name).toLowerCase() === '.html') {
+      const c = await checkDoc(r);
+      if (!c.ok) return c;
+      await ops.openInBrowser(r.file);
+      return { ok: true };
+    }
+    const doc = await readResolved(r);
+    if (!doc.ok) return doc;
+    await fs.promises.mkdir(ops.tempDir, { recursive: true });
+    const page = path.join(ops.tempDir, tempPageName(r.name, r.file));
+    await fs.promises.writeFile(page, browserPage(r.name, path.dirname(r.file), doc.html), 'utf8');
+    await ops.openInBrowser(page);
+    return { ok: true };
+  } catch (e) {
+    if (e && e.code === 'ENOENT' && e.path === r.file) return { ok: false, error: `${r.name} no longer exists` };
+    return { ok: false, error: `Could not open ${r.name} in the browser: ${(e && e.message) || 'unknown error'}` };
   }
 }
 
@@ -297,12 +408,13 @@ async function moveDoc(cwd, cfg, rel, toArchive) {
 const archiveDoc = (cwd, cfg, rel) => moveDoc(cwd, cfg, rel, true);
 const restoreDoc = (cwd, cfg, rel) => moveDoc(cwd, cfg, rel, false);
 
-const OS_ACTIONS = new Set(['open', 'reveal', 'trash']);
+const OS_ACTIONS = new Set(['open', 'reveal', 'trash', 'browser']);
 
 // The docs:action dispatch. The OS calls are injected (main.js passes
 // electron's shell and the editors.js launcher) so this stays testable; each
 // receives the resolved real path only, never the renderer's `rel`.
-//   ops: { trashItem(file), showItemInFolder(file), openInEditor(file) -> { ok } | { error } }
+//   ops: { trashItem(file), showItemInFolder(file), openInEditor(file) -> { ok } | { error },
+//          openInBrowser(file) -> Promise (rejects on failure), tempDir: folder for rendered pages }
 // Returns { ok: true, rel? } (rel = new location after archive/restore) or
 // { ok: false, error }. Never throws.
 async function docAction(cwd, cfg, rel, action, ops) {
@@ -316,6 +428,7 @@ async function docAction(cwd, cfg, rel, action, ops) {
       const o = await ops.openInEditor(r.file);
       return o && o.error ? { ok: false, error: o.error } : { ok: true };
     }
+    if (action === 'browser') return await openInBrowser(r, ops);
     if (action === 'reveal') {
       ops.showItemInFolder(r.file);
       return { ok: true };

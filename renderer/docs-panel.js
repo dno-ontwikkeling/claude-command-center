@@ -11,8 +11,9 @@ import { openFoldersDialog } from './docs-folders.js';
 // Docs panel — the docs in the active agent's configured folders (plans and
 // reviews unless the project says otherwise), rendered in a sandboxed iframe
 // on the stage's right edge. Opens only on a user click; polls once a second
-// while open so edits show up live. The ⋮ menu archives, restores, opens,
-// reveals or trashes the shown doc and edits the folder list. This module must
+// while open so edits show up live. The ⋮ menu archives, restores, opens (in
+// VS Code or the browser), reveals or trashes the shown doc and edits the
+// folder list. This module must
 // not import stage.js (stage.js calls syncDocsPanel from updateStageBar).
 // ---------------------------------------------------------------------------
 
@@ -385,7 +386,7 @@ async function runAction(action) {
     loadFolder(); // the file may have vanished: show what is there now
     return;
   }
-  if (action === 'open' || action === 'reveal') return; // nothing moved
+  if (action === 'open' || action === 'reveal' || action === 'browser') return; // nothing moved
   if (res.rel) remembered.set(c, res.rel); // archive/restore: follow the doc
   else remembered.delete(c); // trash: fall back to the newest doc
   loadFolder();
@@ -419,6 +420,7 @@ els.docsActions.addEventListener('click', (e) => {
       ? { label: 'Restore', icon: ICONS.refresh, disabled: noMove, action: () => runAction('restore') }
       : { label: 'Archive', icon: ICONS.archive, disabled: noMove, action: () => runAction('archive') },
     { label: 'Open in VS Code', icon: ICONS.pencil, disabled: !d, action: () => runAction('open') },
+    { label: 'Open in browser', icon: ICONS.external, disabled: !d, action: () => runAction('browser') },
     { label: 'Show in Explorer', icon: ICONS.folder, disabled: !d, action: () => runAction('reveal') },
     { label: 'Folders and file types…', icon: ICONS.gear, action: editFolders },
     { label: 'Move to Recycle Bin', icon: ICONS.trash, danger: true, disabled: noMove, action: confirmTrash },

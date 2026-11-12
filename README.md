@@ -32,9 +32,12 @@ with a status dot that reflects what the agent is doing right now.
     group. The list is stored with the project in the app, so forgetting the
     project removes it; nothing is written into your repo.
   - **Actions** on the shown doc (**⋮**): **Archive** (move into the folder's
-    `archive/`) / **Restore**, **Open in VS Code**, **Show in Explorer**, and
-    **Move to Recycle Bin** (asks first). A name clash gets a ` (2)` suffix;
-    nothing is ever overwritten or permanently deleted.
+    `archive/`) / **Restore**, **Open in VS Code**, **Open in browser**,
+    **Show in Explorer**, and **Move to Recycle Bin** (asks first). A name
+    clash gets a ` (2)` suffix; nothing is ever overwritten or permanently
+    deleted. **Open in browser** opens an `.html` doc as is; a `.md` or `.txt`
+    doc is first rendered to a page in `%TEMP%\command-center-docs` (one page
+    per doc, replaced on each open, never cleaned up).
 - **Default folders** — Settings → General has a **Worktrees folder** and a
   **Workspaces folder**. "Create branch" in the worktree picker then opens at
   `<Worktrees folder>/<repo>`, and New workspace opens at the Workspaces
